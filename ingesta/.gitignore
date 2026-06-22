@@ -1,5 +1,0 @@
-credentials.json
-__pycache__/
-*.pyc
-.ipynb_checkpoints/
-logs/*.log
