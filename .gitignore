@@ -4,3 +4,7 @@ __pycache__/
 .ipynb_checkpoints/
 logs/*.log
 indicadores.ipynb
+.vscode/
+*.xlsx
+*.code-workspace
+ingesta/import*
