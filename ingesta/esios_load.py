@@ -39,14 +39,14 @@ from config import load_config
 # ║            CONFIGURACION DE CARGA — EDITAR AQUI             ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-MODE  = "test"      # "test" | "week" | "month" | "year" | "range"
+MODE  = "range"      # "test" | "week" | "month" | "year" | "range"
 
-YEAR  = 2020        # Año  (usado en: year, month)
+YEAR  = 2025        # Año  (usado en: year, month)
 MONTH = 1           # Mes  (usado en: month, 1-12)
 
 WEEK_START = "2020-01-06"   # Lunes de semana (usado en: week)
-START_DATE = "2020-01-01"   # Inicio (usado en: range / test)
-END_DATE   = "2020-01-31"   # Fin    (usado en: range)
+START_DATE = "2026-01-01"   # Inicio (usado en: range / test)
+END_DATE   = "2026-06-22"   # Fin    (usado en: range)
 
 # ╚══════════════════════════════════════════════════════════════╝
 # ║                  FIN DE CONFIGURACION                       ║
