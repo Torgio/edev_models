@@ -1,20 +1,23 @@
 """
-TFM Energia UCM — Pipeline de actualizacion diaria automatica v4
+TFM Energia UCM — Pipeline de actualizacion diaria automatica v5
 Descarga datos ESIOS del dia anterior y los carga en PostgreSQL.
 
-Logica de completitud en dos niveles:
-  - CRITICOS: price_eur_mwh, demanda_real_mw — si faltan, reintentar cada 10 min hasta 12h
-  - NO CRITICOS: resto de indicadores — intentar siempre, si fallan marcar como parcial y continuar
-
-Mejoras v4:
-  - Correccion desfase UTC/hora española (ZoneInfo Europe/Madrid)
-  - Peticion target-1 hasta target+1 en UTC para capturar todas las horas
-  - Soporte dias de 23h (cambio a verano) y 25h (cambio a invierno)
-  - Revision ultimos 7 dias para rellenar huecos
-  - Indicadores fallidos no bloquean el pipeline
+Mejoras v5:
+  - Descarga inteligente — consulta BD antes de descargar y solo pide
+    los indicadores que tienen nulls en cada dia
+  - Deteccion automatica de indicadores recurrentemente fallidos:
+    si un indicador falla en todos los dias de revision → se marca como
+    recurrente y se registra en log pero no genera descargas innecesarias
+  - Correccion UTC/hora española (ZoneInfo Europe/Madrid)
+  - Soporte dias 23h/24h/25h (cambio de hora)
+  - Revision ultimos 7 dias con descarga selectiva
+  - Dos niveles de completitud: criticos y no criticos
 
 Cron job (servidor):
     0 19 * * * /home/ubuntu/tfm-env/bin/python /home/ubuntu/scripts/ingesta/ESIOS_daily_pipeline.py >> /home/ubuntu/scripts/logs/cron.log 2>&1
+
+Log detallado:
+    /home/ubuntu/scripts/logs/pipeline_YYYY-MM-DD.log
 """
 
 import time
@@ -23,6 +26,7 @@ import sys
 from datetime import date, timedelta, datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from collections import defaultdict
 
 import requests
 import pandas as pd
@@ -77,6 +81,18 @@ INDICATORS = {
 # Indicadores criticos — si faltan, el dia NO se considera completo y se reintenta
 CRITICOS = {"price_eur_mwh", "demanda_real_mw"}
 
+# Indicadores esporadicos — null es valido, no significa dato faltante
+# No se reintenta si tienen nulls — null = "no hubo operacion/intercambio esa hora"
+ESPORADICOS = {
+    "saldo_francia_mw",       # saldo neto intercambio Francia — solo cuando hay flujo
+    "saldo_marruecos_mw",     # saldo neto intercambio Marruecos — solo cuando hay flujo
+    "saldo_portugal_mw",      # saldo neto intercambio Portugal — solo cuando hay flujo
+    "saldo_portugal_exp_mw",  # exportacion Portugal — solo cuando hay flujo
+    "gen_bombeo_turb_mw",     # generacion bombeo — solo cuando opera
+    "cons_bombeo_mw",         # consumo bombeo — solo cuando opera
+    "gen_solar_term_prev_mw", # prevision solar termica — publicacion no garantizada
+}
+
 ESIOS_BASE = "https://api.esios.ree.es"
 ALL_COLS   = ["time_qh"] + list(INDICATORS.keys())
 
@@ -124,11 +140,47 @@ def day_range_utc(target: date) -> tuple[datetime, datetime]:
 
 # ── BD helpers ─────────────────────────────────────────────────────────────────
 
+def get_cols_with_nulls(conn, target: date) -> tuple[dict, dict]:
+    """
+    Consulta la BD y devuelve:
+    - nulls_recuperables: {col: n_nulls} — indicadores que deben tener 24h completas
+    - nulls_esporadicos:  {col: n_nulls} — indicadores con datos esporadicos (null = valido)
+    Solo devuelve columnas que tienen al menos 1 null.
+    """
+    start_utc, end_utc = day_range_utc(target)
+    nulls_recuperables = {}
+    nulls_esporadicos  = {}
+
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT COUNT(*) FROM marketdata_qh
+            WHERE time_qh >= %s AND time_qh <= %s
+        """, (start_utc, end_utc))
+        total = cur.fetchone()[0]
+
+        if total == 0:
+            # No hay nada — todas las columnas criticas y recuperables faltan
+            return {col: 999 for col in INDICATORS if col not in ESPORADICOS}, {}
+
+        for col in INDICATORS:
+            cur.execute(f"""
+                SELECT COUNT(*) FROM marketdata_qh
+                WHERE time_qh >= %s AND time_qh <= %s AND {col} IS NULL
+            """, (start_utc, end_utc))
+            n = cur.fetchone()[0]
+            if n > 0:
+                if col in ESPORADICOS:
+                    nulls_esporadicos[col] = n
+                else:
+                    nulls_recuperables[col] = n
+
+    return nulls_recuperables, nulls_esporadicos
+
+
 def get_day_status(conn, target: date, log) -> dict:
     """
     Analiza el estado del dia en BD.
-    Retorna si los indicadores CRITICOS estan completos (determina si reintentar)
-    y el estado de todos los indicadores (para log).
+    Separa nulls recuperables (deben rellenarse) de esporadicos (null = valido).
     """
     expected   = expected_hours_utc(target)
     n_expected = len(expected)
@@ -141,7 +193,6 @@ def get_day_status(conn, target: date, log) -> dict:
         """, (start_utc, end_utc))
         total = cur.fetchone()[0]
 
-        # Estado de indicadores criticos
         criticos_ok = True
         for col in CRITICOS:
             cur.execute(f"""
@@ -153,35 +204,26 @@ def get_day_status(conn, target: date, log) -> dict:
                 criticos_ok = False
                 log.warning(f"    [CRITICO] {col}: {n}/{n_expected}h")
 
-        # Estado de indicadores no criticos (solo para log)
-        no_criticos_nulls = {}
-        for col in INDICATORS:
-            if col not in CRITICOS:
-                cur.execute(f"""
-                    SELECT COUNT(*) FROM marketdata_qh
-                    WHERE time_qh >= %s AND time_qh <= %s AND {col} IS NULL
-                """, (start_utc, end_utc))
-                nulls = cur.fetchone()[0]
-                if nulls > 0:
-                    no_criticos_nulls[col] = nulls
-
+    nulls_recuperables, nulls_esporadicos = get_cols_with_nulls(conn, target)
     es_completo = total >= n_expected and criticos_ok
-    pct = total / n_expected * 100
 
+    pct = total / n_expected * 100
     log.info(f"  [{target}] {total}/{n_expected}h | {pct:.0f}% | "
              f"criticos={'✅' if criticos_ok else '❌'} | "
              f"{'✅ COMPLETO' if es_completo else '⚠️ incompleto'}")
 
-    if no_criticos_nulls:
-        for col, nulls in no_criticos_nulls.items():
-            log.debug(f"    [parcial] {col}: {nulls} nulls")
+    if nulls_recuperables:
+        log.warning(f"    [nulls recuperables] {list(nulls_recuperables.keys())}")
+    if nulls_esporadicos:
+        log.debug(f"    [nulls esporadicos — OK] {list(nulls_esporadicos.keys())}")
 
     return {
         "total": total,
         "n_expected": n_expected,
         "criticos_ok": criticos_ok,
         "es_completo": es_completo,
-        "no_criticos_nulls": no_criticos_nulls,
+        "nulls_recuperables": nulls_recuperables,
+        "nulls_esporadicos": nulls_esporadicos,
         "pct": pct,
     }
 
@@ -216,7 +258,6 @@ def fetch_indicator(headers, indicator_id, geo_id, target: date, log) -> pd.Seri
         df = df.set_index("datetime_utc")["value"]
         df = df[~df.index.duplicated(keep="first")]
 
-        # Filtrar solo timestamps del dia target en hora española
         expected = expected_hours_utc(target)
         df = df[df.index.isin(expected)]
 
@@ -227,31 +268,49 @@ def fetch_indicator(headers, indicator_id, geo_id, target: date, log) -> pd.Seri
         return None
 
 
-def fetch_day(headers, target: date, log) -> pd.DataFrame | None:
-    log.info(f"  Descargando {len(INDICATORS)} indicadores para {target}...")
-    frames = {}
-    ok = fail = 0
-    criticos_fail = []
+def fetch_indicators_selective(headers, target: date, cols_needed: set, log) -> tuple[pd.DataFrame | None, set]:
+    """
+    Descarga SOLO los indicadores que necesitamos (cols_needed).
+    Retorna (DataFrame, cols_descargadas_exitosamente).
+    """
+    if not cols_needed:
+        return None, set()
 
-    for col, (ind_id, geo_id) in INDICATORS.items():
+    log.info(f"  Descargando {len(cols_needed)} indicadores para {target}: {sorted(cols_needed)}")
+    frames = {}
+    cols_descargadas = set()
+    ok = fail = 0
+    fallidos = []
+
+    for col in cols_needed:
+        if col not in INDICATORS:
+            continue
+        ind_id, geo_id = INDICATORS[col]
         serie = fetch_indicator(headers, ind_id, geo_id, target, log)
         if serie is not None:
             frames[col] = serie
+            cols_descargadas.add(col)
             ok += 1
         else:
             fail += 1
-            if col in CRITICOS:
-                criticos_fail.append(col)
+            fallidos.append(col)
         time.sleep(PAUSA_INDICADOR_SEC)
 
-    log.info(f"  OK: {ok} | Fallidos: {fail} | Criticos fallidos: {criticos_fail or 'ninguno'}")
+    log.info(f"  OK: {ok} | Fallidos: {fail}")
+    if fallidos:
+        criticos_fail = [c for c in fallidos if c in CRITICOS]
+        if criticos_fail:
+            log.warning(f"  [❌ CRITICOS fallidos]: {criticos_fail}")
+        no_crit_fail = [c for c in fallidos if c not in CRITICOS]
+        if no_crit_fail:
+            log.warning(f"  [⚠️ no criticos fallidos]: {no_crit_fail}")
 
     if not frames:
-        return None
+        return None, cols_descargadas
 
     df = pd.DataFrame(frames)
     df.index.name = "time_qh"
-    return df.reset_index()
+    return df.reset_index(), cols_descargadas
 
 # ── INSERT + UPDATE ────────────────────────────────────────────────────────────
 
@@ -336,13 +395,23 @@ def ejecutar_intento(target: date, intento: int, headers: dict, db_config: dict,
         log.error(f"  Error conexion BD: {e}")
         return False
 
-    status_ini = get_day_status(conn, target, log)
-    if status_ini["es_completo"]:
-        log.info(f"  Dia {target} ya completo — nada que hacer")
+    # Consultar BD — saber exactamente qué falta
+    status = get_day_status(conn, target, log)
+    nulls_antes = set(status["nulls_recuperables"].keys())
+
+    # Si todo completo y sin nulls recuperables — nada que hacer
+    if status["es_completo"] and not status["nulls_recuperables"]:
+        log.info(f"  Dia {target} completamente completo — nada que hacer")
+        if status["nulls_esporadicos"]:
+            log.info(f"  Datos esporadicos con nulls (correcto): {list(status['nulls_esporadicos'].keys())}")
         conn.close()
         return True
 
-    df = fetch_day(headers, target, log)
+    # Descargar solo los indicadores recuperables que faltan
+    # Los esporadicos tambien se intentan por si la API los publica ahora
+    cols_needed = nulls_antes | set(status["nulls_esporadicos"].keys())
+    df, cols_descargadas = fetch_indicators_selective(headers, target, cols_needed, log)
+
     ins, upd = 0, 0
     if df is not None and not df.empty:
         try:
@@ -351,14 +420,14 @@ def ejecutar_intento(target: date, intento: int, headers: dict, db_config: dict,
             log.error(f"  Error upsert: {e}")
             conn.rollback()
 
-    status_fin  = get_day_status(conn, target, log)
-    duracion    = time.time() - t0
-    es_completo = status_fin["es_completo"]
-    n_exp       = status_fin["n_expected"]
+    status_fin    = get_day_status(conn, target, log)
+    nulls_despues = set(status_fin["nulls_recuperables"].keys())
+    duracion      = time.time() - t0
+    es_completo   = status_fin["es_completo"]
+    n_exp         = status_fin["n_expected"]
 
-    # Indicadores no criticos con nulls — informativo pero no bloquea
-    if status_fin["no_criticos_nulls"]:
-        log.info(f"  Indicadores no criticos con nulls: {list(status_fin['no_criticos_nulls'].keys())}")
+    # Nulls recuperables que persisten Y que la API no devolvio
+    nulls_sin_datos_api = nulls_antes & nulls_despues - cols_descargadas
 
     estado_str = "ok" if es_completo else ("parcial" if status_fin["criticos_ok"] else "incompleto")
     mensaje = (f"Intento {intento}: {ins} insertadas, {upd} actualizadas, "
@@ -367,24 +436,33 @@ def ejecutar_intento(target: date, intento: int, headers: dict, db_config: dict,
     log_pipeline_db(conn, target, intento, ins, upd, estado_str, mensaje, duracion, log)
     conn.close()
 
-    if es_completo:
-        log.info(f"  ✅ Dia {target} COMPLETO tras intento {intento}")
-        return True
-    elif status_fin["criticos_ok"] and not status_fin["no_criticos_nulls"]:
-        log.info(f"  ✅ Dia {target} completo (indicadores criticos OK, sin nulls pendientes)")
-        return True
-    elif status_fin["criticos_ok"]:
-        # Criticos OK pero hay no-criticos con nulls — reintentar para intentar rellenarlos
-        log.warning(f"  ⚠️ Criticos OK pero {len(status_fin['no_criticos_nulls'])} indicadores no criticos incompletos — reintentando")
+    # Criticos incompletos → reintentar
+    if not status_fin["criticos_ok"]:
+        log.warning(f"  ❌ Criticos incompletos — reintentando en {PAUSA_REINTENTO_MIN} min")
         return False
-    else:
-        log.warning(f"  ❌ Indicadores criticos incompletos — reintentando en {PAUSA_REINTENTO_MIN} min")
+
+    # Nulls recuperables pendientes que la API SI devolvio pero siguen en null
+    nulls_recuperables_pendientes = nulls_despues - nulls_sin_datos_api
+    if nulls_recuperables_pendientes:
+        log.warning(f"  ⚠️ Nulls recuperables pendientes: {sorted(nulls_recuperables_pendientes)} — reintentando")
         return False
+
+    # Todo OK — criticos completos y solo quedan esporadicos/sin datos API
+    if nulls_sin_datos_api:
+        log.warning(f"  ⚠️ API no publica datos para: {sorted(nulls_sin_datos_api)}")
+    log.info(f"  ✅ Dia {target} completo — criticos OK, API no publica mas datos hoy")
+    return True
 
 
 def revisar_semana(headers: dict, db_config: dict, log):
+    """
+    Revision inteligente de los ultimos DIAS_REVISION dias.
+    1. Consulta BD → sabe exactamente qué indicadores recuperables faltan
+    2. Los esporadicos (intercambios, bombeo) se ignoran — null es valido
+    3. Descarga solo indicadores recuperables con nulls
+    """
     hoy = date.today()
-    log.info(f"\n--- Revision ultimos {DIAS_REVISION} dias ---")
+    log.info(f"\n--- Revision inteligente ultimos {DIAS_REVISION} dias ---")
 
     try:
         conn = psycopg2.connect(**db_config)
@@ -392,17 +470,33 @@ def revisar_semana(headers: dict, db_config: dict, log):
         log.error(f"  Error BD: {e}")
         return
 
+    # Auditar BD: qué falta en cada dia
     for i in range(2, DIAS_REVISION + 1):
         dia = hoy - timedelta(days=i)
-        status = get_day_status(conn, dia, log)
-        if status["es_completo"] and not status["no_criticos_nulls"]:
+        nulls_recuperables, nulls_esporadicos = get_cols_with_nulls(conn, dia)
+
+        if not nulls_recuperables and not nulls_esporadicos:
+            log.info(f"  [{dia}] ✅ Completo")
             continue
-        log.info(f"  Rellenando {dia}...")
-        df = fetch_day(headers, dia, log)
+
+        if nulls_esporadicos:
+            log.debug(f"  [{dia}] Datos esporadicos con nulls (correcto): {list(nulls_esporadicos.keys())}")
+
+        if not nulls_recuperables:
+            log.info(f"  [{dia}] ✅ Solo esporadicos con nulls — OK")
+            continue
+
+        # Hay nulls recuperables — descargar solo esos
+        log.info(f"  [{dia}] Nulls recuperables: {list(nulls_recuperables.keys())} — descargando...")
+        df, _ = fetch_indicators_selective(headers, dia, set(nulls_recuperables.keys()), log)
+
         if df is not None and not df.empty:
             try:
                 ins, upd = upsert_day(conn, df, dia, log)
-                log.info(f"  {dia}: {ins} insert, {upd} update")
+                if ins + upd > 0:
+                    log.info(f"  [{dia}] {ins} insert, {upd} update")
+                else:
+                    log.info(f"  [{dia}] Sin cambios — API no devuelve datos para esos indicadores")
             except Exception as e:
                 log.error(f"  Error {dia}: {e}")
                 conn.rollback()
@@ -413,8 +507,9 @@ def revisar_semana(headers: dict, db_config: dict, log):
 
 def run(target: date):
     log = setup_logger(target)
-    log.info(f"Pipeline ESIOS diario v4 — {target}")
+    log.info(f"Pipeline ESIOS diario v5 — {target}")
     log.info(f"UTC/hora española | 23/24/25h | Criticos: {CRITICOS} | Revision {DIAS_REVISION}d")
+    log.info(f"Descarga selectiva — solo indicadores con nulls en BD")
 
     try:
         headers, db_config = load_config()
@@ -443,7 +538,7 @@ def run(target: date):
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Pipeline diario ESIOS v4")
+    parser = argparse.ArgumentParser(description="Pipeline diario ESIOS v5")
     parser.add_argument("--fecha", help="Fecha concreta YYYY-MM-DD (default: ayer)")
     parser.add_argument("--dias",  type=int, default=1, help="Numero de dias hacia atras")
     args = parser.parse_args()
