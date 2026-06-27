@@ -1,15 +1,18 @@
 """
 TFM Energia UCM — ENTSO-E Daily Pipeline v2
-Descarga automaticamente los datos reales de ENTSO-E:
-  - Dia anterior completo
-  - Ultimos 7 dias para rellenar posibles huecos
+Descarga automaticamente los datos reales de ENTSO-E del dia anterior.
 
-Logica de completitud:
-  - Si faltan <= 2 horas → dia considerado completo (horas no publicadas aun)
-  - Si faltan > 2 horas → reintentar cada 10 minutos hasta 12 horas
+Mejoras v2:
+  - Correccion UTC/hora española (ZoneInfo Europe/Madrid)
+  - Peticion target-1 hasta target+1 en UTC — filtra por hora española
+  - Soporte dias 23h/24h/25h (cambio de hora)
+  - Indicadores esporadicos (bombeo) — null es valido
+  - Descarga selectiva — solo si faltan horas
+  - Revision 7 dias para rellenar huecos
+  - Dos niveles: criticos (carga, solar, viento) y esporadicos (bombeo)
 
 Cron job (servidor):
-    0 22 * * * /home/ubuntu/tfm-env/bin/python /home/ubuntu/scripts/ingesta/entsoe_daily_pipeline.py >> /home/ubuntu/scripts/logs/cron_entsoe.log 2>&1
+    0 20 * * * /home/ubuntu/tfm-env/bin/python /home/ubuntu/scripts/ingesta/entsoe_daily_pipeline.py >> /home/ubuntu/scripts/logs/cron_entsoe.log 2>&1
 
 Log detallado:
     /home/ubuntu/scripts/logs/entsoe_pipeline_YYYY-MM-DD.log
@@ -21,6 +24,7 @@ import sys
 import time
 from datetime import date, timedelta, datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import psycopg2
@@ -34,16 +38,25 @@ from config import load_config
 MAX_HORAS_REINTENTO  = 12
 PAUSA_REINTENTO_MIN  = 10
 PAUSA_API_SEC        = 1.0
-HORAS_TOLERANCIA     = 2    # Si faltan <= 2 horas → dia completo
-DIAS_REVISION        = 7    # Revisar ultimos N dias para rellenar huecos
+DIAS_REVISION        = 7
+TZ_SPAIN             = ZoneInfo("Europe/Madrid")
+
 LOGS_DIR = Path(__file__).parent.parent / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
 
 COUNTRY    = "ES"
 COUNTRY_FR = "FR"
 COUNTRY_PT = "PT"
-TIMEZONE   = "Europe/Madrid"
-KEY_COLS   = ["actual_load_mw", "solar_mw", "wind_mw", "nuclear_mw"]
+
+# Indicadores criticos — si faltan, reintentar
+CRITICOS = {"actual_load_mw", "solar_mw", "wind_mw", "nuclear_mw"}
+
+# Indicadores esporadicos — null valido (solo cuando hay operacion)
+ESPORADICOS = {
+    "pumping_generation_mw",   # solo cuando hay bombeo turbinando
+    "pumping_consumption_mw",  # solo cuando hay bombeo consumiendo
+    "biomass_mw",              # puede no operar todas las horas
+}
 
 GEN_MAPPING = {
     "solar_mw":                 [("Solar", "Actual Aggregated")],
@@ -95,10 +108,50 @@ def setup_logger(target_date: date) -> logging.Logger:
     logger.addHandler(ch)
     return logger
 
+# ── Helpers UTC/hora española ──────────────────────────────────────────────────
+
+def expected_hours_utc(target: date) -> set:
+    """
+    Timestamps UTC esperados para el dia target en hora española.
+    Soporta 23h (cambio a verano), 24h y 25h (cambio a invierno).
+    """
+    start_spain = datetime(target.year, target.month, target.day, 0, 0, 0, tzinfo=TZ_SPAIN)
+    end_spain   = datetime(target.year, target.month, target.day, 23, 0, 0, tzinfo=TZ_SPAIN)
+    start_utc   = start_spain.astimezone(timezone.utc)
+    end_utc     = end_spain.astimezone(timezone.utc)
+    hours = set()
+    current = start_utc
+    while current <= end_utc:
+        hours.add(current)
+        current += timedelta(hours=1)
+    return hours
+
+
+def day_range_utc(target: date) -> tuple[datetime, datetime]:
+    start_spain = datetime(target.year, target.month, target.day, 0, 0, 0, tzinfo=TZ_SPAIN)
+    end_spain   = datetime(target.year, target.month, target.day, 23, 0, 0, tzinfo=TZ_SPAIN)
+    return start_spain.astimezone(timezone.utc), end_spain.astimezone(timezone.utc)
+
 # ── ENTSO-E fetch ──────────────────────────────────────────────────────────────
 
-def to_ts(d: date) -> pd.Timestamp:
-    return pd.Timestamp(str(d), tz=TIMEZONE)
+def to_ts_range(target: date) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """
+    Devuelve rango de timestamps para peticion ENTSO-E.
+    Pide target-1 hasta target+1 en hora española para capturar
+    todas las horas del dia en UTC (desfase CET/CEST).
+    """
+    start = pd.Timestamp(str(target - timedelta(days=1)), tz="Europe/Madrid")
+    end   = pd.Timestamp(str(target + timedelta(days=1)), tz="Europe/Madrid")
+    return start, end
+
+
+def filter_to_target_day(df: pd.DataFrame, target: date) -> pd.DataFrame:
+    """Filtra un DataFrame para quedarse solo con filas del dia target en hora española."""
+    expected = expected_hours_utc(target)
+    if df.index.tzinfo is None:
+        df.index = df.index.tz_localize("UTC")
+    df.index = df.index.tz_convert("UTC")
+    return df[df.index.isin(expected)]
 
 
 def resample_hourly(series: pd.Series) -> pd.Series:
@@ -108,24 +161,28 @@ def resample_hourly(series: pd.Series) -> pd.Series:
 
 
 def fetch_day(client, target: date, log) -> pd.DataFrame | None:
-    ts_start = to_ts(target)
-    ts_end   = to_ts(target + timedelta(days=1))
-    frames   = {}
+    ts_start, ts_end = to_ts_range(target)
+    frames = {}
 
+    # Carga real
     try:
         df = client.query_load(COUNTRY, start=ts_start, end=ts_end)
-        frames["actual_load_mw"] = resample_hourly(df["Actual Load"])
+        filtered = filter_to_target_day(df, target)
+        frames["actual_load_mw"] = resample_hourly(filtered["Actual Load"])
+        log.debug(f"    actual_load: {len(frames['actual_load_mw'])} horas")
     except Exception as e:
         log.warning(f"    actual_load: {e}")
     time.sleep(PAUSA_API_SEC)
 
+    # Generacion por tecnologia
     try:
         df_gen = client.query_generation(COUNTRY, start=ts_start, end=ts_end)
+        df_gen_filtered = filter_to_target_day(df_gen, target)
         for col, src_cols in GEN_MAPPING.items():
             values = None
             for src_col in src_cols:
-                if src_col in df_gen.columns:
-                    v = df_gen[src_col].fillna(0)
+                if src_col in df_gen_filtered.columns:
+                    v = df_gen_filtered[src_col].fillna(0)
                     values = v if values is None else values + v
             if values is not None:
                 frames[col] = resample_hourly(values)
@@ -133,6 +190,7 @@ def fetch_day(client, target: date, log) -> pd.DataFrame | None:
         log.warning(f"    generation: {e}")
     time.sleep(PAUSA_API_SEC)
 
+    # Flujos interconexion
     for (c_from, c_to, col) in [
         (COUNTRY, COUNTRY_FR, "flow_es_fr_mw"),
         (COUNTRY_FR, COUNTRY, "flow_fr_es_mw"),
@@ -141,7 +199,8 @@ def fetch_day(client, target: date, log) -> pd.DataFrame | None:
     ]:
         try:
             df_flow = client.query_crossborder_flows(c_from, c_to, start=ts_start, end=ts_end)
-            frames[col] = resample_hourly(df_flow)
+            filtered = filter_to_target_day(df_flow, target)
+            frames[col] = resample_hourly(filtered)
         except Exception as e:
             log.warning(f"    flow {c_from}→{c_to}: {e}")
         time.sleep(PAUSA_API_SEC)
@@ -153,8 +212,9 @@ def fetch_day(client, target: date, log) -> pd.DataFrame | None:
     df.index = df.index.tz_convert("UTC")
     df.index.name = "datetime_utc"
     df = df.reset_index()
-    df["datetime_local"] = df["datetime_utc"].dt.tz_convert(TIMEZONE)
+    df["datetime_local"] = df["datetime_utc"].dt.tz_convert("Europe/Madrid")
 
+    # Columnas derivadas
     renew_cols = [c for c in ["solar_mw","wind_mw","hydro_mw","biomass_mw",
                                "waste_mw","pumping_generation_mw"] if c in df.columns]
     if renew_cols:
@@ -184,31 +244,65 @@ def fetch_day(client, target: date, log) -> pd.DataFrame | None:
 
 def get_day_status(conn, target: date, log) -> dict:
     """
-    Devuelve estado del dia en BD.
-    Dia completo si: horas_en_bd >= (24 - HORAS_TOLERANCIA)
+    Analiza el estado del dia en BD usando rango UTC calculado desde hora española.
+    Soporta 23h/24h/25h. Separa criticos de esporadicos.
     """
-    null_check = " OR ".join([f"{c} IS NULL" for c in KEY_COLS])
+    expected   = expected_hours_utc(target)
+    n_expected = len(expected)
+    start_utc, end_utc = day_range_utc(target)
+
     with conn.cursor() as cur:
-        cur.execute("SELECT COUNT(*) FROM entsoe_data WHERE datetime_utc::date = %s", (target,))
-        total = cur.fetchone()[0]
-        cur.execute(f"""
+        cur.execute("""
             SELECT COUNT(*) FROM entsoe_data
-            WHERE datetime_utc::date = %s AND NOT ({null_check})
-        """, (target,))
-        completas = cur.fetchone()[0]
+            WHERE datetime_utc >= %s AND datetime_utc <= %s
+        """, (start_utc, end_utc))
+        total = cur.fetchone()[0]
 
-    horas_faltantes = 24 - total
-    es_completo = horas_faltantes <= HORAS_TOLERANCIA and completas >= (24 - HORAS_TOLERANCIA)
-    pct = total / 24 * 100
+        criticos_ok = True
+        for col in CRITICOS:
+            cur.execute(f"""
+                SELECT COUNT(*) FROM entsoe_data
+                WHERE datetime_utc >= %s AND datetime_utc <= %s AND {col} IS NOT NULL
+            """, (start_utc, end_utc))
+            n = cur.fetchone()[0]
+            if n < n_expected:
+                criticos_ok = False
+                log.warning(f"    [CRITICO] {col}: {n}/{n_expected}h")
 
-    log.info(f"  [{target}] {total}/24 horas | {completas} completas | {pct:.0f}% "
-             f"| faltan {horas_faltantes}h | {'✅ COMPLETO' if es_completo else '⚠️ incompleto'}")
+        # Nulls recuperables (no criticos, no esporadicos)
+        nulls_recuperables = {}
+        nulls_esporadicos  = {}
+        data_cols = [c for c in ALL_COLS if c not in ("datetime_utc", "datetime_local")]
+        for col in data_cols:
+            cur.execute(f"""
+                SELECT COUNT(*) FROM entsoe_data
+                WHERE datetime_utc >= %s AND datetime_utc <= %s AND {col} IS NULL
+            """, (start_utc, end_utc))
+            n = cur.fetchone()[0]
+            if n > 0:
+                if col in ESPORADICOS:
+                    nulls_esporadicos[col] = n
+                elif col not in CRITICOS:
+                    nulls_recuperables[col] = n
+
+    es_completo = total >= n_expected and criticos_ok
+    pct = total / n_expected * 100
+
+    log.info(f"  [{target}] {total}/{n_expected}h | {pct:.0f}% | "
+             f"criticos={'✅' if criticos_ok else '❌'} | "
+             f"{'✅ COMPLETO' if es_completo else '⚠️ incompleto'}")
+    if nulls_recuperables:
+        log.warning(f"    [nulls recuperables] {list(nulls_recuperables.keys())}")
+    if nulls_esporadicos:
+        log.debug(f"    [nulls esporadicos — OK] {list(nulls_esporadicos.keys())}")
 
     return {
         "total": total,
-        "completas": completas,
-        "horas_faltantes": horas_faltantes,
+        "n_expected": n_expected,
+        "criticos_ok": criticos_ok,
         "es_completo": es_completo,
+        "nulls_recuperables": nulls_recuperables,
+        "nulls_esporadicos": nulls_esporadicos,
         "pct": pct,
     }
 
@@ -216,9 +310,13 @@ def get_day_status(conn, target: date, log) -> dict:
 def upsert_day(conn, df: pd.DataFrame, target: date, log) -> tuple[int, int]:
     ins, upd = 0, 0
     data_cols = [c for c in ALL_COLS if c not in ("datetime_utc", "datetime_local")]
+    start_utc, end_utc = day_range_utc(target)
 
     with conn.cursor() as cur:
-        cur.execute("SELECT datetime_utc FROM entsoe_data WHERE datetime_utc::date = %s", (target,))
+        cur.execute("""
+            SELECT datetime_utc FROM entsoe_data
+            WHERE datetime_utc >= %s AND datetime_utc <= %s
+        """, (start_utc, end_utc))
         existing = {row[0] for row in cur.fetchall()}
 
     # INSERT nuevas horas
@@ -273,13 +371,9 @@ def log_pipeline_db(conn, target, intento, ins, upd, status, mensaje, duracion, 
         log.warning(f"  pipeline_log error: {e}")
         conn.rollback()
 
-# ── Procesar un dia con reintentos ─────────────────────────────────────────────
+# ── Procesar dia con reintentos ────────────────────────────────────────────────
 
 def procesar_dia_con_reintentos(target: date, client, db_config: dict, log) -> bool:
-    """
-    Procesa un dia con logica de reintentos.
-    Retorna True si el dia queda completo o con tolerancia aceptable.
-    """
     max_intentos = (MAX_HORAS_REINTENTO * 60) // PAUSA_REINTENTO_MIN
     intento = 1
 
@@ -297,11 +391,13 @@ def procesar_dia_con_reintentos(target: date, client, db_config: dict, log) -> b
 
         status = get_day_status(conn, target, log)
 
-        # Si ya esta completo, salir
-        if status["es_completo"]:
-            log.info(f"  ✅ Dia {target} completo (tolerancia {HORAS_TOLERANCIA}h)")
+        # Completo y sin nulls recuperables — nada que hacer
+        if status["es_completo"] and not status["nulls_recuperables"]:
+            log.info(f"  ✅ Dia {target} completo")
+            if status["nulls_esporadicos"]:
+                log.info(f"  Esporadicos con nulls (correcto): {list(status['nulls_esporadicos'].keys())}")
             log_pipeline_db(conn, target, intento, 0, 0, "ok",
-                          f"Ya completo — {status['total']}/24h", time.time()-t0, log)
+                          f"Ya completo — {status['total']}/{status['n_expected']}h", time.time()-t0, log)
             conn.close()
             return True
 
@@ -315,26 +411,30 @@ def procesar_dia_con_reintentos(target: date, client, db_config: dict, log) -> b
                 log.error(f"  Error upsert: {e}")
                 conn.rollback()
 
-        # Estado final del intento
-        status_fin = get_day_status(conn, target, log)
-        duracion   = time.time() - t0
+        status_fin  = get_day_status(conn, target, log)
+        duracion    = time.time() - t0
         es_completo = status_fin["es_completo"]
         estado_str  = "ok" if es_completo else "parcial"
         mensaje = (f"Intento {intento}: {ins} insert, {upd} update, "
-                  f"{status_fin['total']}/24h, {status_fin['horas_faltantes']}h faltantes")
+                  f"{status_fin['total']}/{status_fin['n_expected']}h")
 
         log_pipeline_db(conn, target, intento, ins, upd, estado_str, mensaje, duracion, log)
         conn.close()
 
-        if es_completo:
+        # Criticos incompletos → reintentar
+        if not status_fin["criticos_ok"]:
+            log.warning(f"  ❌ Criticos incompletos — reintentando en {PAUSA_REINTENTO_MIN} min")
+        elif status_fin["nulls_recuperables"]:
+            log.warning(f"  ⚠️ Nulls recuperables pendientes — reintentando")
+        else:
             log.info(f"  ✅ Dia {target} completo tras intento {intento}")
             return True
 
         if intento >= max_intentos:
-            log.error(f"  ❌ Max intentos alcanzado para {target} — {status_fin['horas_faltantes']}h faltantes")
+            log.error(f"  ❌ Max intentos alcanzado para {target}")
             return False
 
-        log.info(f"  Esperando {PAUSA_REINTENTO_MIN} min para siguiente intento...")
+        log.info(f"  Esperando {PAUSA_REINTENTO_MIN} min...")
         time.sleep(PAUSA_REINTENTO_MIN * 60)
         intento += 1
 
@@ -342,29 +442,39 @@ def procesar_dia_con_reintentos(target: date, client, db_config: dict, log) -> b
 
 
 def revisar_semana(client, db_config: dict, log):
-    """Revisa los ultimos DIAS_REVISION dias y rellena huecos sin reintentos."""
+    """Revision inteligente — solo descarga si hay nulls recuperables."""
     hoy = date.today()
     log.info(f"\n--- Revision ultimos {DIAS_REVISION} dias ---")
 
     try:
         conn = psycopg2.connect(**db_config)
     except Exception as e:
-        log.error(f"  Error BD en revision semanal: {e}")
+        log.error(f"  Error BD: {e}")
         return
 
     for i in range(2, DIAS_REVISION + 1):
         dia = hoy - timedelta(days=i)
         status = get_day_status(conn, dia, log)
 
-        if status["es_completo"]:
+        # Solo esporadicos con nulls — OK, no descargar
+        if status["es_completo"] and not status["nulls_recuperables"]:
+            if status["nulls_esporadicos"]:
+                log.info(f"  [{dia}] ✅ Solo esporadicos con nulls — OK")
             continue
 
-        log.info(f"  Rellenando huecos en {dia} ({status['horas_faltantes']}h faltantes)...")
+        if not status["nulls_recuperables"] and not status["es_completo"]:
+            # Horas faltantes pero sin nulls recuperables — intentar descargar
+            pass
+
+        log.info(f"  [{dia}] Descargando para rellenar huecos...")
         df = fetch_day(client, dia, log)
         if df is not None and not df.empty:
             try:
                 ins, upd = upsert_day(conn, df, dia, log)
-                log.info(f"  {dia}: {ins} insert, {upd} update")
+                if ins + upd > 0:
+                    log.info(f"  [{dia}] {ins} insert, {upd} update")
+                else:
+                    log.info(f"  [{dia}] Sin cambios")
             except Exception as e:
                 log.error(f"  Error {dia}: {e}")
                 conn.rollback()
@@ -381,8 +491,8 @@ def run():
 
     log.info("=" * 55)
     log.info(f"ENTSO-E Pipeline diario — {hoy}")
-    log.info(f"Tolerancia: <= {HORAS_TOLERANCIA} horas faltantes = completo")
-    log.info(f"Revision ultimos {DIAS_REVISION} dias para huecos")
+    log.info(f"UTC/hora española | 23/24/25h | Criticos: {CRITICOS}")
+    log.info(f"Revision ultimos {DIAS_REVISION} dias")
     log.info("=" * 55)
 
     try:
@@ -394,11 +504,9 @@ def run():
         log.error(f"Error credenciales: {e}")
         return
 
-    # PASO 1 — Procesar ayer con reintentos
     log.info(f"\n=== PASO 1: Dia principal — {ayer} ===")
     procesar_dia_con_reintentos(ayer, client, db_config, log)
 
-    # PASO 2 — Revisar ultimos 7 dias para huecos
     log.info(f"\n=== PASO 2: Revision ultimos {DIAS_REVISION} dias ===")
     revisar_semana(client, db_config, log)
 
@@ -411,7 +519,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.fecha:
-        # Modo manual — procesa fecha concreta sin reintentos ni revision semanal
         import json
         _, db_config = load_config()
         creds  = json.load(open(Path(__file__).parent / "credentials.json"))
