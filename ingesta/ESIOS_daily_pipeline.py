@@ -91,7 +91,8 @@ ESPORADICOS = {
     "gen_bombeo_turb_mw",     # generacion bombeo — solo cuando opera
     "cons_bombeo_mw",         # consumo bombeo — solo cuando opera
     "gen_solar_term_prev_mw", # prevision solar termica — publicacion no garantizada
-}
+    "gen_solar_prev_mw",     # prevision solar FV — API no publica para fechas pasadas
+}    
 
 ESIOS_BASE = "https://api.esios.ree.es"
 ALL_COLS   = ["time_qh"] + list(INDICATORS.keys())
