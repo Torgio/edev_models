@@ -46,7 +46,7 @@ LOGS_DIR = Path(__file__).parent.parent / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
 
 INDICATORS = {
-    "price_eur_mwh":         (600,   None),
+    "price_eur_mwh":         (600,   3),
     "demanda_real_mw":       (1293,  8741),
     "demanda_prev_mw":       (544,   8741),
     "gen_solar_mw":          (1295,  8741),
@@ -261,6 +261,11 @@ def fetch_indicator(headers, indicator_id, geo_id, target: date, log) -> pd.Seri
 
         expected = expected_hours_utc(target)
         df = df[df.index.isin(expected)]
+
+        # Precio ID 600 — ESIOS suma 4 cuartos horarios, dividir entre 4 desde 01-oct-2025
+        if indicator_id == 600 and target >= date(2025, 10, 1):
+            df = (df / 4).round(2)
+
 
         return df if not df.empty else None
 
