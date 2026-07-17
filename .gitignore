@@ -7,4 +7,5 @@ indicadores.ipynb
 .vscode/
 *.xlsx
 *.code-workspace
-ingesta/import*
+ingesta/import
+ingesta/data_mibgas_excel/

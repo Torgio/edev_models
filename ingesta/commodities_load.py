@@ -41,8 +41,8 @@ TICKERS = {
     "MTF=F":  "carbon_api2", # Carbon API2 $/t  — desde 2020-01-02
 }
 
-START_DATE_DEFAULT = "2020-01-01"
-END_DATE_DEFAULT   = date.today().strftime("%Y-%m-%d")
+START_DATE_DEFAULT = "2026-06-24"
+END_DATE_DEFAULT   = "2026-07-16"
 
 logging.basicConfig(
     level=logging.INFO,
