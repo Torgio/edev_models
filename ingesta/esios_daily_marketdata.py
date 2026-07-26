@@ -154,8 +154,9 @@ def get_cols_with_nulls(conn, target: date) -> tuple[dict, dict]:
 
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT COUNT(*) FROM marketdata_qh
+            SELECT COUNT(*) FROM esios_marketdata
             WHERE time_qh >= %s AND time_qh <= %s
+
         """, (start_utc, end_utc))
         total = cur.fetchone()[0]
 
@@ -165,7 +166,7 @@ def get_cols_with_nulls(conn, target: date) -> tuple[dict, dict]:
 
         for col in INDICATORS:
             cur.execute(f"""
-                SELECT COUNT(*) FROM marketdata_qh
+                SELECT COUNT(*) FROM esios_marketdata
                 WHERE time_qh >= %s AND time_qh <= %s AND {col} IS NULL
             """, (start_utc, end_utc))
             n = cur.fetchone()[0]
@@ -189,7 +190,7 @@ def get_day_status(conn, target: date, log) -> dict:
 
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT COUNT(*) FROM marketdata_qh
+            SELECT COUNT(*) FROM esios_marketdata
             WHERE time_qh >= %s AND time_qh <= %s
         """, (start_utc, end_utc))
         total = cur.fetchone()[0]
@@ -197,7 +198,7 @@ def get_day_status(conn, target: date, log) -> dict:
         criticos_ok = True
         for col in CRITICOS:
             cur.execute(f"""
-                SELECT COUNT(*) FROM marketdata_qh
+                SELECT COUNT(*) FROM esios_marketdata
                 WHERE time_qh >= %s AND time_qh <= %s AND {col} IS NOT NULL
             """, (start_utc, end_utc))
             n = cur.fetchone()[0]
@@ -327,7 +328,7 @@ def upsert_day(conn, df: pd.DataFrame, target: date, log) -> tuple[int, int]:
 
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT time_qh FROM marketdata_qh
+            SELECT time_qh FROM esios_marketdata
             WHERE time_qh >= %s AND time_qh <= %s
         """, (start_utc, end_utc))
         existing = {row[0] for row in cur.fetchall()}
@@ -340,7 +341,7 @@ def upsert_day(conn, df: pd.DataFrame, target: date, log) -> tuple[int, int]:
             tuple(None if pd.isna(row.get(c)) else row.get(c) for c in cols)
             for _, row in df_new.iterrows()
         ]
-        sql = f"INSERT INTO marketdata_qh ({', '.join(cols)}) VALUES %s ON CONFLICT (time_qh) DO NOTHING"
+        sql = f"INSERT INTO esios_marketdata ({', '.join(cols)}) VALUES %s ON CONFLICT (time_qh) DO NOTHING"
         with conn.cursor() as cur:
             execute_values(cur, sql, records, page_size=500)
         conn.commit()
@@ -354,7 +355,7 @@ def upsert_day(conn, df: pd.DataFrame, target: date, log) -> tuple[int, int]:
         with conn.cursor() as cur:
             for _, row in df_exist.iterrows():
                 ts = row["time_qh"]
-                cur.execute(f"SELECT {cols_str} FROM marketdata_qh WHERE time_qh = %s", (ts,))
+                cur.execute(f"SELECT {cols_str} FROM esios_marketdata WHERE time_qh = %s", (ts,))
                 db_row = cur.fetchone()
                 if not db_row:
                     continue
@@ -363,7 +364,7 @@ def upsert_day(conn, df: pd.DataFrame, target: date, log) -> tuple[int, int]:
                             if db_row[i] is None and not pd.isna(row.get(col))}
                 if to_update:
                     set_clause = ", ".join([f"{c} = %s" for c in to_update])
-                    cur.execute(f"UPDATE marketdata_qh SET {set_clause} WHERE time_qh = %s",
+                    cur.execute(f"UPDATE esios_marketdata SET {set_clause} WHERE time_qh = %s",
                                list(to_update.values()) + [ts])
                     upd += 1
         conn.commit()
