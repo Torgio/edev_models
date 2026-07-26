@@ -1,0 +1,32 @@
+id,nombre,status,filas,geo_name,min_val,max_val,constante,freq,nota
+464,Instalada Hidraulica UGH,200,120,['Península'],14787.6,14787.6,True,0 days 01:00:00,
+465,Instalada Turbinacion bombeo,200,120,['Península'],3417.5,3417.5,True,0 days 01:00:00,
+466,Instalada Nuclear,200,120,['Península'],7117.2,7117.2,True,0 days 01:00:00,
+467,Instalada Hulla antracita,200,120,['Península'],687.9,687.9,True,0 days 01:00:00,
+468,Instalada Hulla sub-bituminosa,200,120,['Península'],570.0,570.0,True,0 days 01:00:00,
+469,Instalada Ciclo combinado,200,120,['Península'],24559.6,24559.6,True,0 days 01:00:00,
+470,Instalada Fuel,200,120,['Península'],7.9,7.9,True,0 days 01:00:00,
+471,Instalada Gas Natural,200,120,['Península'],561.8,561.8,True,0 days 01:00:00,
+472,Disponible Hidraulica UGH,200,120,['Península'],12640.5,12901.0,False,0 days 01:00:00,
+473,Disponible Turbinacion bombeo,200,120,['Península'],2190.7,2813.8,False,0 days 01:00:00,
+474,Disponible Nuclear,200,120,['Península'],6024.4,7117.2,False,0 days 01:00:00,
+475,Disponible Hulla antracita,200,120,['Península'],346.2,346.2,True,0 days 01:00:00,
+476,Disponible Hulla sub-bituminosa,200,0,,,,,,sin datos
+477,Disponible Ciclo combinado,200,120,['Península'],19130.1,21179.2,False,0 days 01:00:00,
+478,Disponible Fuel,200,120,['Península'],7.9,7.9,True,0 days 01:00:00,
+479,Disponible Gas Natural,200,120,['Península'],561.8,561.8,True,0 days 01:00:00,
+1482,Instalada Fuel (otra fuente),200,0,,,,,,sin datos
+1483,Instalada Ciclo combinado (otra fuente),200,0,,,,,,sin datos
+1484,Instalada Hidroeolica,200,0,,,,,,sin datos
+1485,Instalada Eolica,200,0,,,,,,sin datos
+1486,Instalada Solar fotovoltaica,200,0,,,,,,sin datos
+1487,Instalada Solar termica,200,0,,,,,,sin datos
+1488,Instalada Otras renovables,200,0,,,,,,sin datos
+1489,Instalada Cogeneracion,200,0,,,,,,sin datos
+1490,Instalada Residuos no renovables,200,0,,,,,,sin datos
+1491,Instalada Residuos renovables,200,0,,,,,,sin datos
+10300,Instalada TOTAL generacion,200,0,,,,,,sin datos
+10301,Instalada TOTAL no renovable,200,0,,,,,,sin datos
+10302,Instalada TOTAL renovable,200,0,,,,,,sin datos
+10303,Instalada TOTAL con emisiones,200,0,,,,,,sin datos
+10304,Instalada TOTAL libre de emisiones,200,0,,,,,,sin datos

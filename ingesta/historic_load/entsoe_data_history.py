@@ -24,6 +24,10 @@ import psycopg2
 from psycopg2.extras import execute_values
 from entsoe import EntsoePandasClient
 
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
 from config import load_config
 
 # ╔══════════════════════════════════════════════════════════════╗
@@ -280,7 +284,7 @@ def run():
     import json
     from pathlib import Path
     _, db_config = load_config()
-    creds  = json.load(open(Path(__file__).parent / "credentials.json"))
+    creds  = json.load(open(Path(__file__).parent.parent / "credentials.json"))
     client = EntsoePandasClient(api_key=creds["entsoe_token"])
     conn   = psycopg2.connect(**db_config)
 

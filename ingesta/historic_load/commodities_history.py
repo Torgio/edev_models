@@ -22,14 +22,17 @@ Usage:
 
 import argparse
 import logging
+import sys
 import time
 from datetime import date, timedelta
+from pathlib import Path
 
 import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
 import yfinance as yf
 
+sys.path.append(str(Path(__file__).parent.parent))
 from config import load_config
 
 # ── Configuracion ──────────────────────────────────────────────────────────────

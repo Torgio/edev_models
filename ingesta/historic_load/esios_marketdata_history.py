@@ -33,6 +33,10 @@ import requests
 import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
 from config import load_config
 
 # ╔══════════════════════════════════════════════════════════════╗
