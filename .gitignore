@@ -11,3 +11,4 @@ ingesta/import
 ingesta/data_mibgas_excel/
 !ingesta/check_tables/indicators.xlsx
 !ingesta/check_tables/indicadores.ipynb
+!ingesta/check_tables/Listado_tablas_Postgres.xlsx
