@@ -245,6 +245,14 @@ def fetch_indicator(headers, indicator_id, geo_id, target: date, log) -> pd.Seri
         "end_date":   f"{end_req}T23:59:59",
         "time_trunc": "hour",
     }
+
+    # El precio (600) ya compensa manualmente el "sum" dividiendo /4 mas abajo,
+    # asi que NO le añadimos time_agg (mantiene su logica ya validada).
+    # El resto de indicadores (demanda, generacion, 5 min nativos) SI necesitan
+    # time_agg=average explicito, o quedan inflados x12 (bug confirmado 27 julio).
+    if indicator_id != 600:
+        params["time_agg"] = "average"
+
     if geo_id is not None:
         params["geo_ids[]"] = geo_id
 
@@ -266,7 +274,6 @@ def fetch_indicator(headers, indicator_id, geo_id, target: date, log) -> pd.Seri
         # Precio ID 600 — ESIOS suma 4 cuartos horarios, dividir entre 4 desde 01-oct-2025
         if indicator_id == 600 and target >= date(2025, 10, 1):
             df = (df / 4).round(2)
-
 
         return df if not df.empty else None
 
