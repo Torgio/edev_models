@@ -19,6 +19,7 @@ import requests
 import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
+import unicodedata
 
 sys.path.append(str(Path(__file__).parent.parent))
 from config import load_config
@@ -54,53 +55,128 @@ def dia_ya_completo(db_config, fecha: date, columna: str = COLUMNA, horas_espera
     return count >= horas_esperadas
 
 
-def intentar_descargar_omie(fecha: date, intento_max_sufijo: int = 3):
-    fecha_str = fecha.strftime("%Y%m%d")
-    resp = None
 
-    for sufijo in range(1, intento_max_sufijo + 1):
+
+def _normalize_text(s: str) -> str:
+    """Normaliza acentos y pasa a minúsculas para búsqueda robusta."""
+    nf = unicodedata.normalize("NFKD", s)
+    no_accents = "".join(ch for ch in nf if not unicodedata.combining(ch))
+    return no_accents.lower()
+
+def intentar_descargar_omie(fecha: date, intento_max_sufijo: int = 3):
+    """
+    Descarga y parsea el fichero INT_PBC...TXT (formato horario) para la fecha dada.
+    Firma compatible con la función original: (fecha, intento_max_sufijo=3).
+    - Usa hasta `intento_max_sufijo` hosts (en orden) para intentar la descarga.
+    - Devuelve pd.DataFrame con columnas: "datetime" y "omie_price", o None si falla.
+    """
+    year = fecha.year
+    month = fecha.month
+    day = fecha.day
+
+    filename = f"INT_PBC_EV_H_1_60M_{day:02d}_{month:02d}_{year}_{day:02d}_{month:02d}_{year}.TXT"
+    path = f"/sites/default/files/dados/AGNO_{year}/MES_{month:02d}/TXT/{filename}"
+
+    # Hosts a probar (ordenado). Usaremos como máximo intento_max_sufijo entradas.
+    hosts = [
+        "http://omie.es",
+        "https://omie.es",
+        "http://www.omie.es",
+        "https://www.omie.es",
+    ]
+    # respetar intento_max_sufijo en el número de hosts probados (si es razonable)
+    if isinstance(intento_max_sufijo, int) and intento_max_sufijo > 0:
+        hosts_to_try = hosts[:min(len(hosts), intento_max_sufijo)]
+    else:
+        hosts_to_try = hosts
+
+    resp = None
+    for host in hosts_to_try:
+        url = host + path
         try:
-            r = requests.get(
-                f"https://www.omie.es/en/file-download?parents=marginalpdbc&filename=marginalpdbc_{fecha_str}.{sufijo}",
-                timeout=30
-            )
+            r = requests.get(url, timeout=30)
             if r.status_code == 200 and len(r.text.strip()) > 10:
                 resp = r
+                print(f"    Archivo encontrado: {url}")
                 break
+            else:
+                # mostrar código si no fue 200 para depuración
+                print(f"    Intento {url} -> status {r.status_code}")
         except Exception as e:
-            print(f"    Error sufijo .{sufijo}: {e}")
+            print(f"    Error descargando {url}: {e}")
+
+    # Intentar variante con .txt en minúsculas si no hallado aún
+    if resp is None:
+        alt_path = path.replace(".TXT", ".txt")
+        for host in hosts_to_try:
+            url = host + alt_path
+            try:
+                r = requests.get(url, timeout=30)
+                if r.status_code == 200 and len(r.text.strip()) > 10:
+                    resp = r
+                    print(f"    Archivo encontrado (alt): {url}")
+                    break
+                else:
+                    print(f"    Intento {url} -> status {r.status_code}")
+            except Exception as e:
+                print(f"    Error descargando {url}: {e}")
 
     if resp is None:
         print(f"    No se encontro archivo para {fecha}")
         return None
 
-    filas = []
-    for linea in resp.text.strip().splitlines():
-        partes = linea.split(";")
-        if len(partes) >= 5 and partes[0].strip().isdigit():
-            periodo = int(partes[3])
-            precio = float(partes[4].replace(",", "."))
-            filas.append({"periodo": periodo, "omie_price": precio})
+    # Buscar la línea que contiene "Precio marginal en el sistema español"
+    target_key = "precio marginal en el sistema espanol"
+    found_values = None
+    for linea in resp.text.splitlines():
+        linea_stripped = linea.strip()
+        if not linea_stripped:
+            continue
+        if target_key in _normalize_text(linea_stripped):
+            # dividir por ';' y extraer valores numéricos
+            partes = [p.strip() for p in linea_stripped.split(";")]
+            valores = []
+            for p in partes:
+                if p == "" or any(c.isalpha() for c in p):
+                    continue
+                token = p
+                # normalizar números: si tiene tanto '.' como ',' asumimos punto de miles y coma decimal
+                if ',' in token and '.' in token:
+                    token = token.replace('.', '').replace(',', '.')
+                else:
+                    token = token.replace(',', '.')
+                try:
+                    val = float(token)
+                    valores.append(val)
+                except Exception:
+                    continue
+            if valores:
+                found_values = valores
+                break
 
-    if not filas:
-        print(f"    Archivo vacio para {fecha}")
+    if not found_values:
+        print("    No se encontró la línea 'Precio marginal en el sistema español' con valores válidos.")
         return None
 
-    df = pd.DataFrame(filas)
-    n_periodos = df["periodo"].nunique()
-    if n_periodos < HORAS_ESPERADAS:
-        print(f"    Datos incompletos ({n_periodos} periodos)")
-        return None
+    # Asegurar 24 valores; truncar o rellenar con NaN si es necesario
+    if len(found_values) != 24:
+        print(f"    Atención: se encontraron {len(found_values)} valores (esperados 24). Ajustando...")
+        if len(found_values) > 24:
+            found_values = found_values[:24]
+        else:
+            from math import nan
+            found_values = found_values + [nan] * (24 - len(found_values))
 
-    minutos_por_periodo = 15 if n_periodos > 30 else 60
-    df["hora_secuencial"] = (df["periodo"] - 1) // (60 // minutos_por_periodo)
-    df_horario = df.groupby("hora_secuencial", as_index=False)["omie_price"].mean()
+    # Obtener tzinfo de variable global TZ_MADRID si existe (compatibilidad con código previo)
+    tzinfo = globals().get("TZ_MADRID", None)
 
     filas_out = []
-    for _, row in df_horario.iterrows():
-        h = int(row["hora_secuencial"])
-        dt = datetime(fecha.year, fecha.month, fecha.day, tzinfo=TZ_MADRID) + timedelta(hours=h)
-        filas_out.append({"datetime": dt, "omie_price": round(float(row["omie_price"]), 2)})
+    for h, precio in enumerate(found_values):
+        if tzinfo is not None:
+            dt = datetime(fecha.year, fecha.month, fecha.day, h, tzinfo=tzinfo)
+        else:
+            dt = datetime(fecha.year, fecha.month, fecha.day, h)
+        filas_out.append({"datetime": dt, "omie_price": None if precio is None else round(float(precio), 2)})
 
     return pd.DataFrame(filas_out)
 
