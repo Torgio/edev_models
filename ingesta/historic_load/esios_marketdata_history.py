@@ -194,6 +194,13 @@ def fetch_chunk(headers, start, end):
     for col, (ind_id, geo_id) in INDICATORS.items():
         serie = fetch_indicator(headers, ind_id, geo_id, start, end)
         if serie is not None:
+            # Correccion de precio: /4 desde oct-2025 (misma logica que produccion)
+            if col == "price_eur_mwh":
+                serie = serie.copy()
+                mask = serie.index.date >= date(2025, 10, 1)
+                serie.loc[mask] = (serie.loc[mask] / 4).round(2)
+            else:
+                serie = serie.round(2)
             frames[col] = serie
         time.sleep(PAUSE_SEC)
     if not frames:

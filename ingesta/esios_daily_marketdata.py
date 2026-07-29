@@ -274,6 +274,8 @@ def fetch_indicator(headers, indicator_id, geo_id, target: date, log) -> pd.Seri
         # Precio ID 600 — ESIOS suma 4 cuartos horarios, dividir entre 4 desde 01-oct-2025
         if indicator_id == 600 and target >= date(2025, 10, 1):
             df = (df / 4).round(2)
+        else:
+            df = df.round(2)
 
         return df if not df.empty else None
 
