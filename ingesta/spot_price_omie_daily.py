@@ -94,8 +94,9 @@ def intentar_descargar_omie(fecha: date, intento_max_sufijo: int = 3):
     for host in hosts_to_try:
         url = host + path
         try:
-            r = requests.get(url, timeout=30)
+            r = requests.get(url, timeout=30) 
             if r.status_code == 200 and len(r.text.strip()) > 10:
+                r.encoding = "ISO-8859-1"
                 resp = r
                 print(f"    Archivo encontrado: {url}")
                 break
@@ -127,12 +128,14 @@ def intentar_descargar_omie(fecha: date, intento_max_sufijo: int = 3):
 
     # Buscar la línea que contiene "Precio marginal en el sistema español"
     target_key = "precio marginal en el sistema espanol"
+    otro_pais_key = "portugues"
     found_values = None
     for linea in resp.text.splitlines():
         linea_stripped = linea.strip()
         if not linea_stripped:
             continue
-        if target_key in _normalize_text(linea_stripped):
+        texto_normalizado = _normalize_text(linea_stripped)
+        if target_key in texto_normalizado and otro_pais_key not in texto_normalizado:
             # dividir por ';' y extraer valores numéricos
             partes = [p.strip() for p in linea_stripped.split(";")]
             valores = []
