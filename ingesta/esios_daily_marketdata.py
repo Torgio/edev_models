@@ -58,15 +58,15 @@ INDICATORS = {
     "gen_coal_real_mw":      (547,   8741),
     "gen_cogen_real_mw":     (553,   8741),
     "resto_gen_real_mw":     (1297,  8741),
-    "saldo_francia_mw":      (10045, None),
-    "saldo_portugal_mw":     (557,   8741),
+    "saldo_francia_mw":      (10207, 8741),
+    "saldo_portugal_mw":     (10208, 8741),
     "saldo_portugal_exp_mw": (561,   8741),
-    "saldo_marruecos_mw":    (10046, None),
+    "saldo_marruecos_mw":    (10209, 8741),
     "gen_solar_prev_mw":     (542,   8741),
     "gen_solar_term_prev_mw":(543,   8741),
     "precio_banda_sec_mwh":  (634,   8741),
-    "gen_bombeo_turb_mw":    (1152,  None),
-    "cons_bombeo_mw":        (1172,  None),
+    "gen_bombeo_turb_mw":    (2079,  8741),
+    "cons_bombeo_mw":        (2078,  8741),
     "ntc_francia_imp_mw":    (488,   8741),
     "ntc_francia_exp_mw":    (492,   8741),
     "ntc_portugal_imp_mw":   (489,   8741),
@@ -161,8 +161,12 @@ def get_cols_with_nulls(conn, target: date) -> tuple[dict, dict]:
         total = cur.fetchone()[0]
 
         if total == 0:
-            # No hay nada — todas las columnas criticas y recuperables faltan
-            return {col: 999 for col in INDICATORS if col not in ESPORADICOS}, {}
+            # No hay nada — todas las columnas criticas y recuperables faltan,
+            # y los esporadicos tambien se intentan al menos una vez en la carga inicial
+            return (
+                {col: 999 for col in INDICATORS if col not in ESPORADICOS},
+                {col: 999 for col in ESPORADICOS},
+            )
 
         for col in INDICATORS:
             cur.execute(f"""
@@ -231,6 +235,15 @@ def get_day_status(conn, target: date, log) -> dict:
 
 # ── API ESIOS ──────────────────────────────────────────────────────────────────
 
+# Indicadores de saldo de interconexion (10207/10208/10209/561): son ENERGIA
+# en MWh a intervalos NATIVOS de 15 minutos (no potencia en MW), pese a que
+# ESIOS los describe como "publicacion cada hora" (eso es solo la frecuencia
+# de publicacion, no la granularidad real del dato). Requieren SUMAR los 4
+# cuartos de hora para obtener el valor horario correcto - NO promediar.
+# Confirmado contra visor oficial (bug ×4 detectado 27/28 julio 2026).
+INDICADORES_CUARTO_HORA_SUMA = {10207, 10208, 10209, 561}
+
+
 def fetch_indicator(headers, indicator_id, geo_id, target: date, log) -> pd.Series | None:
     """
     Descarga un indicador ESIOS para el dia target en hora española.
@@ -239,19 +252,27 @@ def fetch_indicator(headers, indicator_id, geo_id, target: date, log) -> pd.Seri
     start_req = target - timedelta(days=1)
     end_req   = target + timedelta(days=1)
 
-    url    = f"{ESIOS_BASE}/indicators/{indicator_id}"
-    params = {
-        "start_date": f"{start_req}T00:00:00",
-        "end_date":   f"{end_req}T23:59:59",
-        "time_trunc": "hour",
-    }
+    url = f"{ESIOS_BASE}/indicators/{indicator_id}"
 
-    # El precio (600) ya compensa manualmente el "sum" dividiendo /4 mas abajo,
-    # asi que NO le añadimos time_agg (mantiene su logica ya validada).
-    # El resto de indicadores (demanda, generacion, 5 min nativos) SI necesitan
-    # time_agg=average explicito, o quedan inflados x12 (bug confirmado 27 julio).
-    if indicator_id != 600:
-        params["time_agg"] = "average"
+    if indicator_id in INDICADORES_CUARTO_HORA_SUMA:
+        # Nativo de 15 min (energia MWh) -> pedimos crudo, sin time_trunc/time_agg,
+        # y sumamos los 4 cuartos de hora nosotros mismos mas abajo.
+        params = {
+            "start_date": f"{start_req}T00:00:00",
+            "end_date":   f"{end_req}T23:59:59",
+        }
+    else:
+        params = {
+            "start_date": f"{start_req}T00:00:00",
+            "end_date":   f"{end_req}T23:59:59",
+            "time_trunc": "hour",
+        }
+        # El precio (600) ya compensa manualmente el "sum" dividiendo /4 mas abajo,
+        # asi que NO le añadimos time_agg (mantiene su logica ya validada).
+        # El resto de indicadores (demanda, generacion, 5 min nativos) SI necesitan
+        # time_agg=average explicito, o quedan inflados x12 (bug confirmado 27 julio).
+        if indicator_id != 600:
+            params["time_agg"] = "average"
 
     if geo_id is not None:
         params["geo_ids[]"] = geo_id
@@ -267,6 +288,10 @@ def fetch_indicator(headers, indicator_id, geo_id, target: date, log) -> pd.Seri
         df["datetime_utc"] = pd.to_datetime(df["datetime_utc"], utc=True)
         df = df.set_index("datetime_utc")["value"]
         df = df[~df.index.duplicated(keep="first")]
+
+        if indicator_id in INDICADORES_CUARTO_HORA_SUMA:
+            # Agrupar los 4 cuartos de hora -> suma por hora (MWh acumulado)
+            df = df.resample("h").sum()
 
         expected = expected_hours_utc(target)
         df = df[df.index.isin(expected)]
