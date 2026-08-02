@@ -59,22 +59,22 @@ ESPORADICOS = {
 }
 
 GEN_MAPPING = {
-    "solar_mw":                 [("Solar", "Actual Aggregated")],
-    "wind_mw":                  [("Wind Onshore", "Actual Aggregated")],
-    "nuclear_mw":               [("Nuclear", "Actual Aggregated")],
-    "ccgt_mw":                  [("Fossil Gas", "Actual Aggregated")],
-    "coal_mw":                  [("Fossil Hard coal", "Actual Aggregated")],
-    "biomass_mw":               [("Biomass", "Actual Aggregated")],
-    "waste_mw":                 [("Waste", "Actual Aggregated")],
-    "other_generation_mw":      [("Other", "Actual Aggregated"),
-                                  ("Other renewable", "Actual Aggregated")],
-    "hydro_mw":                 [("Hydro Water Reservoir", "Actual Aggregated"),
-                                  ("Hydro Run-of-river and poundage", "Actual Aggregated")],
-    "pumping_generation_mw":    [("Hydro Pumped Storage", "Actual Aggregated"),
-                                  ("Energy storage", "Actual Aggregated")],
-    "pumping_consumption_mw":   [("Hydro Pumped Storage", "Actual Consumption"),
-                                  ("Energy storage", "Actual Consumption")],
-    "cogeneration_mw":          [("Fossil Oil", "Actual Aggregated")],
+    "solar_mw":                  [("Solar", "Actual Aggregated")],
+    "wind_mw":                   [("Wind Onshore", "Actual Aggregated")],
+    "nuclear_mw":                [("Nuclear", "Actual Aggregated")],
+    "ccgt_mw":                   [("Fossil Gas", "Actual Aggregated")],
+    "coal_mw":                   [("Fossil Hard coal", "Actual Aggregated")],
+    "biomass_mw":                [("Biomass", "Actual Aggregated")],
+    "waste_mw":                  [("Waste", "Actual Aggregated")],
+    "other_generation_mw":       [("Other", "Actual Aggregated"),
+                                   ("Other renewable", "Actual Aggregated")],
+    "hydro_mw":                  [("Hydro Water Reservoir", "Actual Aggregated"),
+                                   ("Hydro Run-of-river and poundage", "Actual Aggregated")],
+    "pumping_generation_mw":     [("Hydro Pumped Storage", "Actual Aggregated")],
+    "pumping_consumption_mw":    [("Hydro Pumped Storage", "Actual Consumption")],
+    "battery_storage_gen_mw":    [("Energy storage", "Actual Aggregated")],
+    "battery_storage_cons_mw":   [("Energy storage", "Actual Consumption")],
+    "cogeneration_mw":           [("Fossil Oil", "Actual Aggregated")],
 }
 
 ALL_COLS = [
@@ -83,6 +83,7 @@ ALL_COLS = [
     "solar_mw", "wind_mw", "nuclear_mw", "ccgt_mw", "coal_mw",
     "biomass_mw", "waste_mw", "hydro_mw", "cogeneration_mw",
     "other_generation_mw", "pumping_generation_mw", "pumping_consumption_mw",
+    "battery_storage_gen_mw", "battery_storage_cons_mw",
     "renewable_generation_mw", "thermal_generation_mw",
     "residual_demand_mw", "net_load_mw",
     "flow_es_fr_mw", "flow_fr_es_mw", "net_flow_fr_mw",
@@ -167,8 +168,8 @@ def fetch_day(client, target: date, log) -> pd.DataFrame | None:
     # Carga real
     try:
         df = client.query_load(COUNTRY, start=ts_start, end=ts_end)
-        filtered = filter_to_target_day(df, target)
-        frames["actual_load_mw"] = resample_hourly(filtered["Actual Load"])
+        resampled = resample_hourly(df["Actual Load"])
+        frames["actual_load_mw"] = filter_to_target_day(resampled.to_frame(name="actual_load_mw"), target)["actual_load_mw"]
         log.debug(f"    actual_load: {len(frames['actual_load_mw'])} horas")
     except Exception as e:
         log.warning(f"    actual_load: {e}")
@@ -177,15 +178,15 @@ def fetch_day(client, target: date, log) -> pd.DataFrame | None:
     # Generacion por tecnologia
     try:
         df_gen = client.query_generation(COUNTRY, start=ts_start, end=ts_end)
-        df_gen_filtered = filter_to_target_day(df_gen, target)
         for col, src_cols in GEN_MAPPING.items():
             values = None
             for src_col in src_cols:
-                if src_col in df_gen_filtered.columns:
-                    v = df_gen_filtered[src_col].fillna(0)
+                if src_col in df_gen.columns:
+                    v = df_gen[src_col].fillna(0)
                     values = v if values is None else values + v
             if values is not None:
-                frames[col] = resample_hourly(values)
+                resampled = resample_hourly(values)
+                frames[col] = filter_to_target_day(resampled.to_frame(name=col), target)[col]
     except Exception as e:
         log.warning(f"    generation: {e}")
     time.sleep(PAUSA_API_SEC)
@@ -199,8 +200,8 @@ def fetch_day(client, target: date, log) -> pd.DataFrame | None:
     ]:
         try:
             df_flow = client.query_crossborder_flows(c_from, c_to, start=ts_start, end=ts_end)
-            filtered = filter_to_target_day(df_flow, target)
-            frames[col] = resample_hourly(filtered)
+            resampled = resample_hourly(df_flow)
+            frames[col] = filter_to_target_day(resampled.to_frame(name=col), target)[col]
         except Exception as e:
             log.warning(f"    flow {c_from}→{c_to}: {e}")
         time.sleep(PAUSA_API_SEC)

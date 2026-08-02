@@ -71,10 +71,10 @@ GEN_MAPPING = {
                                   ("Other renewable", "Actual Aggregated")],
     "hydro_mw":                 [("Hydro Water Reservoir", "Actual Aggregated"),
                                   ("Hydro Run-of-river and poundage", "Actual Aggregated")],
-    "pumping_generation_mw":    [("Hydro Pumped Storage", "Actual Aggregated"),
-                                  ("Energy storage", "Actual Aggregated")],
-    "pumping_consumption_mw":   [("Hydro Pumped Storage", "Actual Consumption"),
-                                  ("Energy storage", "Actual Consumption")],
+    "pumping_generation_mw":    [("Hydro Pumped Storage", "Actual Aggregated")],
+    "pumping_consumption_mw":   [("Hydro Pumped Storage", "Actual Consumption")],
+    "battery_storage_gen_mw":   [("Energy storage", "Actual Aggregated")],
+    "battery_storage_cons_mw":  [("Energy storage", "Actual Consumption")],
     "cogeneration_mw":          [("Fossil Oil", "Actual Aggregated")],
 }
 
@@ -84,6 +84,7 @@ ALL_COLS = [
     "solar_mw", "wind_mw", "nuclear_mw", "ccgt_mw", "coal_mw",
     "biomass_mw", "waste_mw", "hydro_mw", "cogeneration_mw",
     "other_generation_mw", "pumping_generation_mw", "pumping_consumption_mw",
+    "battery_storage_gen_mw", "battery_storage_cons_mw",
     "renewable_generation_mw", "thermal_generation_mw",
     "residual_demand_mw", "net_load_mw",
     "flow_es_fr_mw", "flow_fr_es_mw", "net_flow_fr_mw",
