@@ -28,8 +28,8 @@ sys.path.append(str(Path(__file__).parent.parent))
 from config import load_config
 
 # ══════════════════════════════════════════════════════════════════
-START_DATE = "2025-06-24"
-END_DATE   = "2025-07-01"
+START_DATE = "2020-01-01"
+END_DATE   = "2026-08-01"
 CHUNK_DAYS = 7
 TOLERANCIA = 0.01   # diferencias menores a esto se ignoran (redondeo)
 # ══════════════════════════════════════════════════════════════════
