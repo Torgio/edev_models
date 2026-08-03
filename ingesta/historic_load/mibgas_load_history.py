@@ -1,14 +1,18 @@
 """
-TFM Energia UCM — MIBGAS Data Loader
-Carga el precio diario de gas natural MIBGAS PVB API Day-Ahead
-desde los ficheros Excel anuales descargados de mibgas.es.
+TFM Energia UCM — MIBGAS Data Loader v4 (final)
+Carga el precio diario de gas natural MIBGAS desde ficheros Excel anuales.
 
-Producto: MIBGAS PVB Average Price Index Day-Ahead (API_DA) en EUR/MWh
-Hoja Excel: MIBGAS Indexes
-Columna: MIBGAS PVB Average Price Index Day-Ahead [EUR/MWh]
+Producto: MIBGAS-ES Index / MIBGAS Index — indice oficial consolidado España
+Homogeneo para toda la serie 2020-2026.
 
-Colocar los ficheros Excel en: ingesta/mibgas/
-Formato nombre: MIBGAS_Data_YYYY.xlsx
+Compatibilidad automatica por año:
+  2020      : hoja 'Indices'       → columna 'MIBGAS-ES Index [EUR/MWh]'
+  2021-2022 : hoja 'Indices'       → columna 'MIBGAS Index [EUR/MWh]'
+  2023-2026 : hoja 'MIBGAS Indexes'→ columna 'MIBGAS-ES Index [EUR/MWh]'
+
+La columna se detecta automaticamente en cada fichero.
+
+Colocar ficheros en: ingesta/mibgas/MIBGAS_Data_YYYY.xlsx
 
 Usage:
     python mibgas_load.py
@@ -23,15 +27,14 @@ import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
 
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
 from config import load_config
 
-# ── Configuracion ──────────────────────────────────────────────────────────────
-
-MIBGAS_FOLDER    = Path(__file__).parent / "mibgas"
-SHEET_NAME       = "MIBGAS Indexes"
-COL_FECHA        = "Delivery day"
-COL_API_DA       = "MIBGAS PVB Average Price Index Day-Ahead\n[EUR/MWh]"
-DB_COLUMN        = "gas_mibgas"
+COL_FECHA  = "Delivery day"
+DB_COLUMN  = "gas_mibgas"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,25 +43,69 @@ logging.basicConfig(
 )
 log = logging.getLogger("mibgas_load")
 
-# ── Lectura Excel ──────────────────────────────────────────────────────────────
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def find_sheet(xl: pd.ExcelFile) -> str | None:
+    """Detecta la hoja correcta segun el año del fichero."""
+    sheets = xl.sheet_names
+    if "MIBGAS Indexes" in sheets:
+        return "MIBGAS Indexes"
+    elif "Indices" in sheets:
+        return "Indices"
+    return None
+
+
+def find_precio_col(df: pd.DataFrame) -> str | None:
+    """
+    Busca dinamicamente la columna del indice MIBGAS-ES principal.
+    Excluye: LNG, AVB, VTP, PT, PVB, Last Price, Average Price.
+    """
+    for col in df.columns:
+        col_upper = col.upper()
+        if ("MIBGAS" in col_upper and "INDEX" in col_upper and
+            "LNG"     not in col_upper and
+            "AVB"     not in col_upper and
+            "VTP"     not in col_upper and
+            "-PT"     not in col_upper and
+            "PVB"     not in col_upper and
+            "LAST"    not in col_upper and
+            "AVERAGE" not in col_upper and
+            "VOLUME"  not in col_upper):
+            return col
+    return None
+
 
 def read_mibgas_file(filepath: Path) -> pd.DataFrame | None:
-    """Lee un fichero Excel de MIBGAS y devuelve DataFrame con fecha y API_DA."""
+    """Lee un fichero Excel MIBGAS y extrae el indice diario ES."""
     try:
-        df = pd.read_excel(filepath, sheet_name=SHEET_NAME)
-
-        # Verificar columnas
-        if COL_FECHA not in df.columns or COL_API_DA not in df.columns:
-            log.error(f"  Columnas no encontradas en {filepath.name}")
-            log.error(f"  Columnas disponibles: {df.columns.tolist()}")
+        xl = pd.ExcelFile(filepath)
+        sheet = find_sheet(xl)
+        if sheet is None:
+            log.error(f"  Hoja no encontrada en {filepath.name} — hojas: {xl.sheet_names}")
             return None
 
-        # Seleccionar y limpiar
-        df = df[[COL_FECHA, COL_API_DA]].copy()
+        df = pd.read_excel(filepath, sheet_name=sheet)
+
+        # Detectar columna de precio
+        col_precio = find_precio_col(df)
+        if col_precio is None:
+            log.error(f"  Columna de precio no encontrada en {filepath.name}")
+            log.error(f"  Columnas: {df.columns.tolist()}")
+            return None
+
+        if COL_FECHA not in df.columns:
+            log.error(f"  Columna 'Delivery day' no encontrada en {filepath.name}")
+            return None
+
+        log.info(f"  Hoja: '{sheet}' | Columna: '{col_precio.strip()}'")
+
+        # Seleccionar, limpiar y filtrar
+        df = df[[COL_FECHA, col_precio]].copy()
         df.columns = ["fecha", "gas_mibgas"]
         df["fecha"] = pd.to_datetime(df["fecha"], dayfirst=True, errors="coerce").dt.date
         df["gas_mibgas"] = pd.to_numeric(df["gas_mibgas"], errors="coerce")
         df = df.dropna(subset=["fecha", "gas_mibgas"])
+        df = df.drop_duplicates(subset=["fecha"], keep="first")
 
         log.info(f"  {filepath.name}: {len(df)} filas "
                  f"({df['fecha'].min()} → {df['fecha'].max()})")
@@ -72,10 +119,7 @@ def read_mibgas_file(filepath: Path) -> pd.DataFrame | None:
 
 def get_existing_dates(conn, fechas: list) -> set:
     with conn.cursor() as cur:
-        cur.execute("""
-            SELECT fecha FROM commodities
-            WHERE fecha = ANY(%s)
-        """, (fechas,))
+        cur.execute("SELECT fecha FROM commodities WHERE fecha = ANY(%s)", (fechas,))
         return {row[0] for row in cur.fetchall()}
 
 
@@ -109,8 +153,7 @@ def update_nulls(conn, records: list) -> int:
     with conn.cursor() as cur:
         for fecha, valor in records:
             cur.execute(f"""
-                UPDATE commodities
-                SET {DB_COLUMN} = %s
+                UPDATE commodities SET {DB_COLUMN} = %s
                 WHERE fecha = %s AND {DB_COLUMN} IS NULL
             """, (valor, fecha))
             if cur.rowcount > 0:
@@ -124,18 +167,15 @@ def run(folder: Path):
     _, db_config = load_config()
     conn = psycopg2.connect(**db_config)
     log.info("Connected to PostgreSQL OK")
+    log.info(f"Producto: MIBGAS-ES Index — indice oficial consolidado España")
 
-    # Buscar todos los ficheros Excel de MIBGAS
     files = sorted(folder.glob("MIBGAS_Data_*.xlsx"))
     if not files:
         log.error(f"No se encontraron ficheros MIBGAS_Data_*.xlsx en {folder}")
         return
 
     log.info(f"Ficheros encontrados: {len(files)}")
-
-    total_ins = 0
-    total_upd = 0
-    total_skip = 0
+    total_ins, total_upd, total_skip = 0, 0, 0
 
     for filepath in files:
         log.info(f"\nProcesando {filepath.name}...")
@@ -143,15 +183,11 @@ def run(folder: Path):
         if df is None:
             continue
 
-        fechas = list(df["fecha"].tolist())
-
-        # Consulta BD
+        fechas     = list(df["fecha"].tolist())
         existing   = get_existing_dates(conn, fechas)
         with_nulls = get_dates_with_nulls(conn, fechas)
 
-        new_records    = []
-        update_records = []
-        skip           = 0
+        new_records, update_records, skip = [], [], 0
 
         for _, row in df.iterrows():
             fecha = row["fecha"]
@@ -183,7 +219,6 @@ def run(folder: Path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="MIBGAS Excel → PostgreSQL")
-    parser.add_argument("--folder", default=str(MIBGAS_FOLDER),
-                        help="Carpeta con los ficheros MIBGAS_Data_YYYY.xlsx")
+    parser.add_argument("--folder", default=str(Path(__file__).parent.parent / "mibgas"))
     args = parser.parse_args()
     run(Path(args.folder))

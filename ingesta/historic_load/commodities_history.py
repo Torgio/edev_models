@@ -22,14 +22,17 @@ Usage:
 
 import argparse
 import logging
+import sys
 import time
 from datetime import date, timedelta
+from pathlib import Path
 
 import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
 import yfinance as yf
 
+sys.path.append(str(Path(__file__).parent.parent))
 from config import load_config
 
 # ── Configuracion ──────────────────────────────────────────────────────────────
@@ -41,8 +44,8 @@ TICKERS = {
     "MTF=F":  "carbon_api2", # Carbon API2 $/t  — desde 2020-01-02
 }
 
-START_DATE_DEFAULT = "2020-01-01"
-END_DATE_DEFAULT   = date.today().strftime("%Y-%m-%d")
+START_DATE_DEFAULT = "2026-06-24"
+END_DATE_DEFAULT   = "2026-07-16"
 
 logging.basicConfig(
     level=logging.INFO,

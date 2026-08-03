@@ -8,6 +8,10 @@ Usage:
 
 import psycopg2
 from datetime import date
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
 from config import load_config
 
 EXPECTED_START = date(2020, 1, 1)

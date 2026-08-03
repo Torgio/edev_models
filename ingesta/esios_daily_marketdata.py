@@ -46,7 +46,7 @@ LOGS_DIR = Path(__file__).parent.parent / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
 
 INDICATORS = {
-    "price_eur_mwh":         (600,   None),
+    "price_eur_mwh":         (600,   3),
     "demanda_real_mw":       (1293,  8741),
     "demanda_prev_mw":       (544,   8741),
     "gen_solar_mw":          (1295,  8741),
@@ -58,15 +58,15 @@ INDICATORS = {
     "gen_coal_real_mw":      (547,   8741),
     "gen_cogen_real_mw":     (553,   8741),
     "resto_gen_real_mw":     (1297,  8741),
-    "saldo_francia_mw":      (10045, None),
-    "saldo_portugal_mw":     (557,   8741),
+    "saldo_francia_mw":      (10207, 8741),
+    "saldo_portugal_mw":     (10208, 8741),
     "saldo_portugal_exp_mw": (561,   8741),
-    "saldo_marruecos_mw":    (10046, None),
+    "saldo_marruecos_mw":    (10209, 8741),
     "gen_solar_prev_mw":     (542,   8741),
     "gen_solar_term_prev_mw":(543,   8741),
     "precio_banda_sec_mwh":  (634,   8741),
-    "gen_bombeo_turb_mw":    (1152,  None),
-    "cons_bombeo_mw":        (1172,  None),
+    "gen_bombeo_turb_mw":    (2079,  8741),
+    "cons_bombeo_mw":        (2078,  8741),
     "ntc_francia_imp_mw":    (488,   8741),
     "ntc_francia_exp_mw":    (492,   8741),
     "ntc_portugal_imp_mw":   (489,   8741),
@@ -154,18 +154,23 @@ def get_cols_with_nulls(conn, target: date) -> tuple[dict, dict]:
 
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT COUNT(*) FROM marketdata_qh
+            SELECT COUNT(*) FROM esios_marketdata
             WHERE time_qh >= %s AND time_qh <= %s
+
         """, (start_utc, end_utc))
         total = cur.fetchone()[0]
 
         if total == 0:
-            # No hay nada — todas las columnas criticas y recuperables faltan
-            return {col: 999 for col in INDICATORS if col not in ESPORADICOS}, {}
+            # No hay nada — todas las columnas criticas y recuperables faltan,
+            # y los esporadicos tambien se intentan al menos una vez en la carga inicial
+            return (
+                {col: 999 for col in INDICATORS if col not in ESPORADICOS},
+                {col: 999 for col in ESPORADICOS},
+            )
 
         for col in INDICATORS:
             cur.execute(f"""
-                SELECT COUNT(*) FROM marketdata_qh
+                SELECT COUNT(*) FROM esios_marketdata
                 WHERE time_qh >= %s AND time_qh <= %s AND {col} IS NULL
             """, (start_utc, end_utc))
             n = cur.fetchone()[0]
@@ -189,7 +194,7 @@ def get_day_status(conn, target: date, log) -> dict:
 
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT COUNT(*) FROM marketdata_qh
+            SELECT COUNT(*) FROM esios_marketdata
             WHERE time_qh >= %s AND time_qh <= %s
         """, (start_utc, end_utc))
         total = cur.fetchone()[0]
@@ -197,7 +202,7 @@ def get_day_status(conn, target: date, log) -> dict:
         criticos_ok = True
         for col in CRITICOS:
             cur.execute(f"""
-                SELECT COUNT(*) FROM marketdata_qh
+                SELECT COUNT(*) FROM esios_marketdata
                 WHERE time_qh >= %s AND time_qh <= %s AND {col} IS NOT NULL
             """, (start_utc, end_utc))
             n = cur.fetchone()[0]
@@ -230,6 +235,15 @@ def get_day_status(conn, target: date, log) -> dict:
 
 # ── API ESIOS ──────────────────────────────────────────────────────────────────
 
+# Indicadores de saldo de interconexion (10207/10208/10209/561): son ENERGIA
+# en MWh a intervalos NATIVOS de 15 minutos (no potencia en MW), pese a que
+# ESIOS los describe como "publicacion cada hora" (eso es solo la frecuencia
+# de publicacion, no la granularidad real del dato). Requieren SUMAR los 4
+# cuartos de hora para obtener el valor horario correcto - NO promediar.
+# Confirmado contra visor oficial (bug ×4 detectado 27/28 julio 2026).
+INDICADORES_CUARTO_HORA_SUMA = {10207, 10208, 10209, 561}
+
+
 def fetch_indicator(headers, indicator_id, geo_id, target: date, log) -> pd.Series | None:
     """
     Descarga un indicador ESIOS para el dia target en hora española.
@@ -238,12 +252,28 @@ def fetch_indicator(headers, indicator_id, geo_id, target: date, log) -> pd.Seri
     start_req = target - timedelta(days=1)
     end_req   = target + timedelta(days=1)
 
-    url    = f"{ESIOS_BASE}/indicators/{indicator_id}"
-    params = {
-        "start_date": f"{start_req}T00:00:00",
-        "end_date":   f"{end_req}T23:59:59",
-        "time_trunc": "hour",
-    }
+    url = f"{ESIOS_BASE}/indicators/{indicator_id}"
+
+    if indicator_id in INDICADORES_CUARTO_HORA_SUMA:
+        # Nativo de 15 min (energia MWh) -> pedimos crudo, sin time_trunc/time_agg,
+        # y sumamos los 4 cuartos de hora nosotros mismos mas abajo.
+        params = {
+            "start_date": f"{start_req}T00:00:00",
+            "end_date":   f"{end_req}T23:59:59",
+        }
+    else:
+        params = {
+            "start_date": f"{start_req}T00:00:00",
+            "end_date":   f"{end_req}T23:59:59",
+            "time_trunc": "hour",
+        }
+        # El precio (600) ya compensa manualmente el "sum" dividiendo /4 mas abajo,
+        # asi que NO le añadimos time_agg (mantiene su logica ya validada).
+        # El resto de indicadores (demanda, generacion, 5 min nativos) SI necesitan
+        # time_agg=average explicito, o quedan inflados x12 (bug confirmado 27 julio).
+        if indicator_id != 600:
+            params["time_agg"] = "average"
+
     if geo_id is not None:
         params["geo_ids[]"] = geo_id
 
@@ -259,8 +289,18 @@ def fetch_indicator(headers, indicator_id, geo_id, target: date, log) -> pd.Seri
         df = df.set_index("datetime_utc")["value"]
         df = df[~df.index.duplicated(keep="first")]
 
+        if indicator_id in INDICADORES_CUARTO_HORA_SUMA:
+            # Agrupar los 4 cuartos de hora -> suma por hora (MWh acumulado)
+            df = df.resample("h").sum()
+
         expected = expected_hours_utc(target)
         df = df[df.index.isin(expected)]
+
+        # Precio ID 600 — ESIOS suma 4 cuartos horarios, dividir entre 4 desde 01-oct-2025
+        if indicator_id == 600 and target >= date(2025, 10, 1):
+            df = (df / 4).round(2)
+        else:
+            df = df.round(2)
 
         return df if not df.empty else None
 
@@ -322,7 +362,7 @@ def upsert_day(conn, df: pd.DataFrame, target: date, log) -> tuple[int, int]:
 
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT time_qh FROM marketdata_qh
+            SELECT time_qh FROM esios_marketdata
             WHERE time_qh >= %s AND time_qh <= %s
         """, (start_utc, end_utc))
         existing = {row[0] for row in cur.fetchall()}
@@ -335,7 +375,7 @@ def upsert_day(conn, df: pd.DataFrame, target: date, log) -> tuple[int, int]:
             tuple(None if pd.isna(row.get(c)) else row.get(c) for c in cols)
             for _, row in df_new.iterrows()
         ]
-        sql = f"INSERT INTO marketdata_qh ({', '.join(cols)}) VALUES %s ON CONFLICT (time_qh) DO NOTHING"
+        sql = f"INSERT INTO esios_marketdata ({', '.join(cols)}) VALUES %s ON CONFLICT (time_qh) DO NOTHING"
         with conn.cursor() as cur:
             execute_values(cur, sql, records, page_size=500)
         conn.commit()
@@ -349,7 +389,7 @@ def upsert_day(conn, df: pd.DataFrame, target: date, log) -> tuple[int, int]:
         with conn.cursor() as cur:
             for _, row in df_exist.iterrows():
                 ts = row["time_qh"]
-                cur.execute(f"SELECT {cols_str} FROM marketdata_qh WHERE time_qh = %s", (ts,))
+                cur.execute(f"SELECT {cols_str} FROM esios_marketdata WHERE time_qh = %s", (ts,))
                 db_row = cur.fetchone()
                 if not db_row:
                     continue
@@ -358,7 +398,7 @@ def upsert_day(conn, df: pd.DataFrame, target: date, log) -> tuple[int, int]:
                             if db_row[i] is None and not pd.isna(row.get(col))}
                 if to_update:
                     set_clause = ", ".join([f"{c} = %s" for c in to_update])
-                    cur.execute(f"UPDATE marketdata_qh SET {set_clause} WHERE time_qh = %s",
+                    cur.execute(f"UPDATE esios_marketdata SET {set_clause} WHERE time_qh = %s",
                                list(to_update.values()) + [ts])
                     upd += 1
         conn.commit()

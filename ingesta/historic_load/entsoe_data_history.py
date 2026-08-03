@@ -24,6 +24,10 @@ import psycopg2
 from psycopg2.extras import execute_values
 from entsoe import EntsoePandasClient
 
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+
 from config import load_config
 
 # ╔══════════════════════════════════════════════════════════════╗
@@ -67,10 +71,10 @@ GEN_MAPPING = {
                                   ("Other renewable", "Actual Aggregated")],
     "hydro_mw":                 [("Hydro Water Reservoir", "Actual Aggregated"),
                                   ("Hydro Run-of-river and poundage", "Actual Aggregated")],
-    "pumping_generation_mw":    [("Hydro Pumped Storage", "Actual Aggregated"),
-                                  ("Energy storage", "Actual Aggregated")],
-    "pumping_consumption_mw":   [("Hydro Pumped Storage", "Actual Consumption"),
-                                  ("Energy storage", "Actual Consumption")],
+    "pumping_generation_mw":    [("Hydro Pumped Storage", "Actual Aggregated")],
+    "pumping_consumption_mw":   [("Hydro Pumped Storage", "Actual Consumption")],
+    "battery_storage_gen_mw":   [("Energy storage", "Actual Aggregated")],
+    "battery_storage_cons_mw":  [("Energy storage", "Actual Consumption")],
     "cogeneration_mw":          [("Fossil Oil", "Actual Aggregated")],
 }
 
@@ -80,6 +84,7 @@ ALL_COLS = [
     "solar_mw", "wind_mw", "nuclear_mw", "ccgt_mw", "coal_mw",
     "biomass_mw", "waste_mw", "hydro_mw", "cogeneration_mw",
     "other_generation_mw", "pumping_generation_mw", "pumping_consumption_mw",
+    "battery_storage_gen_mw", "battery_storage_cons_mw",
     "renewable_generation_mw", "thermal_generation_mw",
     "residual_demand_mw", "net_load_mw",
     "flow_es_fr_mw", "flow_fr_es_mw", "net_flow_fr_mw",
@@ -280,7 +285,7 @@ def run():
     import json
     from pathlib import Path
     _, db_config = load_config()
-    creds  = json.load(open(Path(__file__).parent / "credentials.json"))
+    creds  = json.load(open(Path(__file__).parent.parent / "credentials.json"))
     client = EntsoePandasClient(api_key=creds["entsoe_token"])
     conn   = psycopg2.connect(**db_config)
 
