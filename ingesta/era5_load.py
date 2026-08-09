@@ -31,7 +31,7 @@ Requisitos:
 Usage:
     python era5_historical_load.py                          # 2020-01 -> mes actual - 1
     python era5_historical_load.py --start 2024-01 --end 2024-12
-    python era5_historical_load.py --start 2026-05 --end 2026-06 --force
+    python era5_historical_load.py --start 2026-05 --end 2026-06 --force  # sobre escribe los meses solicitados (no duplica)
 """
 
 import argparse
@@ -59,8 +59,14 @@ from config import load_config, load_cds_key
 
 CDS_URL = "https://cds.climate.copernicus.eu/api"
 
+# ── Configuracion ──────────────────────────────────────────────────────────────
+
+# España peninsular + Baleares. MISMO bounding box que ecmwf_forecast_load.py
+# (necesario para que el tensor de pronostico sea compatible con el de
+# entrenamiento). Excluye Canarias: sistema electrico no interconectado a la
+# peninsula, no aporta al precio del mercado peninsular (objetivo del TFM).
 AREA = {"north": 44, "west": -9.5, "south": 36, "east": 4.5}
-GRID_RESOLUTION = 0.25
+GRID_RESOLUTION = 0.25  # resolucion nativa ERA5
 
 CDS_VARIABLES = [
     "2m_temperature",
@@ -77,8 +83,14 @@ CDS_VARIABLES = [
     "mean_sea_level_pressure",
 ]
 
+# Orden y unidades del tensor .npy (mismo orden usado en process_month y en
+# ecmwf_forecast_load.py, para que ambos tensores sean compatibles):
+#   t2m: K | d2m: K | u10/v10/u100/v100: m/s | wind_gust10: m/s |
+#   ssrd: W/m2 (convertido) | ssrdc: W/m2 (convertido) | tcc: fraccion 0-1 |
+#   tp: mm (convertido desde m) | msl: Pa
 TENSOR_VAR_ORDER = ["t2m", "d2m", "u10", "v10", "u100", "v100", "wind_gust10",
                     "ssrd", "ssrdc", "tcc", "tp", "msl"]
+# Nombres netCDF alternativos para wind gust segun version del conversor CDS
 GUST_VAR_CANDIDATES = ["i10fg", "fg10"]
 
 DB_TABLE = "era5_weather_agg"
@@ -99,6 +111,8 @@ logging.basicConfig(
 log = logging.getLogger("era5_historical_load")
 
 
+# ── BD helpers (mismo criterio anti-duplicados que commodities_load.py) ────────
+
 def ensure_table(conn):
     """Crea la tabla si no existe; si ya existe con un esquema mas viejo,
     añade las columnas que falten (no borra ni toca datos existentes)."""
@@ -113,12 +127,14 @@ def ensure_table(conn):
 
 
 def get_existing_timestamps(conn, start, end) -> set:
+    """Timestamps que ya existen en la tabla para el rango dado."""
     with conn.cursor() as cur:
         cur.execute(f"SELECT ts FROM {DB_TABLE} WHERE ts >= %s AND ts <= %s", (start, end))
         return {row[0] for row in cur.fetchall()}
 
 
 def get_incomplete_timestamps(conn, start, end) -> set:
+    """Timestamps existentes con NULL en alguna columna meteorologica (recarga parcial previa)."""
     null_check = " OR ".join(f"{c} IS NULL" for c in DB_COLUMNS)
     with conn.cursor() as cur:
         cur.execute(
@@ -129,6 +145,7 @@ def get_incomplete_timestamps(conn, start, end) -> set:
 
 
 def insert_new_rows(conn, records: list) -> int:
+    """INSERT filas nuevas completas — ON CONFLICT DO NOTHING como doble proteccion."""
     if not records:
         return 0
     sql = f"""
@@ -143,6 +160,7 @@ def insert_new_rows(conn, records: list) -> int:
 
 
 def update_incomplete_rows(conn, records: list) -> int:
+    """UPDATE solo columnas NULL en timestamps existentes (equivalente a update_nulls())."""
     if not records:
         return 0
     set_clause = ", ".join(f"{c} = COALESCE({c}, %s)" for c in DB_COLUMNS)
@@ -163,6 +181,29 @@ def update_incomplete_rows(conn, records: list) -> int:
     conn.commit()
     return updated
 
+
+def overwrite_rows(conn, records: list) -> int:
+    """UPDATE incondicional (pisa cualquier valor previo, incluido tensor_path/tensor_index).
+    Usar SOLO con --force: COALESCE no sirve aqui porque una fila ya completa
+    con tensor_path apuntando a un archivo viejo/movido nunca se actualizaria."""
+    if not records:
+        return 0
+    set_clause = ", ".join(f"{c} = %s" for c in DB_COLUMNS)
+    sql = f"UPDATE {DB_TABLE} SET {set_clause}, tensor_path = %s, tensor_index = %s WHERE ts = %s"
+    updated = 0
+    with conn.cursor() as cur:
+        for row in records:
+            weather_values = row[1:-2]
+            tensor_path = row[-2]
+            tensor_index = row[-1]
+            ts = row[0]
+            cur.execute(sql, (*weather_values, tensor_path, tensor_index, ts))
+            updated += cur.rowcount
+    conn.commit()
+    return updated
+
+
+# ── Descarga y procesado ERA5 ───────────────────────────────────────────────────
 
 def month_range(start: str, end: str):
     start_dt = datetime.strptime(start, "%Y-%m")
@@ -204,10 +245,18 @@ def download_month(client: "cdsapi.Client", year_month: str, nc_path: Path, max_
 
 
 def _normalize_dims(ds: xr.Dataset) -> xr.Dataset:
+    """
+    CDS a veces devuelve 'valid_time' en vez de 'time', y dimensiones extra:
+    'number' (miembro de ensemble, size 1 en reanalisis determinista) y
+    'expver' (ERA5 final vs ERA5T preliminar, aparece al pedir meses muy
+    recientes que aun no tienen version final publicada).
+    """
     if "number" in ds.dims:
         ds = ds.isel(number=0, drop=True)
     if "expver" in ds.dims:
         if ds.sizes["expver"] > 1:
+            # Priorizar ERA5 final (expver=1) sobre ERA5T preliminar (expver=5
+            # u otros) donde ambas existan; sortby asegura que el final vaya primero.
             ds = ds.sortby("expver")
             vals = list(ds["expver"].values)
             base = ds.sel(expver=vals[0]).drop_vars("expver")
@@ -222,6 +271,15 @@ def _normalize_dims(ds: xr.Dataset) -> xr.Dataset:
 
 
 def open_era5_dataset(nc_path: Path) -> xr.Dataset:
+    """
+    Abre el archivo descargado de CDS. Aunque se pida "download_format":
+    "unarchived", CDS a veces devuelve un ZIP de todas formas cuando la
+    peticion mezcla variables acumuladas (ssrd, ssrdc, tp) e instantaneas
+    (t2m, d2m, viento, gust, tcc, msl): las separa internamente en dos
+    NetCDF (data_stream-oper_stepType-accum.nc / ...-instant.nc) y las
+    empaqueta en un ZIP. Comportamiento conocido de CDS (ver foro ECMWF),
+    no controlable desde los parametros del request.
+    """
     if zipfile.is_zipfile(nc_path):
         with tempfile.TemporaryDirectory() as tmp_extract:
             with zipfile.ZipFile(nc_path) as zf:
@@ -231,7 +289,7 @@ def open_era5_dataset(nc_path: Path) -> xr.Dataset:
             for f in extracted:
                 if f.suffix == ".nc":
                     with xr.open_dataset(f) as ds_tmp:
-                        datasets.append(ds_tmp.load())
+                        datasets.append(ds_tmp.load())  # cierra el handle al salir del "with"
             if not datasets:
                 raise RuntimeError(f"ZIP sin archivos .nc dentro: {nc_path} (contenido: {extracted})")
             return _normalize_dims(xr.merge(datasets, compat="override"))
@@ -246,12 +304,19 @@ def _gust_var_name(ds: xr.Dataset):
 
 
 def process_month(nc_path: Path, year_month: str):
+    """NetCDF (o ZIP, ver open_era5_dataset) -> tensor .npy + filas para la tabla."""
     ds = open_era5_dataset(nc_path)
     gust_var = _gust_var_name(ds)
 
     wind10 = np.sqrt(ds["u10"] ** 2 + ds["v10"] ** 2) if "u10" in ds and "v10" in ds else None
     wind100 = np.sqrt(ds["u100"] ** 2 + ds["v100"] ** 2) if "u100" in ds and "v100" in ds else None
 
+    # Construir el tensor en el orden fijo de TENSOR_VAR_ORDER, aplicando las
+    # conversiones de unidad necesarias antes de apilar:
+    #   ssrd, ssrdc: J/m2 acumulado en la hora -> W/m2 (dividir entre 3600)
+    #   tp: metros acumulados en la hora -> mm (multiplicar por 1000)
+    #   t2m, d2m, msl: sin conversion (K, K, Pa crudos)
+    #   wind10/wind100: modulo del vector, no viene directo de CDS
     tensor_layers = {
         "t2m": ds["t2m"].values if "t2m" in ds else None,
         "d2m": ds["d2m"].values if "d2m" in ds else None,
@@ -319,12 +384,19 @@ def load_month(client, year_month: str, tmp_dir: Path, conn, force: bool, db_con
         rows, tensor_path = process_month(nc_path, year_month)
 
         new_records = [r for r in rows if r[0] not in existing]
-        update_records = [r for r in rows if r[0] in incomplete]
+        if force:
+            # Con --force, las filas ya existentes (completas o no) se
+            # sobrescriben sin condicion -- necesario para refrescar
+            # tensor_path/tensor_index si apuntaban a un archivo viejo/movido.
+            overwrite_records = [r for r in rows if r[0] in existing]
+            ins = insert_new_rows(conn, new_records)
+            upd = overwrite_rows(conn, overwrite_records)
+        else:
+            update_records = [r for r in rows if r[0] in incomplete]
+            ins = insert_new_rows(conn, new_records)
+            upd = update_incomplete_rows(conn, update_records)
 
-        log.info(f"  {year_month}: {len(new_records)} timestamps nuevos, {len(update_records)} a actualizar (nulls), tensor en {tensor_path}")
-
-        ins = insert_new_rows(conn, new_records)
-        upd = update_incomplete_rows(conn, update_records)
+        log.info(f"  {year_month}: {len(new_records)} timestamps nuevos, tensor en {tensor_path}")
         log.info(f"  {year_month}: {ins} insertados, {upd} actualizados")
     except Exception as e:
         log.error(f"Error cargando {year_month}: {e}")
