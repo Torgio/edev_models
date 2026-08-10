@@ -31,7 +31,7 @@ Requisitos:
 Usage:
     python era5_historical_load.py                          # 2020-01 -> mes actual - 1
     python era5_historical_load.py --start 2024-01 --end 2024-12
-    python era5_historical_load.py --start 2026-05 --end 2026-06 --force  # sobre escribe los meses solicitados (no duplica)
+    python era5_historical_load.py --start 2026-05 --end 2026-06 --force
 """
 
 import argparse
@@ -58,6 +58,7 @@ except ImportError:
 from config import load_config, load_cds_key
 
 CDS_URL = "https://cds.climate.copernicus.eu/api"
+TENSOR_OUTPUT_DIR = Path("/data/era5_tensors")
 
 # ── Configuracion ──────────────────────────────────────────────────────────────
 
@@ -77,29 +78,31 @@ CDS_VARIABLES = [
     "100m_v_component_of_wind",
     "instantaneous_10m_wind_gust",
     "surface_solar_radiation_downwards",
-    "surface_solar_radiation_downward_clear_sky",
     "total_cloud_cover",
     "total_precipitation",
     "mean_sea_level_pressure",
 ]
+# NOTA: "surface_solar_radiation_downward_clear_sky" (ssrdc) se elimino
+# (10-ago-2026) -- ERA5 si la tiene, pero ECMWF Open Data NO la ofrece
+# ("No index entries for param=ssrdc"), asi que jamas estaria disponible
+# en produccion. Mantenerla solo en el historico crearia un canal que el
+# modelo ve en entrenamiento pero nunca en inferencia real (train/serve
+# skew) -- se prefiere no tenerla en ninguno de los dos tensores.
 
 # Orden y unidades del tensor .npy (mismo orden usado en process_month y en
 # ecmwf_forecast_load.py, para que ambos tensores sean compatibles):
 #   t2m: K | d2m: K | u10/v10/u100/v100: m/s | wind_gust10: m/s |
-#   ssrd: W/m2 (convertido) | ssrdc: W/m2 (convertido) | tcc: fraccion 0-1 |
-#   tp: mm (convertido desde m) | msl: Pa
+#   ssrd: W/m2 (convertido) | tcc: fraccion 0-1 | tp: mm (convertido) | msl: Pa
 TENSOR_VAR_ORDER = ["t2m", "d2m", "u10", "v10", "u100", "v100", "wind_gust10",
-                    "ssrd", "ssrdc", "tcc", "tp", "msl"]
+                    "ssrd", "tcc", "tp", "msl"]
 # Nombres netCDF alternativos para wind gust segun version del conversor CDS
 GUST_VAR_CANDIDATES = ["i10fg", "fg10"]
 
 DB_TABLE = "era5_weather_agg"
 DB_COLUMNS = [
     "t2m_mean", "d2m_mean", "wind10_mean", "wind100_mean", "wind_gust10_mean",
-    "ssrd_mean", "ssrdc_mean", "tcc_mean", "tp_mean", "msl_mean",
+    "ssrd_mean", "tcc_mean", "tp_mean", "msl_mean",
 ]
-
-TENSOR_OUTPUT_DIR = Path("/data/era5_tensors") # cambiar a ruta del servidor
 
 START_MONTH_DEFAULT = "2020-01"
 
@@ -227,7 +230,11 @@ def download_month(client: "cdsapi.Client", year_month: str, nc_path: Path, max_
         "year": [year],
         "month": [month],
         "day": days,
-        "time": [f"{h:02d}:00" for h in range(24)],
+        # Cada 3h (00,03,...,21 UTC), NO horario -- alineado con la
+        # granularidad real disponible en ECMWF Open Data (ver
+        # ecmwf_forecast_load.py y METEO_README.md, seccion "Ventana de
+        # contexto"/granularidad). Mismas horas UTC exactas en ambas fuentes.
+        "time": [f"{h:02d}:00" for h in range(0, 24, 3)],
         "area": [AREA["north"], AREA["west"], AREA["south"], AREA["east"]],
         "grid": [GRID_RESOLUTION, GRID_RESOLUTION],
         "data_format": "netcdf",
@@ -313,7 +320,7 @@ def process_month(nc_path: Path, year_month: str):
 
     # Construir el tensor en el orden fijo de TENSOR_VAR_ORDER, aplicando las
     # conversiones de unidad necesarias antes de apilar:
-    #   ssrd, ssrdc: J/m2 acumulado en la hora -> W/m2 (dividir entre 3600)
+    #   ssrd: J/m2 acumulado en la hora -> W/m2 (dividir entre 3600)
     #   tp: metros acumulados en la hora -> mm (multiplicar por 1000)
     #   t2m, d2m, msl: sin conversion (K, K, Pa crudos)
     #   wind10/wind100: modulo del vector, no viene directo de CDS
@@ -326,7 +333,6 @@ def process_month(nc_path: Path, year_month: str):
         "v100": ds["v100"].values if "v100" in ds else None,
         "wind_gust10": ds[gust_var].values if gust_var else None,
         "ssrd": (ds["ssrd"].values / 3600.0) if "ssrd" in ds else None,
-        "ssrdc": (ds["ssrdc"].values / 3600.0) if "ssrdc" in ds else None,
         "tcc": ds["tcc"].values if "tcc" in ds else None,
         "tp": (ds["tp"].values * 1000.0) if "tp" in ds else None,
         "msl": ds["msl"].values if "msl" in ds else None,
@@ -349,7 +355,6 @@ def process_month(nc_path: Path, year_month: str):
             float(wind100.isel(time=i).mean()) if wind100 is not None else None,
             float(ds[gust_var].isel(time=i).mean()) if gust_var else None,
             float(ds["ssrd"].isel(time=i).mean()) / 3600 if "ssrd" in ds else None,
-            float(ds["ssrdc"].isel(time=i).mean()) / 3600 if "ssrdc" in ds else None,
             float(ds["tcc"].isel(time=i).mean()) if "tcc" in ds else None,
             float(ds["tp"].isel(time=i).mean()) * 1000 if "tp" in ds else None,
             float(ds["msl"].isel(time=i).mean()) if "msl" in ds else None,
@@ -369,7 +374,7 @@ def load_month(client, year_month: str, tmp_dir: Path, conn, force: bool, db_con
     nc_path = tmp_dir / f"era5_{year_month}.nc"
     try:
         y, m = year_month.split("-")
-        expected_hours = monthrange(int(y), int(m))[1] * 24
+        expected_hours = monthrange(int(y), int(m))[1] * 8  # 8 marcas/dia (cada 3h), no 24
         start_ts = f"{year_month}-01 00:00:00"
         end_ts = f"{year_month}-{monthrange(int(y), int(m))[1]:02d} 23:00:00"
 

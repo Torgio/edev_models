@@ -100,7 +100,36 @@ pronóstico sean compatibles en shape.
   problema de estos dos loaders** — son datasets que nunca se concatenan en
   un mismo archivo, cada uno alimenta una etapa distinta del pipeline.
 
-**Ventana de contexto de la RNN — pregunta de diseño abierta, no de los loaders**
+**Granularidad — cada 3h en ambas fuentes, no horaria**
+ECMWF Open Data (gratis, la fuente que usamos) solo publica pasos cada 3h
+para el stream `oper` a 0.25° — no existe opción horaria en este tier
+gratuito (confirmado directamente por ECMWF; sí existe horario vía HRES
+completo/MARS de pago, o gratis de nuevo a través de Open-Meteo/AWS, pero
+eso es otro servicio y otra integración, no la que tenemos hoy). En vez de
+interpolar el pronóstico a horario (introduciría incertidumbre sintética) o
+migrar de fuente, se decidió **alinear ambos loaders a la misma
+granularidad de 3h** (00,03,06...21 UTC):
+- `era5_load.py` pide a CDS solo esas 8 horas/día (`"time"` recortado),
+  no las 24.
+- `ecmwf_forecast_load.py` ya estaba limitado a 3h por la propia fuente.
+
+Como las horas UTC son las mismas en ambos (00:00, 03:00... son instantes
+reales, no "pasos desde un run"), los dos tensores quedan alineados en los
+mismos timestamps exactos, no solo en la misma cantidad de pasos.
+
+**Pendiente de aplicar en servidor:** los datos ya cargados en local antes
+de este cambio (2020-2026 parcial, según cuánto se haya corrido) quedaron
+en granularidad horaria vieja (24/día) — mezclada con lo que se cargue de
+aquí en adelante (8/día). Antes de entrenar, hay que recargar con
+`--force` el rango ya descargado para unificar todo a 3h:
+```bash
+python era5_load.py --start 2020-01 --end 2026-06 --force
+```
+(ajustar el rango exacto según lo que ya se haya cargado). Se decidió
+posponer esta recarga para cuando el servidor la ejecute, en vez de
+duplicar la descarga completa en una laptop y luego repetirla allá.
+
+
 El planteamiento del TFM incluye una RNN para predecir el precio D+1, que
 normalmente necesita una ventana de contexto reciente (p. ej. últimas 24-48h
 de condiciones reales) además del pronóstico del día siguiente. El problema:
@@ -145,6 +174,18 @@ de una máquina concreta — funciona igual para cualquiera que clone el
 repo. La carpeta `tensors/` va en `.gitignore` (son binarios pesados y
 regenerables, no código).
 
+**Nombrado del tensor de pronóstico — por fecha de emisión, no de destino**
+`ecmwf_forecast_tensor_{run_date}.npy` se llama por el día en que se emitió
+el run (00Z), NO por el día que predice. Como el pronóstico es D+1, el
+tensor `..._2026-08-10.npy` contiene el pronóstico **del 11**, no del 10.
+Por eso las filas de `ecmwf_forecast_agg` con `ts` del 11 de agosto apuntan
+correctamente a `tensor_path = ..._2026-08-10.npy` — no es un desfase ni un
+bug, son dos convenciones de nombrado distintas que conviven a propósito
+(el archivo por fecha de *emisión*, la columna `ts` por fecha *predicha*).
+Un tensor con nombre de "hoy" solo existe una vez que el run de "hoy" se
+haya procesado — nunca vas a ver el tensor del día siguiente hasta que
+llegue ese día y corra el script.
+
 ---
 
 ## 3. Variables ingeridas — glosario
@@ -157,10 +198,12 @@ regenerables, no código).
 | `u100`, `v100` | m/s | Componentes de viento a 100m | Base para `wind100` — altura real de buje eólico, mejor proxy de generación |
 | `wind_gust10` | m/s | Ráfaga instantánea a 10m | Rachas extremas → autoapagado de aerogeneradores (curtailment), afecta oferta eólica de forma no lineal |
 | `ssrd` | W/m² | Radiación solar incidente real | Generación solar directa |
-| `ssrdc` | W/m² | Radiación solar en cielo despejado (teórico) | `ssrd/ssrdc` = índice real de nubosidad, mejor predictor solar que `tcc` solo |
 | `tcc` | fracción 0-1 | Nubosidad total | Atenuación solar |
 | `tp` | mm | Precipitación acumulada en la hora | Proxy de aportes hidráulicos (embalses) |
 | `msl` | Pa | Presión a nivel del mar | Régimen sinóptico (anticiclón/borrasca) — ver sección 2 |
+
+`ssrdc` (radiación en cielo despejado) se descartó tras confirmar que
+Open Data no la ofrece — ver sección 6, pendientes resueltos.
 
 `wind10`/`wind100` (las que realmente se guardan en la tabla) se calculan
 como módulo del vector: `√(u² + v²)`. El tensor guarda `u`/`v` por
@@ -227,15 +270,38 @@ FROM era5_weather_agg;
 
 ## 6. Pendientes abiertos
 
-- Confirmar disponibilidad real de `ssrdc` y el código de ráfaga en
-  ECMWF Open Data (puede no estar en su lista limitada de parámetros;
-  `ecmwf_forecast_load.py` ya maneja el caso con `NaN` si falta).
+- **Recargar histórico completo con `--force` en el servidor** (ver
+  sección 2, "Granularidad") — unificar a 3h todo lo que se haya cargado
+  en local con la granularidad horaria vieja. **Bloqueante antes de
+  entrenar.** Confirmado con `verificar_compatibilidad.py` (10-ago-2026):
+  66.7% de las filas de `era5_weather_agg` (9.244 de 13.867) siguen en
+  granularidad horaria vieja — el resto de 2025 y buena parte de 2026 se
+  cargó antes del cambio a 3h.
 - Decidir ruta de `tensor_dir` cuando esto se despliegue en el servidor
-  (disco dedicado vs. relativa al repo).
-- Validar `ecmwf_forecast_load.py` contra una descarga real (por ahora
-  solo probado con datos sintéticos).
+  (disco dedicado vs. relativa al repo) — según lo revisado por SSH, el
+  servidor no tiene disco dedicado (38G totales, 32G libres en `/dev/sda1`),
+  así que la ruta relativa actual debería servir sin cambios.
 - Resolver la ventana de contexto reciente de la RNN (ver sección 2) antes
   de diseñar el input de F12/F13.
 
 ~~Revisión de últimos días si falla el cron~~ — resuelto:
 `revisar_dias_recientes()` / `--dias-revision` en `ecmwf_forecast_load.py`.
+
+~~Granularidad tensor histórico vs. pronóstico~~ — decidido: opción C,
+ambos a 3h (ver sección 2). Falta ejecutar la recarga (primer punto de
+esta lista).
+
+~~Confirmar disponibilidad de `ssrdc`/ráfaga en Open Data~~ — **confirmado
+y resuelto (10-ago-2026, noche):** `ssrdc` **NO existe** en Open Data —
+confirmado con error explícito del cliente: `No index entries for
+param=ssrdc. Did you mean 'ssrd' instead?`. Se eliminó **de los dos
+loaders** (no solo de `PARAMS`, también de `TENSOR_VAR_ORDER`/
+`DB_COLUMNS`/esquema de tabla) — ambos tensores quedan en **11 variables**,
+sin ningún canal condenado a `NaN` permanente. `10fg` (ráfaga) sí está
+disponible y confirmada con datos reales.
+
+~~Validar `ecmwf_forecast_load.py` contra una descarga real~~ — resuelto:
+corrida real de punta a punta el 10-ago-2026 (tras corregir `area` no
+soportado, longitud 0-360, `valid_time`/`step`, y pasos cada 3h). Tensor
+`(8, 33, 57, 12)` generado, filas en `ecmwf_forecast_agg`, mismo orden de
+variables que ERA5 (verificado con `verificar_compatibilidad.py`).
