@@ -115,8 +115,10 @@ def build_row(headers, dia: date) -> dict:
         "gas_turbine_mw": raw.get("gas_turbine_mw"),
     }
 
-    no_nulos = [v for v in row.values() if v is not None]
-    row["total_mw"] = round(sum(no_nulos), 2) if no_nulos else None
+    # total_mw ya NO se calcula aqui: es GENERATED ALWAYS AS ... STORED en
+    # PostgreSQL desde el 12-ago-2026 (suma de las 7 columnas de arriba).
+    # Una columna GENERATED rechaza que el INSERT le pase un valor explicito,
+    # asi que "total_mw" no debe volver a este diccionario.
 
     return row
 
