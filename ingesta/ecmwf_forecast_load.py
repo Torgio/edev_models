@@ -27,6 +27,7 @@ Uso:
 import argparse
 import logging
 import sys
+import time
 import warnings
 from datetime import date, timedelta
 from pathlib import Path
@@ -75,13 +76,20 @@ DB_TABLE = "ecmwf_forecast_agg"
 DB_COLUMNS = ["t2m_mean", "d2m_mean", "wind10_mean", "wind100_mean", "wind_gust10_mean",
               "ssrd_mean", "tcc_mean", "tp_mean", "msl_mean"]
 
-TENSOR_OUTPUT_DIR = Path("/data/ecmwf_forecast_tensors")
+TENSOR_OUTPUT_DIR = Path(__file__).parent / "tensors" / "ecmwf_forecast"
 
 # Open Data solo mantiene una ventana movil corta (~4 dias observados en
 # data.ecmwf.int). Si el cron diario falla un dia, ese run solo se puede
 # recuperar mientras siga dentro de esta ventana -- despues se pierde para
 # siempre (no hay archivo historico como en CDS/ERA5). Ver ERA5_README.md.
 DIAS_REVISION = 4
+
+# Cron corre a las 07:00 UTC; si el run 00Z de ECMWF aun no esta publicado,
+# reintentar cada 5 min (mismo patron que entsoe_daily_pipeline.py) hasta
+# MAX_HORAS_REINTENTO. ECMWF suele publicar unas horas despues del run
+# (ver data.ecmwf.int, timestamps ~06:40-07:01 UTC observados).
+PAUSA_REINTENTO_MIN = 5
+MAX_HORAS_REINTENTO = 6
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger("ecmwf_forecast_load")
@@ -285,6 +293,37 @@ def load_forecast(run_date: str, tmp_dir: Path, conn, force: bool, db_config: di
     return conn
 
 
+def procesar_run_con_reintentos(run_date: str, tmp_dir: Path, conn, db_config: dict,
+                                 pausa_min: int = PAUSA_REINTENTO_MIN,
+                                 max_horas: int = MAX_HORAS_REINTENTO):
+    """Reintenta el run cada `pausa_min` minutos hasta que ECMWF lo publique
+    (queden las 8 marcas de D+1) o se agote `max_horas`. Mismo patron que
+    procesar_dia_con_reintentos() de entsoe_daily_pipeline.py."""
+    max_intentos = (max_horas * 60) // pausa_min
+    intento = 1
+
+    while intento <= max_intentos:
+        conn = load_forecast(run_date, tmp_dir, conn, force=False, db_config=db_config)
+
+        if conn.closed:
+            conn = psycopg2.connect(**db_config)
+        existing = get_existing_timestamps(conn, run_date)
+
+        if len(existing) == 8:
+            log.info(f"Run {run_date} completo tras {intento} intento(s)")
+            return conn
+
+        if intento >= max_intentos:
+            log.error(f"Run {run_date} no se completo tras {max_intentos} intentos ({max_horas}h) -- abandonando")
+            return conn
+
+        log.warning(f"Run {run_date} incompleto ({len(existing)}/8) -- intento {intento}/{max_intentos}, reintentando en {pausa_min} min")
+        time.sleep(pausa_min * 60)
+        intento += 1
+
+    return conn
+
+
 def revisar_dias_recientes(tmp_dir: Path, conn, db_config: dict, dias: int = DIAS_REVISION):
     """Revisa los ultimos `dias` (incluido hoy) y rellena runs que falten o
     esten incompletos, mientras Open Data todavia los tenga en su ventana
@@ -316,7 +355,12 @@ def main():
     tmp_dir = Path(args.tmp_dir)
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
-    conn = load_forecast(args.run_date, tmp_dir, conn, args.force, db_config)
+    if args.force:
+        # --force es para pruebas manuales: un intento inmediato, sin esperar
+        conn = load_forecast(args.run_date, tmp_dir, conn, True, db_config)
+    else:
+        # Modo cron: reintenta cada 5 min hasta que ECMWF publique el run
+        conn = procesar_run_con_reintentos(args.run_date, tmp_dir, conn, db_config)
 
     if not args.sin_revision:
         log.info(f"Revisando ultimos {args.dias_revision} dias (rellena huecos si Open Data aun los tiene)...")

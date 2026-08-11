@@ -58,7 +58,7 @@ except ImportError:
 from config import load_config, load_cds_key
 
 CDS_URL = "https://cds.climate.copernicus.eu/api"
-TENSOR_OUTPUT_DIR = Path("/data/era5_tensors")
+TENSOR_OUTPUT_DIR = Path(__file__).parent / "tensors" / "era5"
 
 # ── Configuracion ──────────────────────────────────────────────────────────────
 
