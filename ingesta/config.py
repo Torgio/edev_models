@@ -56,3 +56,31 @@ def load_config():
     }
 
     return headers, db_config
+
+def load_cds_key():
+    """
+    Carga y devuelve el Personal Access Token de Copernicus CDS desde credentials.json
+ 
+    Uso:
+        from config import load_cds_key
+        cds_key = load_cds_key()
+    """
+    if not CREDENTIALS_PATH.exists():
+        raise FileNotFoundError(
+            f"\n  credentials.json not found at: {CREDENTIALS_PATH}\n"
+            "  Create it with the following structure:\n"
+            "  {\n"
+            "    \"cds_api_key\": \"YOUR_COPERNICUS_CDS_PERSONAL_ACCESS_TOKEN\"\n"
+            "  }"
+        )
+ 
+    with open(CREDENTIALS_PATH) as f:
+        creds = json.load(f)
+ 
+    if "cds_api_key" not in creds:
+        raise KeyError(
+            "Falta 'cds_api_key' en credentials.json. "
+            "Añade tu Personal Access Token de https://cds.climate.copernicus.eu/profile"
+        )
+ 
+    return creds["cds_api_key"]
