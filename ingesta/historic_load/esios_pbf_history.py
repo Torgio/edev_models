@@ -62,7 +62,7 @@ from config import load_config
 # ╚══════════════════════════════════════════════════════════════╝
 
 START_DATE = "2020-01-01"
-END_DATE   = "2020-01-01"
+END_DATE   = "2026-08-11"
 
 MODO_RECALCULO = False   # False = solo inserta filas nuevas y rellena NULLs
                          # True  = descarga siempre y sobrescribe si el valor
