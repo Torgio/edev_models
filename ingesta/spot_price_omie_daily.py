@@ -11,6 +11,7 @@ Cron job (servidor, hora Madrid via CRON_TZ):
 
 import sys
 import time
+import argparse
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -225,6 +226,54 @@ def dias_incompletos_recientes(db_config, dias_atras: int = DIAS_BACKFILL):
     return incompletos
 
 
+def reparar_historico(db_config, dias: int = DIAS_BACKFILL, dry_run: bool = False):
+    """
+    Reprocesa los ultimos `dias` dias, descargando de nuevo el fichero diario
+    de OMIE para cada uno de ellos (misma logica que intentar_descargar_omie),
+    y hace upsert del precio de España corregido en spot_price.
+
+    dias: numero de dias hacia atras a reprocesar (no incluye el dia de hoy,
+          ya que ese lo gestiona el flujo normal del pipeline).
+    dry_run: si es True, no escribe en la base de datos; solo muestra que
+             se habria actualizado.
+
+    Pensado para ejecucion manual puntual, p.ej. para corregir dias en los
+    que se cargo por error el precio de Portugal en vez del de España.
+    """
+    print(f"--- Reparacion de historico ({dias} dias) ---")
+    if dry_run:
+        print("  MODO DRY-RUN: no se va a escribir nada en la base de datos.\n")
+
+    hoy = date.today()
+    fechas = [hoy - timedelta(days=i) for i in range(dias, 0, -1)]
+
+    total_filas = 0
+    dias_ok = 0
+    for fecha_f in fechas:
+        print(f"  Procesando {fecha_f}...")
+        df = intentar_descargar_omie(fecha_f)
+        df = filtrar_dia_madrid(df, fecha_f)
+
+        if df is None or df.empty:
+            print(f"    Sin datos disponibles para {fecha_f}, se omite.")
+            continue
+
+        if dry_run:
+            print(f"    [dry-run] {len(df)} horas -> ej. primera hora "
+                  f"{df.iloc[0]['datetime']} = {df.iloc[0][COLUMNA]}")
+            total_filas += len(df)
+        else:
+            n = upsert_precio(db_config, df)
+            print(f"    {n} filas upsert para {fecha_f}")
+            total_filas += n
+        dias_ok += 1
+
+        time.sleep(0.5)  # pausa breve para no saturar el servidor de OMIE
+
+    verbo = "se actualizarian" if dry_run else "se han actualizado"
+    print(f"\n  Total: {verbo} {total_filas} filas en {dias_ok}/{len(fechas)} dias con datos disponibles.")
+
+
 def upsert_precio(db_config, df: pd.DataFrame) -> int:
     if df is None or df.empty:
         return 0
@@ -244,10 +293,33 @@ def upsert_precio(db_config, df: pd.DataFrame) -> int:
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--reparar-historico",
+        action="store_true",
+        help="Reprocesa el historico (--dias dias hacia atras) y corrige spot_price. Ejecucion manual puntual.",
+    )
+    parser.add_argument(
+        "--dias",
+        type=int,
+        default=DIAS_BACKFILL,
+        help=f"Con --reparar-historico: numero de dias hacia atras a reprocesar (por defecto {DIAS_BACKFILL}).",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Con --reparar-historico: no escribe en la base de datos, solo muestra que haria.",
+    )
+    args = parser.parse_args()
+
     print(f"Pipeline diario spot_price — OMIE")
     print(f"Inicio: {datetime.now()}\n")
 
     _, db_config = load_config()
+
+    if args.reparar_historico:
+        reparar_historico(db_config, dias=args.dias, dry_run=args.dry_run)
+        return
 
     print(f"--- Backfill (ultimos {DIAS_BACKFILL} dias) ---")
     incompletos = dias_incompletos_recientes(db_config)
