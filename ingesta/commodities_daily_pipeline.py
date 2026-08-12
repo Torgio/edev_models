@@ -1,28 +1,57 @@
 """
 TFM Energia UCM — Commodities Daily Pipeline
-Actualiza diariamente los precios de commodities energeticas desde Yahoo Finance.
+============================================
+Actualiza diariamente los precios de commodities energeticas en la tabla
+commodities, combinando DOS fuentes con granularidades distintas.
 
-Fuentes:
-  - TTF=F  : Gas natural TTF (Dutch Title Transfer) EUR/MWh
-  - CO2.L  : CO2 ETS European Allowances EUR/t
-  - MTF=F  : Carbon API2 futures USD/t
+FUENTE 1 — Yahoo Finance (diaria)
+  - TTF=F : Gas natural TTF (Dutch Title Transfer Facility) EUR/MWh. ACTIVO,
+            verificado el 12/08/2026.
+  Yahoo no publica fines de semana ni festivos, asi que los NULL de esos dias
+  no son un fallo de carga.
 
-Logica:
-  - Descarga precio de cierre del dia anterior
-  - Revision ultimos 7 dias para rellenar huecos
-  - Yahoo Finance no publica fines de semana ni festivos — null es valido esos dias
-  - Reintentos si falla la conexion con Yahoo Finance
+FUENTE 2 — ESIOS, indicador 1391 (mensual)
+  - co2_ets : precio de derechos de emision. Sustituye al ticker CO2.L de
+              Yahoo, que dejo de actualizarse (y que ademas solo cubria desde
+              oct-2021, dejando 2020 y parte de 2021 vacios).
+  El 1391 es MENSUAL: el valor se replica en todos los dias del mes. Como
+  feature capta la tendencia entre meses, no los movimientos diarios del
+  mercado de emisiones. Se pide cada noche porque asi el cambio de mes se
+  recoge solo, sin necesidad de un cron mensual aparte, y porque ESIOS puede
+  revisar el valor del mes en curso.
+
+TICKERS RETIRADOS Y POR QUE
+  - CO2.L : dejo de actualizarse. Reemplazado por ESIOS 1391 (arriba).
+  - MTF=F : delistado en Yahoo ("possibly delisted; no price data found").
+            Ademas el carbon peninsular cerro en 2021 y la columna coal_mw de
+            entsoe_gen_data esta vacia desde entonces, asi que el precio del
+            carbon no explica el precio electrico español actual. La columna
+            carbon_api2 se conserva congelada con el historico 2020-2025 como
+            registro del periodo en que si habia generacion con carbon.
+
+  Importa haberlos QUITADO del diccionario y no solo comentado su uso: un
+  ticker que falla dentro del bucle puede dejar la sesion de yfinance en mal
+  estado y arrastrar a los siguientes. El corte simultaneo de las tres
+  columnas a finales de julio de 2026 encaja con ese patron.
+
+LOGICA
+  - Carga el cierre del dia anterior y revisa los ultimos 7 dias para rellenar
+    huecos, con reintentos si Yahoo falla
+  - El CO2 se recarga siempre para los 2 ultimos meses, SOBRESCRIBIENDO, para
+    recoger revisiones de ESIOS
   - Registro en pipeline_log
 
-Cron job (servidor):
-    0 18 * * * /home/ubuntu/tfm-env/bin/python /home/ubuntu/scripts/ingesta/commodities_pipeline.py >> /home/ubuntu/scripts/logs/cron_commodities.log 2>&1
+CRON (servidor):
+    0 18 * * * /home/ubuntu/tfm-env/bin/python /home/ubuntu/scripts/ingesta/commodities_daily_pipeline.py >> /home/ubuntu/scripts/logs/cron_commodities.log 2>&1
 
-Usage:
-    python commodities_pipeline.py              # carga ayer + revision 7 dias
-    python commodities_pipeline.py --fecha 2026-07-15  # fecha concreta
+USO
+    python commodities_daily_pipeline.py                     # ayer + revision
+    python commodities_daily_pipeline.py --fecha 2026-07-15  # fecha concreta
+    python commodities_daily_pipeline.py --solo-co2          # solo el CO2
 """
 
 import argparse
+import json
 import logging
 import sys
 import time
@@ -30,6 +59,7 @@ from datetime import date, timedelta, datetime
 from pathlib import Path
 
 import pandas as pd
+import requests
 import psycopg2
 from psycopg2.extras import execute_values
 import yfinance as yf
@@ -46,10 +76,20 @@ LOGS_DIR = Path(__file__).parent.parent / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
 
 TICKERS = {
-    "TTF=F":  "gas_ttf",   # Gas TTF EUR/MWh
-    "CO2.L":  "co2_ets",   # CO2 ETS EUR/t
-    # "MTF=F": "carbon_api2" — producto retirado de Yahoo Finance jul-2026
+    "TTF=F":  "gas_ttf",   # Gas TTF EUR/MWh — ACTIVO
+    # "CO2.L": "co2_ets"      — RETIRADO: dejo de actualizarse. El CO2 se carga
+    #                           desde ESIOS 1391 (ver cargar_co2_esios)
+    # "MTF=F": "carbon_api2"  — RETIRADO: delistado en Yahoo, y el carbon
+    #                           peninsular cerro en 2021
 }
+
+# ── CO2 desde ESIOS (indicador mensual) ──
+ESIOS_URL      = "https://api.esios.ree.es/indicators"
+ESIOS_CO2_IND  = 1391          # "Precio de derechos de emision de despacho (PCO2D)"
+CO2_COL        = "co2_ets"
+CO2_MESES_ATRAS = 2            # se recargan los 2 ultimos meses por si ESIOS
+                               # revisa el valor del mes en curso
+CREDS_PATH = Path(__file__).parent / "credentials.json"
 
 # ── Logger ─────────────────────────────────────────────────────────────────────
 
@@ -106,6 +146,105 @@ def download_ticker(ticker: str, start: date, end: date, log) -> pd.Series | Non
 
     log.error(f"  {ticker}: fallido tras {MAX_REINTENTOS} intentos")
     return None
+
+# ── CO2 desde ESIOS ────────────────────────────────────────────────────────────
+
+def _esios_headers() -> dict:
+    creds = json.load(open(CREDS_PATH))
+    return {"Host": creds["Host"], "x-api-key": creds["x-api-key"],
+            "Accept": "application/json"}
+
+
+def descargar_co2_esios(desde: date, hasta: date, log) -> dict:
+    """
+    Descarga el indicador 1391 en su granularidad NATIVA (mensual).
+    Devuelve {fecha_observacion: valor}.
+    """
+    url = (f"{ESIOS_URL}/{ESIOS_CO2_IND}"
+           f"?start_date={desde}T00:00:00&end_date={hasta}T23:59:59")
+    for intento in range(1, MAX_REINTENTOS + 1):
+        try:
+            r = requests.get(url, headers=_esios_headers(), timeout=60)
+            r.raise_for_status()
+            out = {}
+            for v in r.json().get("indicator", {}).get("values", []):
+                dt_str, val = (v.get("datetime") or v.get("datetime_utc")), v.get("value")
+                if not dt_str or val is None:
+                    continue
+                try:
+                    out[datetime.fromisoformat(dt_str.replace("Z", "+00:00")).date()] = float(val)
+                except Exception:
+                    pass
+            return out
+        except Exception as e:
+            log.warning(f"  ESIOS {ESIOS_CO2_IND} intento {intento}/{MAX_REINTENTOS}: "
+                        f"{str(e)[:60]}")
+            if intento < MAX_REINTENTOS:
+                time.sleep(PAUSA_REINTENTO)
+    log.error(f"  ESIOS {ESIOS_CO2_IND}: fallido tras {MAX_REINTENTOS} intentos")
+    return {}
+
+
+def cargar_co2_esios(db_config: dict, log, meses_atras: int = CO2_MESES_ATRAS) -> int:
+    """
+    Carga el CO2 de los ultimos meses en commodities.co2_ets.
+
+    El valor mensual se replica en TODOS los dias de su mes, para que la
+    columna sea utilizable junto a las diarias sin necesidad de un JOIN.
+    Se SOBRESCRIBE siempre: ESIOS puede revisar el valor del mes en curso, y
+    ademas el ultimo mes se va completando conforme avanza.
+    """
+    hoy = date.today()
+    # primer dia del mes N meses atras
+    y, m = hoy.year, hoy.month - meses_atras
+    while m <= 0:
+        m += 12
+        y -= 1
+    desde = date(y, m, 1)
+
+    log.info(f"  Indicador {ESIOS_CO2_IND} (mensual) desde {desde}")
+    datos = descargar_co2_esios(desde, hoy, log)
+    if not datos:
+        return 0
+
+    # Expandir cada observacion mensual a los dias de su mes
+    fechas = sorted(datos)
+    diario = {}
+    for i, f in enumerate(fechas):
+        fin = (fechas[i+1] - timedelta(days=1)) if i + 1 < len(fechas) else hoy
+        d = f
+        while d <= fin:
+            diario[d] = datos[f]
+            d += timedelta(days=1)
+
+    log.info(f"  {len(datos)} observaciones -> {len(diario)} dias")
+
+    conn = psycopg2.connect(**db_config)
+    fechas_d = sorted(diario)
+    existing = get_existing_dates(conn, fechas_d[0], fechas_d[-1])
+
+    nuevas  = [(f, round(diario[f], 4)) for f in fechas_d if f not in existing]
+    upserts = [(f, round(diario[f], 4)) for f in fechas_d if f in existing]
+
+    ins = upd = 0
+    if nuevas:
+        ins = insert_rows(conn, nuevas, CO2_COL)
+    if upserts:
+        with conn.cursor() as cur:
+            execute_values(cur, f"""
+                UPDATE commodities AS c
+                SET {CO2_COL} = v.valor
+                FROM (VALUES %s) AS v(f, valor)
+                WHERE c.fecha = v.f::date
+            """, upserts, template="(%s, %s::numeric)", page_size=500)
+            upd = cur.rowcount
+        conn.commit()
+    conn.close()
+
+    log.info(f"  co2_ets: {ins} insert, {upd} update "
+             f"(ultimo valor {datos[fechas[-1]]:.2f} EUR/t de {fechas[-1]})")
+    return ins + upd
+
 
 # ── BD helpers ─────────────────────────────────────────────────────────────────
 
@@ -219,11 +358,12 @@ def run():
     ayer  = hoy - timedelta(days=1)
     log   = setup_logger(hoy)
 
-    log.info("=" * 55)
+    log.info("=" * 62)
     log.info(f"Commodities Pipeline — {hoy}")
-    log.info(f"Tickers: {list(TICKERS.keys())}")
+    log.info(f"Yahoo Finance: {list(TICKERS.keys())}")
+    log.info(f"ESIOS: indicador {ESIOS_CO2_IND} (CO2, mensual) -> {CO2_COL}")
     log.info(f"Revision ultimos {DIAS_REVISION} dias")
-    log.info("=" * 55)
+    log.info("=" * 62)
 
     _, db_config = load_config()
 
@@ -238,15 +378,33 @@ def run():
     ins2, upd2 = cargar_rango(start_rev, ayer, db_config, log)
     log.info(f"  Revision: {ins2} insert, {upd2} update")
 
+    # PASO 3 — CO2 desde ESIOS (mensual)
+    # Se hace cada noche aunque el dato sea mensual: asi el cambio de mes se
+    # recoge solo y no hace falta un cron aparte. Es una sola peticion.
+    log.info(f"\n=== PASO 3: CO2 desde ESIOS (indicador {ESIOS_CO2_IND}) ===")
+    try:
+        n_co2 = cargar_co2_esios(db_config, log)
+        log.info(f"  Resultado: {n_co2} celdas escritas")
+    except Exception as e:
+        log.error(f"  Error cargando CO2: {e}")
+
     log.info("\nPipeline Commodities finalizado")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Commodities daily pipeline")
     parser.add_argument("--fecha", help="Fecha concreta YYYY-MM-DD (default: ayer)")
+    parser.add_argument("--solo-co2", action="store_true",
+                        help="Carga unicamente el CO2 desde ESIOS")
     args = parser.parse_args()
 
-    if args.fecha:
+    if args.solo_co2:
+        _, db_config = load_config()
+        log = setup_logger(date.today())
+        log.info(f"Modo solo CO2 — indicador {ESIOS_CO2_IND}")
+        n = cargar_co2_esios(db_config, log)
+        log.info(f"Resultado: {n} celdas escritas")
+    elif args.fecha:
         _, db_config = load_config()
         target = date.fromisoformat(args.fecha)
         log    = setup_logger(target)
