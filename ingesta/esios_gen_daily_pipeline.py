@@ -88,6 +88,7 @@ LOGS_DIR = Path(__file__).parent.parent / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
 CREDS_PATH = Path(__file__).parent / "credentials.json"
 
+
 # ── Indicadores, en el orden por familias de entsoe_gen_data ──────────────────
 
 INDICADORES = {
