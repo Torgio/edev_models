@@ -55,6 +55,7 @@ import requests
 import psycopg2
 from psycopg2.extras import execute_values
 
+sys.path.append(str(Path(__file__).parent.parent))
 from config import load_config
 
 # ── Configuracion ─────────────────────────────────────────────────────────────
@@ -79,7 +80,7 @@ MAX_REINTENTOS = 3
 TZ_SPAIN = ZoneInfo("Europe/Madrid")
 LOGS_DIR = Path(__file__).parent.parent / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
-CREDS_PATH = Path(__file__).parent / "credentials.json"
+CREDS_PATH = Path(__file__).parent.parent / "credentials.json"
 
 # ── Indicadores, en el orden por familias de entsoe_gen_data ──────────────────
 
