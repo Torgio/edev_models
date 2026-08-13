@@ -1,23 +1,73 @@
 """
-TFM Energia UCM — Pipeline de actualizacion diaria automatica v5
-Descarga datos ESIOS del dia anterior y los carga en PostgreSQL.
+TFM Energia UCM — Pipeline de actualizacion diaria automatica v7
+Descarga de ESIOS el precio y las metricas de CO2, y las carga en PostgreSQL.
 
-Mejoras v5:
-  - Descarga inteligente — consulta BD antes de descargar y solo pide
-    los indicadores que tienen nulls en cada dia
-  - Deteccion automatica de indicadores recurrentemente fallidos:
-    si un indicador falla en todos los dias de revision → se marca como
-    recurrente y se registra en log pero no genera descargas innecesarias
-  - Correccion UTC/hora española (ZoneInfo Europe/Madrid)
-  - Soporte dias 23h/24h/25h (cambio de hora)
-  - Revision ultimos 7 dias con descarga selectiva
-  - Dos niveles de completitud: criticos y no criticos
+QUE CAMBIA EN v6 (13-ago-2026) — CORRECCION DE UN FALLO QUE PARO 13 DIAS
+  El diccionario INDICATORS pedia 30 indicadores, pero once de esas columnas
+  ya no existen en esios_marketdata: se movieron a esios_gen cuando se creo
+  esa tabla. Como el upsert nombra todas las columnas en un unico INSERT, una
+  sola columna inexistente tumbaba la sentencia entera — incluido el precio,
+  que si tenia columna.
+  Sintoma exacto en el log: "OK: 30 | Fallidos: 0" seguido de
+  "Error upsert: column gen_solar_mw of relation esios_marketdata does not
+  exist". La descarga funcionaba; lo que fallaba era el destino.
+  Resultado: esios_marketdata se quedo en 2026-07-31 mientras esios_gen y
+  esios_load_inter llegaban al 2026-08-13, y price_eur_mwh — la variable
+  objetivo del TFM — estuvo trece dias sin cargarse.
+
+  Se elimina ademas un error de mapeo: "gen_cogen_real_mw": (553, ...). El
+  indicador 553 NO es cogeneracion, es el saldo total de interconexion
+  (verificado al construir esios_load_inter, donde se llama ree_netflow_total).
+
+QUE CARGA AHORA — 5 indicadores
+  price_eur_mwh          600     Precio mercado diario. VARIABLE OBJETIVO.
+  precio_banda_sec_mwh   634     Precio de la banda de regulacion secundaria.
+  co2_real_t           10355     Emisiones de CO2.
+  gen_libre_co2_mw     10006     Generacion libre de CO2.
+  pct_gen_libre_co2    10033     Porcentaje de generacion libre de CO2.
+
+  El resto de columnas de la tabla estan DUPLICADAS en otras tablas, que si
+  se cargan al dia, y se eliminaran cuando se recree esios_marketdata:
+    demanda_real_mw, saldo_total_int_mw, saldo_francia/portugal/marruecos_mw,
+    las seis ntc_* y saldo_portugal_exp_mw  -> esios_load_inter
+    demanda_prev_mw, gen_solar_prev_mw, gen_solar_term_prev_mw
+                                            -> esios_forecast_da
+  Verificado con 0 discrepancias sobre las 57.688 horas comunes, asi que
+  dejar de escribirlas no pierde nada.
+
+QUE CAMBIA EN v7 — LOS ESPORADICOS NUNCA SE REINTENTABAN
+  Dos fallos hermanos, heredados de la version anterior, con la misma causa:
+  una columna esporadica ausente no se volvia a pedir nunca.
+    a) ejecutar_intento() salia con "nada que hacer" en cuanto los criticos
+       estaban completos, sin mirar si los esporadicos seguian vacios.
+    b) revisar_semana() descargaba solo nulls_recuperables e ignoraba los
+       esporadicos, registrando "Solo esporadicos con nulls — OK".
+  Sintoma: los dias 1-6 y 13 de agosto tenian CO2 (se cargaron con la tabla
+  vacia, cuando el precio si estaba en nulls_recuperables) y los dias 7-12 no
+  (llegaron por la revision semanal, que nunca pidio el CO2). Corte limpio.
+  Un esporadico es justamente lo que necesita reintento: publicacion
+  irregular que se resuelve en pasadas posteriores. Ahora se pide siempre, y
+  no genera bucle porque no entra en criticos_ok ni en los pendientes.
+
+DOS SALVAGUARDAS
+  1. Verificacion previa contra information_schema. Si un indicador del
+     diccionario no tiene columna en la tabla, el script aborta ANTES de
+     descargar nada y dice exactamente cual. Este chequeo habria convertido
+     trece dias de silencio en un error visible la primera noche.
+  2. Un error estructural de SQL (columna inexistente, tipo incompatible) ya
+     no entra en el bucle de reintentos. Esperar diez minutos no arregla un
+     "column does not exist"; el bucle solo tiene sentido cuando ESIOS aun no
+     ha publicado. Ahora aborta de inmediato con codigo de salida 2.
 
 Cron job (servidor):
-    0 19 * * * /home/ubuntu/tfm-env/bin/python /home/ubuntu/scripts/ingesta/ESIOS_daily_pipeline.py >> /home/ubuntu/scripts/logs/cron.log 2>&1
+    0 19 * * * /home/ubuntu/tfm-env/bin/python \
+      /home/ubuntu/scripts/ingesta/esios_daily_marketdata.py \
+      >> /home/ubuntu/scripts/logs/cron.log 2>&1
 
-Log detallado:
-    /home/ubuntu/scripts/logs/pipeline_YYYY-MM-DD.log
+Recuperar el hueco de agosto:
+    python -u esios_daily_marketdata.py --fecha 2026-08-01
+    ... o bien:
+    python -u esios_daily_marketdata.py --dias 14
 """
 
 import time
@@ -26,7 +76,6 @@ import sys
 from datetime import date, timedelta, datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
-from collections import defaultdict
 
 import requests
 import pandas as pd
@@ -41,61 +90,40 @@ PAUSA_REINTENTO_MIN = 10
 PAUSA_INDICADOR_SEC = 0.5
 DIAS_REVISION       = 7
 TZ_SPAIN            = ZoneInfo("Europe/Madrid")
+TABLA               = "esios_marketdata"
 
 LOGS_DIR = Path(__file__).parent.parent / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
 
+# Solo lo que esta tabla sigue siendo responsable de cargar. Ver docstring.
 INDICATORS = {
     "price_eur_mwh":         (600,   3),
-    "demanda_real_mw":       (1293,  8741),
-    "demanda_prev_mw":       (544,   8741),
-    "gen_solar_mw":          (1295,  8741),
-    "gen_solar_term_real_mw":(1294,  8741),
-    "gen_wind_mw":           (551,   8741),
-    "gen_hidro_real_mw":     (546,   8741),
-    "gen_nuclear_real_mw":   (549,   8741),
-    "gen_ciclocomb_real_mw": (550,   8741),
-    "gen_coal_real_mw":      (547,   8741),
-    "gen_cogen_real_mw":     (553,   8741),
-    "resto_gen_real_mw":     (1297,  8741),
-    "saldo_francia_mw":      (10207, 8741),
-    "saldo_portugal_mw":     (10208, 8741),
-    "saldo_portugal_exp_mw": (561,   8741),
-    "saldo_marruecos_mw":    (10209, 8741),
-    "gen_solar_prev_mw":     (542,   8741),
-    "gen_solar_term_prev_mw":(543,   8741),
     "precio_banda_sec_mwh":  (634,   8741),
-    "gen_bombeo_turb_mw":    (2079,  8741),
-    "cons_bombeo_mw":        (2078,  8741),
-    "ntc_francia_imp_mw":    (488,   8741),
-    "ntc_francia_exp_mw":    (492,   8741),
-    "ntc_portugal_imp_mw":   (489,   8741),
-    "ntc_portugal_exp_mw":   (493,   8741),
-    "ntc_marruecos_imp_mw":  (490,   8741),
-    "ntc_marruecos_exp_mw":  (494,   8741),
     "co2_real_t":            (10355, 8741),
     "gen_libre_co2_mw":      (10006, 8741),
     "pct_gen_libre_co2":     (10033, 8741),
 }
 
-# Indicadores criticos — si faltan, el dia NO se considera completo y se reintenta
-CRITICOS = {"price_eur_mwh", "demanda_real_mw"}
+# Si falta, el dia NO se da por completo y se reintenta.
+CRITICOS = {"price_eur_mwh"}
 
-# Indicadores esporadicos — null es valido, no significa dato faltante
-# No se reintenta si tienen nulls — null = "no hubo operacion/intercambio esa hora"
-ESPORADICOS = {
-    "saldo_francia_mw",       # saldo neto intercambio Francia — solo cuando hay flujo
-    "saldo_marruecos_mw",     # saldo neto intercambio Marruecos — solo cuando hay flujo
-    "saldo_portugal_mw",      # saldo neto intercambio Portugal — solo cuando hay flujo
-    "saldo_portugal_exp_mw",  # exportacion Portugal — solo cuando hay flujo
-    "gen_bombeo_turb_mw",     # generacion bombeo — solo cuando opera
-    "cons_bombeo_mw",         # consumo bombeo — solo cuando opera
-    "gen_solar_term_prev_mw", # prevision solar termica — publicacion no garantizada
-    "gen_solar_prev_mw",     # prevision solar FV — API no publica para fechas pasadas
-}    
+# Null es valido: no significa dato faltante.
+# Las metricas de CO2 no siempre se publican a la vez que el precio; si se
+# marcaran como criticas, un retraso suyo bloquearia el dia entero aunque el
+# precio — lo unico verdaderamente imprescindible — ya estuviera cargado.
+ESPORADICOS = {"co2_real_t", "gen_libre_co2_mw", "pct_gen_libre_co2"}
 
 ESIOS_BASE = "https://api.esios.ree.es"
 ALL_COLS   = ["time_qh"] + list(INDICATORS.keys())
+
+
+class ErrorEstructural(Exception):
+    """
+    Fallo que NO se arregla esperando: columna inexistente, tipo incompatible,
+    tabla ausente. Distinguirlo de un retraso de publicacion es la diferencia
+    entre un error visible esta noche y trece dias de silencio.
+    """
+
 
 # ── Logger ─────────────────────────────────────────────────────────────────────
 
@@ -104,7 +132,8 @@ def setup_logger(target_date: date) -> logging.Logger:
     logger = logging.getLogger(f"pipeline_{target_date}")
     logger.setLevel(logging.DEBUG)
     logger.handlers = []
-    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s",
+                            datefmt="%Y-%m-%d %H:%M:%S")
     fh = logging.FileHandler(log_file, encoding="utf-8")
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(fmt)
@@ -115,6 +144,43 @@ def setup_logger(target_date: date) -> logging.Logger:
     logger.addHandler(ch)
     return logger
 
+
+# ── Salvaguarda 1: el diccionario contra la tabla real ─────────────────────────
+
+def verificar_esquema(db_config: dict, log) -> None:
+    """
+    Comprueba que cada indicador tiene columna en la tabla ANTES de descargar.
+    Es la comprobacion que faltaba: el desfase entre INDICATORS y el esquema
+    real es lo que dejo la tabla trece dias sin actualizar.
+    """
+    conn = psycopg2.connect(**db_config)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = %s
+            """, (TABLA,))
+            reales = {r[0] for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+    if not reales:
+        raise ErrorEstructural(f"La tabla {TABLA} no existe")
+
+    faltan = [c for c in ALL_COLS if c not in reales]
+    if faltan:
+        raise ErrorEstructural(
+            f"Estas columnas estan en INDICATORS pero no en {TABLA}: {faltan}. "
+            f"Corrige el diccionario antes de ejecutar.")
+
+    huerfanas = sorted(reales - set(ALL_COLS) - {"updated_at"})
+    if huerfanas:
+        log.info(f"  Columnas de la tabla que este pipeline NO carga "
+                 f"(estan en otras tablas): {huerfanas}")
+    log.info(f"  Esquema verificado: {len(INDICATORS)} indicadores, "
+             f"{len(reales)} columnas en {TABLA}")
+
+
 # ── Helpers UTC/hora española ──────────────────────────────────────────────────
 
 def expected_hours_utc(target: date) -> set:
@@ -122,12 +188,10 @@ def expected_hours_utc(target: date) -> set:
     Timestamps UTC esperados para el dia target en hora española.
     Soporta 23h (cambio a verano), 24h y 25h (cambio a invierno).
     """
-    start_spain = datetime(target.year, target.month, target.day, 0, 0, 0, tzinfo=TZ_SPAIN)
-    end_spain   = datetime(target.year, target.month, target.day, 23, 0, 0, tzinfo=TZ_SPAIN)
-    start_utc   = start_spain.astimezone(timezone.utc)
-    end_utc     = end_spain.astimezone(timezone.utc)
-    hours = set()
-    current = start_utc
+    start_spain = datetime(target.year, target.month, target.day, 0, tzinfo=TZ_SPAIN)
+    end_spain   = datetime(target.year, target.month, target.day, 23, tzinfo=TZ_SPAIN)
+    hours, current = set(), start_spain.astimezone(timezone.utc)
+    end_utc = end_spain.astimezone(timezone.utc)
     while current <= end_utc:
         hours.add(current)
         current += timedelta(hours=1)
@@ -135,150 +199,111 @@ def expected_hours_utc(target: date) -> set:
 
 
 def day_range_utc(target: date) -> tuple[datetime, datetime]:
-    start_spain = datetime(target.year, target.month, target.day, 0, 0, 0, tzinfo=TZ_SPAIN)
-    end_spain   = datetime(target.year, target.month, target.day, 23, 0, 0, tzinfo=TZ_SPAIN)
+    start_spain = datetime(target.year, target.month, target.day, 0, tzinfo=TZ_SPAIN)
+    end_spain   = datetime(target.year, target.month, target.day, 23, tzinfo=TZ_SPAIN)
     return start_spain.astimezone(timezone.utc), end_spain.astimezone(timezone.utc)
+
 
 # ── BD helpers ─────────────────────────────────────────────────────────────────
 
 def get_cols_with_nulls(conn, target: date) -> tuple[dict, dict]:
     """
-    Consulta la BD y devuelve:
-    - nulls_recuperables: {col: n_nulls} — indicadores que deben tener 24h completas
-    - nulls_esporadicos:  {col: n_nulls} — indicadores con datos esporadicos (null = valido)
-    Solo devuelve columnas que tienen al menos 1 null.
+    Devuelve (nulls_recuperables, nulls_esporadicos), solo columnas con nulls.
+    Una sola consulta en lugar de una por columna.
     """
     start_utc, end_utc = day_range_utc(target)
-    nulls_recuperables = {}
-    nulls_esporadicos  = {}
+    cols = list(INDICATORS)
+    conteos = ", ".join(f"count({c})" for c in cols)
 
     with conn.cursor() as cur:
-        cur.execute("""
-            SELECT COUNT(*) FROM esios_marketdata
-            WHERE time_qh >= %s AND time_qh <= %s
+        cur.execute(f"SELECT count(*), {conteos} FROM {TABLA} "
+                    f"WHERE time_qh >= %s AND time_qh <= %s", (start_utc, end_utc))
+        fila = cur.fetchone()
 
-        """, (start_utc, end_utc))
-        total = cur.fetchone()[0]
+    total = fila[0]
+    if total == 0:
+        # Dia vacio: hay que pedir TODO, tambien los esporadicos. Si solo se
+        # pidieran los criticos, los demas no se descargarian nunca.
+        return ({c: 999 for c in cols if c not in ESPORADICOS},
+                {c: 999 for c in ESPORADICOS})
 
-        if total == 0:
-            # No hay nada — todas las columnas criticas y recuperables faltan,
-            # y los esporadicos tambien se intentan al menos una vez en la carga inicial
-            return (
-                {col: 999 for col in INDICATORS if col not in ESPORADICOS},
-                {col: 999 for col in ESPORADICOS},
-            )
-
-        for col in INDICATORS:
-            cur.execute(f"""
-                SELECT COUNT(*) FROM esios_marketdata
-                WHERE time_qh >= %s AND time_qh <= %s AND {col} IS NULL
-            """, (start_utc, end_utc))
-            n = cur.fetchone()[0]
-            if n > 0:
-                if col in ESPORADICOS:
-                    nulls_esporadicos[col] = n
-                else:
-                    nulls_recuperables[col] = n
-
-    return nulls_recuperables, nulls_esporadicos
+    rec, esp = {}, {}
+    for i, c in enumerate(cols):
+        n = total - fila[i + 1]
+        if n > 0:
+            (esp if c in ESPORADICOS else rec)[c] = n
+    return rec, esp
 
 
 def get_day_status(conn, target: date, log) -> dict:
-    """
-    Analiza el estado del dia en BD.
-    Separa nulls recuperables (deben rellenarse) de esporadicos (null = valido).
-    """
     expected   = expected_hours_utc(target)
     n_expected = len(expected)
     start_utc, end_utc = day_range_utc(target)
+    marca = ""
+    if n_expected == 23:
+        marca = "  (cambio de hora: 23h)"
+    elif n_expected == 25:
+        marca = "  (cambio de hora: 25h)"
 
+    cols_cri = sorted(CRITICOS)
+    conteos = ", ".join(f"count({c})" for c in cols_cri)
     with conn.cursor() as cur:
-        cur.execute("""
-            SELECT COUNT(*) FROM esios_marketdata
-            WHERE time_qh >= %s AND time_qh <= %s
-        """, (start_utc, end_utc))
-        total = cur.fetchone()[0]
+        cur.execute(f"SELECT count(*), {conteos} FROM {TABLA} "
+                    f"WHERE time_qh >= %s AND time_qh <= %s", (start_utc, end_utc))
+        fila = cur.fetchone()
 
-        criticos_ok = True
-        for col in CRITICOS:
-            cur.execute(f"""
-                SELECT COUNT(*) FROM esios_marketdata
-                WHERE time_qh >= %s AND time_qh <= %s AND {col} IS NOT NULL
-            """, (start_utc, end_utc))
-            n = cur.fetchone()[0]
-            if n < n_expected:
-                criticos_ok = False
-                log.warning(f"    [CRITICO] {col}: {n}/{n_expected}h")
+    total = fila[0]
+    criticos_ok = True
+    for i, col in enumerate(cols_cri):
+        n = fila[i + 1]
+        if n < n_expected:
+            criticos_ok = False
+            log.warning(f"    [CRITICO] {col}: {n}/{n_expected}h")
 
-    nulls_recuperables, nulls_esporadicos = get_cols_with_nulls(conn, target)
+    rec, esp = get_cols_with_nulls(conn, target)
     es_completo = total >= n_expected and criticos_ok
+    pct = total / n_expected * 100 if n_expected else 0
 
-    pct = total / n_expected * 100
-    log.info(f"  [{target}] {total}/{n_expected}h | {pct:.0f}% | "
-             f"criticos={'✅' if criticos_ok else '❌'} | "
-             f"{'✅ COMPLETO' if es_completo else '⚠️ incompleto'}")
+    log.info(f"  [{target}] {total}/{n_expected}h{marca} | {pct:.0f}% | "
+             f"criticos={'OK' if criticos_ok else 'KO'} | "
+             f"{'COMPLETO' if es_completo else 'incompleto'}")
+    if rec:
+        log.warning(f"    [nulls recuperables] {sorted(rec)}")
+    if esp:
+        log.debug(f"    [nulls esporadicos — OK] {sorted(esp)}")
 
-    if nulls_recuperables:
-        log.warning(f"    [nulls recuperables] {list(nulls_recuperables.keys())}")
-    if nulls_esporadicos:
-        log.debug(f"    [nulls esporadicos — OK] {list(nulls_esporadicos.keys())}")
+    return {"total": total, "n_expected": n_expected, "criticos_ok": criticos_ok,
+            "es_completo": es_completo, "nulls_recuperables": rec,
+            "nulls_esporadicos": esp, "pct": pct}
 
-    return {
-        "total": total,
-        "n_expected": n_expected,
-        "criticos_ok": criticos_ok,
-        "es_completo": es_completo,
-        "nulls_recuperables": nulls_recuperables,
-        "nulls_esporadicos": nulls_esporadicos,
-        "pct": pct,
-    }
 
 # ── API ESIOS ──────────────────────────────────────────────────────────────────
 
-# Indicadores de saldo de interconexion (10207/10208/10209/561): son ENERGIA
-# en MWh a intervalos NATIVOS de 15 minutos (no potencia en MW), pese a que
-# ESIOS los describe como "publicacion cada hora" (eso es solo la frecuencia
-# de publicacion, no la granularidad real del dato). Requieren SUMAR los 4
-# cuartos de hora para obtener el valor horario correcto - NO promediar.
-# Confirmado contra visor oficial (bug ×4 detectado 27/28 julio 2026).
-INDICADORES_CUARTO_HORA_SUMA = {10207, 10208, 10209, 561}
-
-
-def fetch_indicator(headers, indicator_id, geo_id, target: date, log) -> pd.Series | None:
+def fetch_indicator(headers, indicator_id, geo_id, target: date, log):
     """
-    Descarga un indicador ESIOS para el dia target en hora española.
-    Pide target-1 hasta target+1 en UTC y filtra por hora española.
+    Descarga un indicador para el dia target en hora española.
+    Pide de target-1 a target+1 y filtra: las 00:00 españolas son las 22:00 UTC
+    del dia anterior en verano, y sin margen esas horas frontera se perdian.
+
+    Los cinco indicadores que quedan son nativos de 5 minutos y necesitan
+    time_agg=average explicito. Sin el, ESIOS SUMA por defecto y los infla ×12
+    (bug confirmado el 27 de julio de 2026).
+    El precio (600) es la excepcion: mantiene su logica ya validada de dividir
+    entre 4 desde el 01-oct-2025, sin time_agg.
     """
     start_req = target - timedelta(days=1)
     end_req   = target + timedelta(days=1)
-
-    url = f"{ESIOS_BASE}/indicators/{indicator_id}"
-
-    if indicator_id in INDICADORES_CUARTO_HORA_SUMA:
-        # Nativo de 15 min (energia MWh) -> pedimos crudo, sin time_trunc/time_agg,
-        # y sumamos los 4 cuartos de hora nosotros mismos mas abajo.
-        params = {
-            "start_date": f"{start_req}T00:00:00",
-            "end_date":   f"{end_req}T23:59:59",
-        }
-    else:
-        params = {
-            "start_date": f"{start_req}T00:00:00",
-            "end_date":   f"{end_req}T23:59:59",
-            "time_trunc": "hour",
-        }
-        # El precio (600) ya compensa manualmente el "sum" dividiendo /4 mas abajo,
-        # asi que NO le añadimos time_agg (mantiene su logica ya validada).
-        # El resto de indicadores (demanda, generacion, 5 min nativos) SI necesitan
-        # time_agg=average explicito, o quedan inflados x12 (bug confirmado 27 julio).
-        if indicator_id != 600:
-            params["time_agg"] = "average"
-
+    params = {"start_date": f"{start_req}T00:00:00",
+              "end_date":   f"{end_req}T23:59:59",
+              "time_trunc": "hour"}
+    if indicator_id != 600:
+        params["time_agg"] = "average"
     if geo_id is not None:
         params["geo_ids[]"] = geo_id
 
     try:
-        resp = requests.get(url, headers=headers, params=params, timeout=60)
+        resp = requests.get(f"{ESIOS_BASE}/indicators/{indicator_id}",
+                            headers=headers, params=params, timeout=60)
         resp.raise_for_status()
         values = resp.json().get("indicator", {}).get("values", [])
         if not values:
@@ -288,20 +313,12 @@ def fetch_indicator(headers, indicator_id, geo_id, target: date, log) -> pd.Seri
         df["datetime_utc"] = pd.to_datetime(df["datetime_utc"], utc=True)
         df = df.set_index("datetime_utc")["value"]
         df = df[~df.index.duplicated(keep="first")]
+        df = df[df.index.isin(expected_hours_utc(target))]
 
-        if indicator_id in INDICADORES_CUARTO_HORA_SUMA:
-            # Agrupar los 4 cuartos de hora -> suma por hora (MWh acumulado)
-            df = df.resample("h").sum()
-
-        expected = expected_hours_utc(target)
-        df = df[df.index.isin(expected)]
-
-        # Precio ID 600 — ESIOS suma 4 cuartos horarios, dividir entre 4 desde 01-oct-2025
         if indicator_id == 600 and target >= date(2025, 10, 1):
             df = (df / 4).round(2)
         else:
             df = df.round(2)
-
         return df if not df.empty else None
 
     except Exception as e:
@@ -309,101 +326,100 @@ def fetch_indicator(headers, indicator_id, geo_id, target: date, log) -> pd.Seri
         return None
 
 
-def fetch_indicators_selective(headers, target: date, cols_needed: set, log) -> tuple[pd.DataFrame | None, set]:
-    """
-    Descarga SOLO los indicadores que necesitamos (cols_needed).
-    Retorna (DataFrame, cols_descargadas_exitosamente).
-    """
+def fetch_indicators_selective(headers, target: date, cols_needed: set, log):
     if not cols_needed:
         return None, set()
 
-    log.info(f"  Descargando {len(cols_needed)} indicadores para {target}: {sorted(cols_needed)}")
-    frames = {}
-    cols_descargadas = set()
-    ok = fail = 0
-    fallidos = []
-
-    for col in cols_needed:
+    log.info(f"  Descargando {len(cols_needed)} indicadores para {target}: "
+             f"{sorted(cols_needed)}")
+    frames, descargadas, fallidos = {}, set(), []
+    for col in sorted(cols_needed):
         if col not in INDICATORS:
             continue
         ind_id, geo_id = INDICATORS[col]
         serie = fetch_indicator(headers, ind_id, geo_id, target, log)
         if serie is not None:
             frames[col] = serie
-            cols_descargadas.add(col)
-            ok += 1
+            descargadas.add(col)
         else:
-            fail += 1
             fallidos.append(col)
         time.sleep(PAUSA_INDICADOR_SEC)
 
-    log.info(f"  OK: {ok} | Fallidos: {fail}")
+    log.info(f"  OK: {len(descargadas)} | Fallidos: {len(fallidos)}")
     if fallidos:
-        criticos_fail = [c for c in fallidos if c in CRITICOS]
-        if criticos_fail:
-            log.warning(f"  [❌ CRITICOS fallidos]: {criticos_fail}")
-        no_crit_fail = [c for c in fallidos if c not in CRITICOS]
-        if no_crit_fail:
-            log.warning(f"  [⚠️ no criticos fallidos]: {no_crit_fail}")
+        cri = [c for c in fallidos if c in CRITICOS]
+        if cri:
+            log.warning(f"  [CRITICOS fallidos]: {cri}")
+        noc = [c for c in fallidos if c not in CRITICOS]
+        if noc:
+            log.warning(f"  [no criticos fallidos]: {noc}")
 
     if not frames:
-        return None, cols_descargadas
-
+        return None, descargadas
     df = pd.DataFrame(frames)
     df.index.name = "time_qh"
-    return df.reset_index(), cols_descargadas
+    return df.reset_index(), descargadas
+
 
 # ── INSERT + UPDATE ────────────────────────────────────────────────────────────
 
 def upsert_day(conn, df: pd.DataFrame, target: date, log) -> tuple[int, int]:
-    data_cols = list(INDICATORS.keys())
-    ins, upd  = 0, 0
+    """
+    Inserta horas nuevas y rellena nulls en las existentes.
+    Un psycopg2.errors.UndefinedColumn se reetiqueta como ErrorEstructural
+    para que no acabe en el bucle de reintentos.
+    """
+    data_cols = list(INDICATORS)
+    ins = upd = 0
     start_utc, end_utc = day_range_utc(target)
 
     with conn.cursor() as cur:
-        cur.execute("""
-            SELECT time_qh FROM esios_marketdata
-            WHERE time_qh >= %s AND time_qh <= %s
-        """, (start_utc, end_utc))
-        existing = {row[0] for row in cur.fetchall()}
+        cur.execute(f"SELECT time_qh FROM {TABLA} "
+                    f"WHERE time_qh >= %s AND time_qh <= %s", (start_utc, end_utc))
+        existing = {r[0] for r in cur.fetchall()}
 
-    # INSERT horas nuevas
-    df_new = df[~df["time_qh"].isin(existing)]
-    if not df_new.empty:
-        cols = [c for c in ALL_COLS if c in df_new.columns]
-        records = [
-            tuple(None if pd.isna(row.get(c)) else row.get(c) for c in cols)
-            for _, row in df_new.iterrows()
-        ]
-        sql = f"INSERT INTO esios_marketdata ({', '.join(cols)}) VALUES %s ON CONFLICT (time_qh) DO NOTHING"
-        with conn.cursor() as cur:
-            execute_values(cur, sql, records, page_size=500)
-        conn.commit()
-        ins = len(records)
-        log.info(f"  INSERT: {ins} filas nuevas")
+    try:
+        df_new = df[~df["time_qh"].isin(existing)]
+        if not df_new.empty:
+            cols = [c for c in ALL_COLS if c in df_new.columns]
+            records = [tuple(None if pd.isna(row.get(c)) else row.get(c) for c in cols)
+                       for _, row in df_new.iterrows()]
+            sql = (f"INSERT INTO {TABLA} ({', '.join(cols)}) VALUES %s "
+                   f"ON CONFLICT (time_qh) DO NOTHING")
+            with conn.cursor() as cur:
+                execute_values(cur, sql, records, page_size=500)
+            conn.commit()
+            ins = len(records)
+            log.info(f"  INSERT: {ins} filas nuevas")
 
-    # UPDATE nulls en filas existentes
-    df_exist = df[df["time_qh"].isin(existing)]
-    if not df_exist.empty:
-        cols_str = ", ".join([c for c in data_cols if c in df_exist.columns])
-        with conn.cursor() as cur:
-            for _, row in df_exist.iterrows():
-                ts = row["time_qh"]
-                cur.execute(f"SELECT {cols_str} FROM esios_marketdata WHERE time_qh = %s", (ts,))
-                db_row = cur.fetchone()
-                if not db_row:
-                    continue
-                cols_list = [c for c in data_cols if c in row.index]
-                to_update = {col: row[col] for i, col in enumerate(cols_list)
-                            if db_row[i] is None and not pd.isna(row.get(col))}
-                if to_update:
-                    set_clause = ", ".join([f"{c} = %s" for c in to_update])
-                    cur.execute(f"UPDATE esios_marketdata SET {set_clause} WHERE time_qh = %s",
-                               list(to_update.values()) + [ts])
-                    upd += 1
-        conn.commit()
-        if upd > 0:
-            log.info(f"  UPDATE: {upd} filas con nulls rellenados")
+        df_exist = df[df["time_qh"].isin(existing)]
+        if not df_exist.empty:
+            cols_list = [c for c in data_cols if c in df_exist.columns]
+            cols_str = ", ".join(cols_list)
+            with conn.cursor() as cur:
+                for _, row in df_exist.iterrows():
+                    ts = row["time_qh"]
+                    cur.execute(f"SELECT {cols_str} FROM {TABLA} WHERE time_qh = %s", (ts,))
+                    db_row = cur.fetchone()
+                    if not db_row:
+                        continue
+                    to_update = {c: row[c] for i, c in enumerate(cols_list)
+                                 if db_row[i] is None and not pd.isna(row.get(c))}
+                    if to_update:
+                        set_clause = ", ".join(f"{c} = %s" for c in to_update)
+                        cur.execute(f"UPDATE {TABLA} SET {set_clause} WHERE time_qh = %s",
+                                    list(to_update.values()) + [ts])
+                        upd += 1
+            conn.commit()
+            if upd:
+                log.info(f"  UPDATE: {upd} filas con nulls rellenados")
+
+    except psycopg2.errors.UndefinedColumn as e:
+        conn.rollback()
+        raise ErrorEstructural(f"Columna inexistente en {TABLA}: {e}") from e
+    except psycopg2.errors.UndefinedTable as e:
+        conn.rollback()
+        raise ErrorEstructural(f"Tabla inexistente: {e}") from e
 
     return ins, upd
 
@@ -422,13 +438,14 @@ def log_pipeline_db(conn, target, intento, ins, upd, status, mensaje, duracion, 
         log.warning(f"  pipeline_log error: {e}")
         conn.rollback()
 
+
 # ── Logica principal ───────────────────────────────────────────────────────────
 
 def ejecutar_intento(target: date, intento: int, headers: dict, db_config: dict, log) -> bool:
     t0 = time.time()
-    log.info(f"{'='*60}")
+    log.info("=" * 60)
     log.info(f"INTENTO {intento} — {target} — {datetime.now().strftime('%H:%M:%S')}")
-    log.info(f"{'='*60}")
+    log.info("=" * 60)
 
     try:
         conn = psycopg2.connect(**db_config)
@@ -436,152 +453,153 @@ def ejecutar_intento(target: date, intento: int, headers: dict, db_config: dict,
         log.error(f"  Error conexion BD: {e}")
         return False
 
-    # Consultar BD — saber exactamente qué falta
-    status = get_day_status(conn, target, log)
-    nulls_antes = set(status["nulls_recuperables"].keys())
+    try:
+        status = get_day_status(conn, target, log)
+        nulls_antes = set(status["nulls_recuperables"])
 
-    # Si todo completo y sin nulls recuperables — nada que hacer
-    if status["es_completo"] and not status["nulls_recuperables"]:
-        log.info(f"  Dia {target} completamente completo — nada que hacer")
-        if status["nulls_esporadicos"]:
-            log.info(f"  Datos esporadicos con nulls (correcto): {list(status['nulls_esporadicos'].keys())}")
-        conn.close()
+        # Los esporadicos TAMBIEN cuentan para decidir si hay algo que pedir.
+        # Si solo se mirasen los recuperables, un esporadico ausente no se
+        # reintentaria JAMAS: en cuanto el precio esta cargado, el dia se daba
+        # por bueno y las tres columnas de CO2 se quedaban vacias para siempre.
+        # No genera bucle: los esporadicos no entran en criticos_ok ni en
+        # nulls_recuperables_pendientes, asi que el dia se cierra igual aunque
+        # sigan vacios tras pedirlos.
+        if (status["es_completo"] and not status["nulls_recuperables"]
+                and not status["nulls_esporadicos"]):
+            log.info(f"  Dia {target} completo — nada que hacer")
+            return True
+
+        cols_needed = nulls_antes | set(status["nulls_esporadicos"])
+        df, descargadas = fetch_indicators_selective(headers, target, cols_needed, log)
+
+        ins = upd = 0
+        if df is not None and not df.empty:
+            ins, upd = upsert_day(conn, df, target, log)
+
+        status_fin = get_day_status(conn, target, log)
+        nulls_despues = set(status_fin["nulls_recuperables"])
+        n_exp = status_fin["n_expected"]
+
+        estado = ("ok" if status_fin["es_completo"]
+                  else "parcial" if status_fin["criticos_ok"] else "incompleto")
+        log_pipeline_db(conn, target, intento, ins, upd, estado,
+                        f"Intento {intento}: {ins} ins, {upd} upd, "
+                        f"{status_fin['total']}/{n_exp}h, "
+                        f"criticos={'ok' if status_fin['criticos_ok'] else 'KO'}",
+                        time.time() - t0, log)
+
+        if not status_fin["criticos_ok"]:
+            log.warning(f"  Criticos incompletos — reintentando en "
+                        f"{PAUSA_REINTENTO_MIN} min")
+            return False
+
+        sin_datos_api = (nulls_antes & nulls_despues) - descargadas
+        pendientes = nulls_despues - sin_datos_api
+        if pendientes:
+            log.warning(f"  Nulls recuperables pendientes: {sorted(pendientes)} "
+                        f"— reintentando")
+            return False
+
+        if sin_datos_api:
+            log.warning(f"  La API no publica datos para: {sorted(sin_datos_api)}")
+        log.info(f"  Dia {target} completo — criticos OK")
         return True
 
-    # Descargar solo los indicadores recuperables que faltan
-    # Los esporadicos tambien se intentan por si la API los publica ahora
-    cols_needed = nulls_antes | set(status["nulls_esporadicos"].keys())
-    df, cols_descargadas = fetch_indicators_selective(headers, target, cols_needed, log)
-
-    ins, upd = 0, 0
-    if df is not None and not df.empty:
-        try:
-            ins, upd = upsert_day(conn, df, target, log)
-        except Exception as e:
-            log.error(f"  Error upsert: {e}")
-            conn.rollback()
-
-    status_fin    = get_day_status(conn, target, log)
-    nulls_despues = set(status_fin["nulls_recuperables"].keys())
-    duracion      = time.time() - t0
-    es_completo   = status_fin["es_completo"]
-    n_exp         = status_fin["n_expected"]
-
-    # Nulls recuperables que persisten Y que la API no devolvio
-    nulls_sin_datos_api = nulls_antes & nulls_despues - cols_descargadas
-
-    estado_str = "ok" if es_completo else ("parcial" if status_fin["criticos_ok"] else "incompleto")
-    mensaje = (f"Intento {intento}: {ins} insertadas, {upd} actualizadas, "
-              f"{status_fin['total']}/{n_exp}h, criticos={'ok' if status_fin['criticos_ok'] else 'KO'}")
-
-    log_pipeline_db(conn, target, intento, ins, upd, estado_str, mensaje, duracion, log)
-    conn.close()
-
-    # Criticos incompletos → reintentar
-    if not status_fin["criticos_ok"]:
-        log.warning(f"  ❌ Criticos incompletos — reintentando en {PAUSA_REINTENTO_MIN} min")
-        return False
-
-    # Nulls recuperables pendientes que la API SI devolvio pero siguen en null
-    nulls_recuperables_pendientes = nulls_despues - nulls_sin_datos_api
-    if nulls_recuperables_pendientes:
-        log.warning(f"  ⚠️ Nulls recuperables pendientes: {sorted(nulls_recuperables_pendientes)} — reintentando")
-        return False
-
-    # Todo OK — criticos completos y solo quedan esporadicos/sin datos API
-    if nulls_sin_datos_api:
-        log.warning(f"  ⚠️ API no publica datos para: {sorted(nulls_sin_datos_api)}")
-    log.info(f"  ✅ Dia {target} completo — criticos OK, API no publica mas datos hoy")
-    return True
+    finally:
+        conn.close()
 
 
 def revisar_semana(headers: dict, db_config: dict, log):
-    """
-    Revision inteligente de los ultimos DIAS_REVISION dias.
-    1. Consulta BD → sabe exactamente qué indicadores recuperables faltan
-    2. Los esporadicos (intercambios, bombeo) se ignoran — null es valido
-    3. Descarga solo indicadores recuperables con nulls
-    """
     hoy = date.today()
-    log.info(f"\n--- Revision inteligente ultimos {DIAS_REVISION} dias ---")
-
+    log.info(f"\n--- Revision de los ultimos {DIAS_REVISION} dias ---")
     try:
         conn = psycopg2.connect(**db_config)
     except Exception as e:
         log.error(f"  Error BD: {e}")
         return
 
-    # Auditar BD: qué falta en cada dia
-    for i in range(2, DIAS_REVISION + 1):
-        dia = hoy - timedelta(days=i)
-        nulls_recuperables, nulls_esporadicos = get_cols_with_nulls(conn, dia)
+    try:
+        for i in range(2, DIAS_REVISION + 1):
+            dia = hoy - timedelta(days=i)
+            rec, esp = get_cols_with_nulls(conn, dia)
+            if not rec and not esp:
+                log.info(f"  [{dia}] Completo")
+                continue
 
-        if not nulls_recuperables and not nulls_esporadicos:
-            log.info(f"  [{dia}] ✅ Completo")
-            continue
-
-        if nulls_esporadicos:
-            log.debug(f"  [{dia}] Datos esporadicos con nulls (correcto): {list(nulls_esporadicos.keys())}")
-
-        if not nulls_recuperables:
-            log.info(f"  [{dia}] ✅ Solo esporadicos con nulls — OK")
-            continue
-
-        # Hay nulls recuperables — descargar solo esos
-        log.info(f"  [{dia}] Nulls recuperables: {list(nulls_recuperables.keys())} — descargando...")
-        df, _ = fetch_indicators_selective(headers, dia, set(nulls_recuperables.keys()), log)
-
-        if df is not None and not df.empty:
-            try:
+            # Se piden recuperables Y esporadicos. Un esporadico es justamente
+            # lo que necesita reintento en pasadas posteriores: publicacion
+            # irregular que se resuelve dias despues. Pedir solo los
+            # recuperables dejaba el CO2 vacio de forma permanente.
+            log.info(f"  [{dia}] Nulls: recuperables={sorted(rec)} "
+                     f"esporadicos={sorted(esp)} — descargando")
+            df, _ = fetch_indicators_selective(headers, dia, set(rec) | set(esp), log)
+            if df is not None and not df.empty:
                 ins, upd = upsert_day(conn, df, dia, log)
-                if ins + upd > 0:
-                    log.info(f"  [{dia}] {ins} insert, {upd} update")
-                else:
-                    log.info(f"  [{dia}] Sin cambios — API no devuelve datos para esos indicadores")
-            except Exception as e:
-                log.error(f"  Error {dia}: {e}")
-                conn.rollback()
-
-    conn.close()
-    log.info("--- Revision semanal completada ---\n")
+                log.info(f"  [{dia}] {ins} insert, {upd} update"
+                         if ins + upd else
+                         f"  [{dia}] Sin cambios — la API no devuelve esos indicadores")
+    finally:
+        conn.close()
+    log.info("--- Revision completada ---\n")
 
 
-def run(target: date):
+def run(target: date) -> int:
     log = setup_logger(target)
-    log.info(f"Pipeline ESIOS diario v5 — {target}")
-    log.info(f"UTC/hora española | 23/24/25h | Criticos: {CRITICOS} | Revision {DIAS_REVISION}d")
-    log.info(f"Descarga selectiva — solo indicadores con nulls en BD")
+    log.info(f"Pipeline ESIOS marketdata v7 — {target}")
+    log.info(f"  Indicadores : {len(INDICATORS)}  |  Criticos: {sorted(CRITICOS)}")
 
     try:
         headers, db_config = load_config()
     except Exception as e:
         log.error(f"Error cargando credenciales: {e}")
-        return
+        return 1
+
+    # Salvaguarda: el esquema antes que nada
+    try:
+        verificar_esquema(db_config, log)
+    except ErrorEstructural as e:
+        log.error(f"ESQUEMA INCOHERENTE — abortando sin descargar nada")
+        log.error(f"  {e}")
+        return 2
+    except Exception as e:
+        log.error(f"No se pudo verificar el esquema: {e}")
+        return 1
 
     max_intentos = (MAX_HORAS_REINTENTO * 60) // PAUSA_REINTENTO_MIN
     intento = 1
-
     while intento <= max_intentos:
-        completo = ejecutar_intento(target, intento, headers, db_config, log)
-        if completo:
-            log.info(f"Pipeline finalizado con exito tras {intento} intento(s)")
-            break
+        try:
+            if ejecutar_intento(target, intento, headers, db_config, log):
+                log.info(f"Pipeline finalizado con exito tras {intento} intento(s)")
+                break
+        except ErrorEstructural as e:
+            # No se arregla esperando: abortar en lugar de reintentar 72 veces
+            log.error(f"ERROR ESTRUCTURAL — abortando sin reintentar")
+            log.error(f"  {e}")
+            return 2
         if intento >= max_intentos:
-            log.warning(f"Max intentos alcanzado — algunos indicadores pueden estar incompletos")
+            log.warning("Max intentos alcanzado — quedan indicadores incompletos")
             break
         log.info(f"Esperando {PAUSA_REINTENTO_MIN} minutos...")
         time.sleep(PAUSA_REINTENTO_MIN * 60)
         intento += 1
 
-    revisar_semana(headers, db_config, log)
-    log.info("Pipeline ESIOS diario finalizado")
+    try:
+        revisar_semana(headers, db_config, log)
+    except ErrorEstructural as e:
+        log.error(f"ERROR ESTRUCTURAL en la revision semanal: {e}")
+        return 2
+
+    log.info("Pipeline ESIOS marketdata finalizado")
+    return 0
 
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Pipeline diario ESIOS v5")
-    parser.add_argument("--fecha", help="Fecha concreta YYYY-MM-DD (default: ayer)")
-    parser.add_argument("--dias",  type=int, default=1, help="Numero de dias hacia atras")
+    parser = argparse.ArgumentParser(description="Pipeline diario ESIOS marketdata v7")
+    parser.add_argument("--fecha", help="Fecha concreta YYYY-MM-DD (por defecto: ayer)")
+    parser.add_argument("--dias", type=int, default=1,
+                        help="Numero de dias hacia atras desde ayer")
     args = parser.parse_args()
 
     if args.fecha:
@@ -589,5 +607,11 @@ if __name__ == "__main__":
     else:
         fechas = [date.today() - timedelta(days=i) for i in range(1, args.dias + 1)]
 
-    for f in fechas:
-        run(f)
+    rc = 0
+    for f in sorted(fechas):
+        r = run(f)
+        if r == 2:
+            # Estructural: no tiene sentido seguir con los demas dias
+            sys.exit(2)
+        rc = max(rc, r)
+    sys.exit(rc)
