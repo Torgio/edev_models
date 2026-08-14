@@ -94,10 +94,11 @@ COL_ENTSOE = "es_entsoe"
 
 ESIOS_INDICADOR = 600
 
-# Desde esta fecha ESIOS sirve 4 valores por hora y time_trunc=hour los SUMA,
-# asi que hay que dividir entre 4. Es la misma constante que usan los
-# pipelines diarios; no cambiar sin recalcular el historico.
-FECHA_MTU15 = date(2025, 10, 1)
+# ESIOS publica el 600 en granularidad cuarto-horaria desde el 01-ene-2025
+# (verificado: 31-dic-2024 devuelve 3 valores en 3 horas, 01-ene-2025 devuelve
+# 12). Hasta el 30-sep-2025 son cuatro copias del precio horario; desde el
+# 01-oct-2025, con el MTU de 15 min, son cuatro precios distintos. Con
+# time_agg=average los tres regimenes se resuelven sin logica de fechas.
 
 # ---------------------------------------------------------------------------
 # LA TABLA MANDA
@@ -466,7 +467,7 @@ def parsear_omie(texto: str, f: date):
 # --------------------------------------------------------------------------
 def bajar_esios(ini: date, fin: date, geo_id: int, columna: str, headers: dict):
     params = {"start_date": f"{ini}T00:00:00", "end_date": f"{fin}T23:59:59",
-              "time_trunc": "hour", "geo_ids[]": geo_id}
+              "time_trunc": "hour", "time_agg": "average", "geo_ids[]": geo_id}
     r = None
     for intento in range(REINTENTOS + 1):
         try:
@@ -491,9 +492,7 @@ def bajar_esios(ini: date, fin: date, geo_id: int, columna: str, headers: dict):
 
     df = pd.DataFrame(vals)[["datetime", "value"]]
     df["datetime"] = pd.to_datetime(df["datetime"], utc=True).dt.tz_convert(TZ_MADRID)
-    # time_trunc=hour agrega por SUMA; desde MTU15 hay 4 cuartos por hora
-    mask = df["datetime"].dt.date >= FECHA_MTU15
-    df.loc[mask, "value"] = df.loc[mask, "value"] / 4
+    
     df[columna] = df["value"].map(redondear)
     df = df[df[columna].notna()]
     df = df[df[columna].map(lambda v: PRECIO_MIN <= v <= PRECIO_MAX)]
