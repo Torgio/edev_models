@@ -183,14 +183,14 @@ def get_chunk_status(conn, col: str, start: date, end: date) -> tuple[set, set]:
 
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT time FROM esios_forecast_da
-            WHERE time >= %s AND time <= %s
+            SELECT datetime FROM esios_forecast_da
+            WHERE datetime >= %s AND datetime <= %s
         """, (start_dt, end_dt))
         existing = {row[0] for row in cur.fetchall()}
 
         cur.execute(f"""
-            SELECT time FROM esios_forecast_da
-            WHERE time >= %s AND time <= %s AND {col} IS NULL
+            SELECT datetime FROM esios_forecast_da
+            WHERE datetime >= %s AND datetime <= %s AND {col} IS NULL
         """, (start_dt, end_dt))
         with_nulls = {row[0] for row in cur.fetchall()}
 
@@ -236,7 +236,7 @@ def insert_new(conn, records: list, col: str) -> int:
     if not records:
         return 0
     sql = f"""
-        INSERT INTO esios_forecast_da (time, {col})
+        INSERT INTO esios_forecast_da (datetime, {col})
         VALUES %s
         ON CONFLICT (time) DO NOTHING
     """
@@ -259,7 +259,7 @@ def upsert_overwrite(conn, records: list, col: str) -> int:
     ts_list = [ts for ts, _ in records]
     with conn.cursor() as cur:
         cur.execute(
-            f"SELECT time, {col} FROM esios_forecast_da WHERE time = ANY(%s)",
+            f"SELECT datetime, {col} FROM esios_forecast_da WHERE datetime = ANY(%s)",
             (ts_list,)
         )
         actuales = dict(cur.fetchall())

@@ -236,13 +236,13 @@ def get_day_status(conn, target: date, log) -> dict:
     with conn.cursor() as cur:
         cur.execute("""
             SELECT COUNT(*) FROM esios_forecast_da
-            WHERE time >= %s AND time <= %s
+            WHERE datetime >= %s AND datetime <= %s
         """, (start_utc, end_utc))
         total = cur.fetchone()[0]
 
         cur.execute(f"""
             SELECT COUNT(*) FROM esios_forecast_da
-            WHERE time >= %s AND time <= %s AND NOT ({null_check})
+            WHERE datetime >= %s AND datetime <= %s AND NOT ({null_check})
         """, (start_utc, end_utc))
         completas = cur.fetchone()[0]
 
@@ -267,14 +267,14 @@ def get_existing_for_day(conn, col: str, target: date) -> tuple[set, set]:
 
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT time FROM esios_forecast_da
-            WHERE time >= %s AND time <= %s
+            SELECT datetime FROM esios_forecast_da
+            WHERE datetime >= %s AND datetime <= %s
         """, (start_utc, end_utc))
         existing = {row[0] for row in cur.fetchall()}
 
         cur.execute(f"""
-            SELECT time FROM esios_forecast_da
-            WHERE time >= %s AND time <= %s AND {col} IS NULL
+            SELECT datetime FROM esios_forecast_da
+            WHERE datetime >= %s AND datetime <= %s AND {col} IS NULL
         """, (start_utc, end_utc))
         with_nulls = {row[0] for row in cur.fetchall()}
 
@@ -285,7 +285,7 @@ def insert_new(conn, records: list, col: str) -> int:
     if not records:
         return 0
     sql = f"""
-        INSERT INTO esios_forecast_da (time, {col})
+        INSERT INTO esios_forecast_da (datetime, {col})
         VALUES %s
         ON CONFLICT (time) DO NOTHING
     """
@@ -306,7 +306,7 @@ def update_nulls(conn, records: list, col: str) -> int:
             cur.execute(f"""
                 UPDATE esios_forecast_da
                 SET {col} = %s
-                WHERE time = %s AND {col} IS NULL
+                WHERE datetime = %s AND {col} IS NULL
             """, (valor, ts))
             if cur.rowcount > 0:
                 updated += 1
@@ -326,7 +326,7 @@ def upsert_overwrite(conn, records: list, col: str) -> int:
     ts_list = [ts for ts, _ in records]
     with conn.cursor() as cur:
         cur.execute(
-            f"SELECT time, {col} FROM esios_forecast_da WHERE time = ANY(%s)",
+            f"SELECT datetime, {col} FROM esios_forecast_da WHERE datetime = ANY(%s)",
             (ts_list,)
         )
         actuales = dict(cur.fetchall())
