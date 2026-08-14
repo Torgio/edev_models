@@ -346,7 +346,7 @@ def upsert_overwrite(conn, records: list, col: str) -> int:
             UPDATE esios_forecast_da AS t
             SET {col} = v.valor
             FROM (VALUES %s) AS v(ts, valor)
-            WHERE t.time = v.ts
+            WHERE t.datetime = v.ts
         """, cambios, template="(%s, %s::numeric)", page_size=500)
 
     conn.commit()
