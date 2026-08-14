@@ -34,8 +34,9 @@ Decisiones heredadas de la carga historica (no cambiar sin releer esto)
   agrupar por ETIQUETA leyendo la cabecera.
 * HORAS DEL DIA: 23, 24 o 25 segun el calendario real, nunca un 23 fijo. Con
   el 23 fijo, un dia normal al que le falta una hora pasaba por completo.
-* ESIOS con time_trunc=hour agrega por SUMA: desde MTU15 hay 4 cuartos por
-  hora y hay que dividir entre 4.
+* ESIOS: time_agg=average SIEMPRE. Sin el, ESIOS suma y desde el 01-ene-2025
+  el precio sale x4 (la API sirve 4 cuartos por hora desde esa fecha, no
+  desde octubre). Sin logica de fechas: average vale en los tres regimenes.
 
 Cron (servidor, hora Madrid):
     CRON_TZ=Europe/Madrid
@@ -103,7 +104,11 @@ NOMBRES = {
 CRITICAS = {"es_omie", "es_esios", "es_entsoe"}
 
 ESIOS_IND = 600
-FECHA_MTU15 = date(2025, 10, 1)
+# ESIOS publica el 600 en granularidad cuarto-horaria desde el 01-ene-2025
+# (verificado: 31-dic-2024 devuelve 3 valores en 3 horas, 01-ene-2025 devuelve
+# 12). Hasta el 30-sep-2025 son cuatro copias del precio horario; desde el
+# 01-oct-2025, con el MTU de 15 min, son cuatro precios distintos. Con
+# time_agg=average los tres regimenes se resuelven sin logica de fechas.
 
 MAX_HORAS_REINTENTO = 3
 PAUSA_REINTENTO_MIN = 15
@@ -346,8 +351,11 @@ def descargar_esios(f: date, geo_id: int, columna: str, headers):
     try:
         r = requests.get(f"https://api.esios.ree.es/indicators/{ESIOS_IND}",
                          headers=headers, timeout=TIMEOUT_S,
-                         params={"start_date": f"{f}T00:00:00", "end_date": f"{f}T23:59:59",
-                                 "time_trunc": "hour", "geo_ids[]": geo_id})
+                         params={"start_date": f"{f}T00:00:00",
+                                 "end_date": f"{f}T23:59:59",
+                                 "time_trunc": "hour",
+                                 "time_agg": "average",
+                                 "geo_ids[]": geo_id})
     except requests.RequestException as e:
         return None, str(e)
     if r.status_code in (401, 403):
@@ -361,9 +369,7 @@ def descargar_esios(f: date, geo_id: int, columna: str, headers):
 
     df = pd.DataFrame(vals)[["datetime", "value"]]
     df[COL_TIEMPO] = pd.to_datetime(df["datetime"], utc=True).dt.tz_convert(TZ_MADRID)
-    # time_trunc=hour agrega por SUMA; desde MTU15 hay 4 cuartos por hora
-    mask = df[COL_TIEMPO].dt.date >= FECHA_MTU15
-    df.loc[mask, "value"] = df.loc[mask, "value"] / 4
+    
     df[columna] = df["value"].map(redondear)
     df = df[df[columna].notna()]
     return (df[[COL_TIEMPO, columna]], None) if not df.empty else (None, "todo nulo")
