@@ -245,7 +245,7 @@ def escribir(conn, dia: date, datos_por_col: dict, existentes: set) -> tuple:
         ins = len(nuevas)
 
     for col, datos in datos_por_col.items():
-        registros = [(h, v) for h, v in datos.items() if h in horas]
+        registros = [(h, round(v, 2)) for h, v in datos.items() if h in horas]
         if not registros:
             continue
         with conn.cursor() as cur:
