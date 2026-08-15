@@ -247,7 +247,7 @@ def escribir_chunk(conn, horas: set, datos_por_col: dict, existentes: set):
         ins = len(nuevas)
 
     for col, datos in datos_por_col.items():
-        registros = [(h, v) for h, v in datos.items() if h in horas]
+        registros = [(h, round(v, 2)) for h, v in datos.items() if h in horas]
         if not registros:
             continue
         # Con MODO_RELLENAR se respeta lo ya cargado; si no, se pisa.
