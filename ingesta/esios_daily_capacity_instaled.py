@@ -121,7 +121,7 @@ def fetch_indicator_month(headers, indicator_id, mes: date):
         if peninsula.empty:
             return None
 
-        return float(peninsula["value"].iloc[-1])
+        return round(float(peninsula["value"].iloc[-1]), 2)
 
     except Exception as e:
         print(f"    Indicador {indicator_id}: ERROR {str(e)[:70]}")
