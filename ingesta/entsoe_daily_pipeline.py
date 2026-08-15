@@ -132,10 +132,12 @@ LOAD_COLS = [
     "actual_load_mw",
     "flow_es_fr_mw", "flow_fr_es_mw",
     "flow_es_pt_mw", "flow_pt_es_mw",
+    "ntc_imp_fr_mw", "ntc_exp_fr_mw",
+    "ntc_imp_pt_mw", "ntc_exp_pt_mw",
 ]
 
-# Marruecos y las seis NTC existen en entsoe_load_inter pero el pipeline aun no
-# las descarga: Marruecos no es miembro de ENTSO-E y las NTC conviene tomarlas
+# Marruecos no es miembro de ENTSO-E — sus columnas quedan NULL permanentemente.
+# Las NTC se cargan desde ENTSO-E como backup; fuente primaria es ESIOS (488-494).
 # de ESIOS (indicadores 488-494), donde ya hay historico desde 2020.
 # Quedan NULL de momento — por eso no estan en LOAD_COLS.
 
@@ -294,19 +296,34 @@ def fetch_day(client, target: date, log) -> pd.DataFrame | None:
             log.warning(f"    flow {c_from}→{c_to}: {msg}")
         time.sleep(PAUSA_API_SEC)
 
+# ── NTC de interconexion (backup ENTSO-E, fuente primaria es ESIOS) ──
+    for (c_from, c_to, col) in [
+        (COUNTRY_FR, COUNTRY, "ntc_imp_fr_mw"),
+        (COUNTRY, COUNTRY_FR, "ntc_exp_fr_mw"),
+        (COUNTRY_PT, COUNTRY, "ntc_imp_pt_mw"),
+        (COUNTRY, COUNTRY_PT, "ntc_exp_pt_mw"),
+    ]:
+        try:
+            df_ntc = client.query_net_transfer_capacity_dayahead(
+                c_from, c_to, start=ts_start, end=ts_end)
+            resampled = resample_hourly(df_ntc)
+            frames[col] = filter_to_target_day(
+                resampled.to_frame(name=col), target)[col]
+        except Exception as e:
+            msg = str(e).split("securityToken")[0]
+            log.warning(f"    NTC {c_from}→{c_to}: {msg}")
+        time.sleep(PAUSA_API_SEC)
+
     if not frames:
         return None
 
     df = pd.DataFrame(frames)
     df.index = df.index.tz_convert("UTC")
     df.index.name = "datetime_utc"
-    df = df.reset_index()
+    df = df.round(2)
+    return df.reset_index()
 
-    # Sin columnas derivadas: total_hydro_mw, total_renew_mw, total_thermal_mw,
-    # net_load_mw, net_flow_*_mw y total_net_flow_mw son GENERATED en PostgreSQL.
-
-    return df
-
+    
 # ── BD helpers ─────────────────────────────────────────────────────────────────
 
 def _estado_tabla(cur, tabla: str, cols: list, criticos: set,

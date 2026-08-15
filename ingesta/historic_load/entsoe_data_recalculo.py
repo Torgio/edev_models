@@ -131,6 +131,8 @@ LOAD_COLS = [
     "actual_load_mw",
     "flow_es_fr_mw", "flow_fr_es_mw",
     "flow_es_pt_mw", "flow_pt_es_mw",
+    "ntc_imp_fr_mw", "ntc_exp_fr_mw",
+    "ntc_imp_pt_mw", "ntc_exp_pt_mw",
 ]
 
 # Marruecos (flow_es_ma_mw, flow_ma_es_mw) y las seis NTC existen en
@@ -202,6 +204,22 @@ def fetch_chunk(client, start: date, end: date) -> pd.DataFrame | None:
         except Exception as e:
             # No incluir la URL: lleva el securityToken en texto plano
             log.warning(f"    flow {c_from}→{c_to}: {str(e).split('securityToken')[0]}")
+        time.sleep(PAUSE_SEC)
+
+
+    # ── NTC de interconexion (backup ENTSO-E, fuente primaria es ESIOS) ──
+    for (c_from, c_to, col) in [
+        (COUNTRY_FR, COUNTRY, "ntc_imp_fr_mw"),
+        (COUNTRY, COUNTRY_FR, "ntc_exp_fr_mw"),
+        (COUNTRY_PT, COUNTRY, "ntc_imp_pt_mw"),
+        (COUNTRY, COUNTRY_PT, "ntc_exp_pt_mw"),
+    ]:
+        try:
+            df_ntc = client.query_net_transfer_capacity_dayahead(
+                c_from, c_to, start=ts_start, end=ts_end)
+            frames[col] = resample_hourly(df_ntc)
+        except Exception as e:
+            log.warning(f"    NTC {c_from}→{c_to}: {str(e).split('securityToken')[0]}")
         time.sleep(PAUSE_SEC)
 
     if not frames:
