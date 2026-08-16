@@ -287,7 +287,7 @@ def insert_new(conn, records: list, col: str) -> int:
     sql = f"""
         INSERT INTO esios_forecast_da (datetime, {col})
         VALUES %s
-        ON CONFLICT (time) DO NOTHING
+        ON CONFLICT (datetime) DO NOTHING
     """
     with conn.cursor() as cur:
         execute_values(cur, sql, records, page_size=500)
