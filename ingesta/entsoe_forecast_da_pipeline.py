@@ -15,7 +15,9 @@ NULL y el siguiente pase la rellena, sin machacar lo ya bueno.
 AGREGACION: todo se reduce a horario con resample("h").mean(). Son MW y
 EUR/MWh — magnitudes intensivas. NUNCA sum. Las NTC ya vienen horarias.
 
-CONVENIO DE SIGNO en saldos: positivo = exportacion desde Espania.
+SOLO PREVISIONES. Las columnas de PROGRAMA (gen/cons scheduled, posicion neta,
+saldos programados) se eliminaron el 15/08/2026: no son prevision y ya estan,
+con desglose por tecnologia, en esios_pbf_gen y esios_pbf_load_inter.
 
 Uso
 ---
@@ -67,13 +69,8 @@ CREDENTIALS_CANDIDATAS = [
 
 COLS = [
     "load_forecast_mw",
-    "gen_scheduled_mw",
-    "cons_scheduled_mw",
     "wind_forecast_mw",
     "solar_forecast_mw",
-    "net_position_forecast_mw",
-    "sched_net_fr_mw",
-    "sched_net_pt_mw",
     "ntc_fr_mw",
     "ntc_pt_mw",
     "price_fr_eur_mwh",
@@ -169,34 +166,11 @@ def descargar_dia(client, dia: date) -> pd.DataFrame:
         intentar("demanda", lambda: client.query_load_forecast(
             PAIS, start=ini, end=fin)), "Forecasted Load"))
 
-    gen = intentar("gen/cons programado",
-                   lambda: client.query_generation_forecast(PAIS, start=ini, end=fin))
-    guardar("gen_scheduled_mw", a_horario(gen, "Scheduled Aggregated"))
-    guardar("cons_scheduled_mw", a_horario(gen, "Scheduled Consumption"))
-
     ren = intentar("eolica/solar A69",
                    lambda: client.query_wind_and_solar_forecast(
                        PAIS, start=ini, end=fin, psr_type=None))
     guardar("wind_forecast_mw", a_horario(ren, "Wind Onshore"))
     guardar("solar_forecast_mw", a_horario(ren, "Solar"))
-
-    guardar("net_position_forecast_mw", a_horario(
-        intentar("posicion neta", lambda: client.query_net_position(
-            PAIS, start=ini, end=fin, dayahead=True))))
-
-    # Saldos: se piden las dos direcciones y se netea.
-    # Positivo = exportacion desde Espania.
-    for col, vecino in (("sched_net_fr_mw", "FR"), ("sched_net_pt_mw", "PT")):
-        exp = a_horario(intentar(f"programado ES->{vecino}",
-                                 lambda v=vecino: client.query_scheduled_exchanges(
-                                     PAIS, v, start=ini, end=fin, dayahead=True)))
-        imp = a_horario(intentar(f"programado {vecino}->ES",
-                                 lambda v=vecino: client.query_scheduled_exchanges(
-                                     v, PAIS, start=ini, end=fin, dayahead=True)))
-        if exp is not None or imp is not None:
-            e = exp if exp is not None else 0
-            i = imp if imp is not None else 0
-            guardar(col, (e - i) if not isinstance(e - i, int) else None)
 
     for col, vecino in (("ntc_fr_mw", "FR"), ("ntc_pt_mw", "PT")):
         guardar(col, a_horario(
