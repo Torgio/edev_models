@@ -483,7 +483,7 @@ def revisar_semana(headers: dict, db_config: dict, log):
         log.error(f"  Error BD: {e}")
         return
 
-    for i in range(1, DIAS_REVISION + 1):
+    for i in range(0, DIAS_REVISION + 1):
         dia = hoy - timedelta(days=i)
         status = get_day_status(conn, dia, log)
         if status["es_completo"]:
