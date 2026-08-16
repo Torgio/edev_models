@@ -79,7 +79,7 @@ def leer_token() -> str:
     if token:
         return token
 
-    claves = ("esios_token", "token_esios", "api_key_esios",
+    claves = ("x-api-key", "esios_token", "token_esios", "api_key_esios",
               "esios_api_key", "token", "api_key")
 
     for ruta in CREDENTIALS_CANDIDATAS:
