@@ -265,8 +265,22 @@ def _bajar_tramo(cfg, item, ini: date, fin: date, headers):
                 time.sleep(2 * (intento + 1))
                 continue
             return None, ultimo
-        if r.status_code in (401, 403):
-            raise ErrorEstructural(f"HTTP {r.status_code}: token invalido o sin permiso")
+        # 401 y 403 NO son lo mismo y no deben tratarse igual:
+        #   401 = credencial invalida. Reintentar no arregla nada -> abortar.
+        #   403 = Trayport lo devuelve tambien por LIMITE DE PETICIONES, no solo
+        #         por falta de permiso. Tratarlo como estructural aborto la carga
+        #         del contrato Dic-26 (item 830) en agosto de 2026: la primera
+        #         respuesta 403 por ritmo detuvo el script entero y la serie de
+        #         EUA quedo cortada en Dic-25. Se reintenta con espera creciente
+        #         (15s, 30s) y solo se aborta si persiste.
+        if r.status_code == 401:
+            raise ErrorEstructural("HTTP 401: token invalido")
+        if r.status_code == 403:
+            ultimo = "HTTP 403 (limite de peticiones o permiso)"
+            if intento < REINTENTOS:
+                time.sleep(15 * (intento + 1))
+                continue
+            return None, ultimo
         if r.status_code == 200:
             try:
                 d = r.json()
