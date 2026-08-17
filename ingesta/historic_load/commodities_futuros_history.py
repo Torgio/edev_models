@@ -250,19 +250,31 @@ def informe(commodity, cfg, serie, rolls):
 #  Escritura
 # --------------------------------------------------------------------------
 
-def escribir(conn, columna, serie, ejecutar: bool):
-    """UPDATE sobre commodities. Nunca INSERT: las filas ya existen."""
+def escribir(conn, columna, serie, ejecutar: bool, desde=None):
+    """
+    UPDATE sobre commodities. Nunca INSERT: las filas ya existen.
+
+    `desde` limita la escritura a partir de esa fecha. El pipeline diario lo
+    usa para escribir solo su ventana: sin ello reescribiria las ~1.700 filas
+    de toda la serie cada dia, lo que funciona pero deja un pipeline_log
+    ilegible (miles de registros diarios para una decena de dias nuevos) y
+    oculta si un dia concreto entro o no. La carga historica lo deja en None
+    para reescribir todo.
+    """
     if not serie:
         return 0, 0
 
-    registros = [(f, v) for f, v, _ in serie]
+    registros = [(f, v) for f, v, _ in serie
+                 if desde is None or f >= desde]
+    if not registros:
+        return 0, 0
 
     # Fechas de la serie que NO existen como fila en commodities. Se comprueba
     # en Python en vez de con un VALUES gigante: mas simple y sin construir SQL
     # a mano, que es donde se cuelan los errores de escapado.
     with conn.cursor() as cur:
         cur.execute(f"SELECT fecha FROM {DESTINO} WHERE fecha BETWEEN %s AND %s",
-                    (serie[0][0], serie[-1][0]))
+                    (registros[0][0], registros[-1][0]))
         existentes = {r[0] for r in cur.fetchall()}
 
     faltan = [f for f, _ in registros if f not in existentes]
@@ -276,7 +288,7 @@ def escribir(conn, columna, serie, ejecutar: bool):
         registros = [(f, v) for f, v in registros if f in existentes]
 
     if not ejecutar:
-        return len(registros) - huerfanas, huerfanas
+        return len(registros), huerfanas
 
     with conn.cursor() as cur:
         execute_values(cur, f"""
@@ -285,9 +297,10 @@ def escribir(conn, columna, serie, ejecutar: bool):
               FROM (VALUES %s) AS v(f, valor)
              WHERE c.fecha = v.f
         """, registros, template="(%s, %s::numeric)", page_size=1000)
-        n = cur.rowcount
     conn.commit()
-    return n, huerfanas
+    # NO usar cur.rowcount: con execute_values paginado solo cuenta las filas
+    # del ULTIMO lote, asi que con page_size=1000 y 1.688 filas reportaba 688.
+    return len(registros), huerfanas
 
 
 def verificar(conn):
