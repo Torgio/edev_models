@@ -47,7 +47,7 @@ from config import load_config
 
 MAX_HORAS_REINTENTO  = 5
 PAUSA_REINTENTO_MIN  = 5
-DIAS_REVISION        = 7
+DIAS_REVISION        = 14
 TIMEOUT_SEC          = 60
 PAUSE_API_SEC        = 0.5
 TZ_SPAIN             = ZoneInfo("Europe/Madrid")
@@ -100,7 +100,7 @@ INDICADORES = {
 # hora fija antes de las 11:00, una hora antes del cierre del mercado diario.
 # Son las unicas usables como features sin fuga de informacion, y las que
 # determinan si el dia se considera completo.
-KEY_COLS = ["demanda_prev_mw", "gen_wind_prev_mw",
+KEY_COLS = ["demanda_prev_mw", "gen_wind_prev_mw", "potencia_indisp_pbf_mw",
             "gen_solar_pv_prev_mw", "gen_renovables_prev_mw"]
 
 # Indicadores esporadicos — null es valido, no se reintenta por ellos
