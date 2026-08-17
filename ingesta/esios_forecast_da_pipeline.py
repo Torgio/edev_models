@@ -48,6 +48,11 @@ from config import load_config
 MAX_HORAS_REINTENTO  = 5
 PAUSA_REINTENTO_MIN  = 5
 DIAS_REVISION        = 14
+# Dias recientes en los que se REDESCARGA y SOBRESCRIBE todo, no solo los
+# NULL. ESIOS revisa valores ya publicados: el 10249 (demanda residual) y
+# el 543 (solar termica) se actualizan cada hora, y las NTC se recalculan.
+# Fuera de esta ventana la revision solo rellena huecos, mas barato.
+DIAS_SOBRESCRITURA   = 3
 TIMEOUT_SEC          = 60
 PAUSE_API_SEC        = 0.5
 TZ_SPAIN             = ZoneInfo("Europe/Madrid")
@@ -261,6 +266,27 @@ def get_day_status(conn, target: date, log) -> dict:
     }
 
 
+def cols_con_nulls(conn, target: date) -> list[str]:
+    """Columnas de INDICADORES con al menos un NULL en el dia target.
+
+    get_day_status() solo mira KEY_COLS; esto recorre TODAS las columnas. Es
+    lo que permite que la revision recupere huecos en columnas secundarias.
+    Sin esto, un dia con demanda y renovables completas se marcaba COMPLETO y
+    las otras once columnas quedaban huerfanas para siempre (agosto 2026:
+    8 dias sin potencia_indisp_pbf_mw y 2 sin cap_baleares_prev_mw, sin un
+    solo error en los logs).
+    """
+    start_utc, end_utc = day_range_utc(target)
+    cols = list(INDICADORES.values())
+    sel = ", ".join(f"COUNT(*)-COUNT({c})" for c in cols)
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT {sel} FROM esios_forecast_da "
+            f"WHERE datetime >= %s AND datetime <= %s", (start_utc, end_utc))
+        fila = cur.fetchone()
+    return [c for c, n in zip(cols, fila) if n and n > 0]
+
+
 def get_existing_for_day(conn, col: str, target: date) -> tuple[set, set]:
     """Devuelve (timestamps_existentes, timestamps_con_null) para el dia target."""
     start_utc, end_utc = day_range_utc(target)
@@ -369,7 +395,12 @@ def log_pipeline_db(conn, target, intento, ins, upd, status, mensaje, duracion, 
 
 # ── Cargar un dia ──────────────────────────────────────────────────────────────
 
-def cargar_dia(target: date, headers: dict, conn, log) -> tuple[int, int]:
+def cargar_dia(target: date, headers: dict, conn, log,
+               sobrescribir: bool | None = None) -> tuple[int, int]:
+    """sobrescribir=None usa MODO_ACTUALIZAR (comportamiento historico).
+    True  -> reescribe cualquier valor que difiera de la API.
+    False -> solo rellena NULL y horas ausentes."""
+    sobre = MODO_ACTUALIZAR if sobrescribir is None else sobrescribir
     total_ins = total_upd = 0
     expected = expected_hours_utc(target)
 
@@ -379,7 +410,7 @@ def cargar_dia(target: date, headers: dict, conn, log) -> tuple[int, int]:
         missing    = expected - existing
         need_fetch = missing | with_nulls
 
-        if not need_fetch and not MODO_ACTUALIZAR:
+        if not need_fetch and not sobre:
             continue
 
         datos = fetch_indicator_for_day(ind_id, target, headers)
@@ -394,7 +425,7 @@ def cargar_dia(target: date, headers: dict, conn, log) -> tuple[int, int]:
         for ts, valor in datos.items():
             if ts in missing:
                 new_records.append((ts, valor))
-            elif MODO_ACTUALIZAR and ts in expected:
+            elif sobre and ts in expected:
                 # sobrescribe si difiere, no solo si esta NULL
                 update_records.append((ts, valor))
             elif ts in with_nulls:
@@ -404,7 +435,7 @@ def cargar_dia(target: date, headers: dict, conn, log) -> tuple[int, int]:
             total_ins += insert_new(conn, new_records, col)
 
         if update_records:
-            if MODO_ACTUALIZAR:
+            if sobre:
                 total_upd += upsert_overwrite(conn, update_records, col)
             else:
                 total_upd += update_nulls(conn, update_records, col)
@@ -486,11 +517,26 @@ def revisar_semana(headers: dict, db_config: dict, log):
     for i in range(0, DIAS_REVISION + 1):
         dia = hoy - timedelta(days=i)
         status = get_day_status(conn, dia, log)
-        if status["es_completo"]:
+        pendientes = cols_con_nulls(conn, dia)
+
+        # Los dias mas recientes se redescargan enteros aunque esten
+        # completos: ESIOS revisa valores ya publicados.
+        sobrescribir = i <= DIAS_SOBRESCRITURA
+
+        if status["es_completo"] and not pendientes and not sobrescribir:
             continue
-        log.info(f"  Rellenando {dia}...")
-        ins, upd = cargar_dia(dia, headers, conn, log)
-        log.info(f"  {dia}: {ins} insert, {upd} update")
+
+        if pendientes:
+            log.info(f"  {dia}: huecos en {', '.join(pendientes)}")
+        elif sobrescribir:
+            log.info(f"  {dia}: revisando valores publicados")
+        else:
+            log.info(f"  Rellenando {dia}...")
+
+        ins, upd = cargar_dia(dia, headers, conn, log,
+                              sobrescribir=sobrescribir)
+        if ins or upd:
+            log.info(f"  {dia}: {ins} insert, {upd} update")
 
     conn.close()
     log.info("--- Revision semanal completada ---\n")
@@ -510,6 +556,8 @@ def run():
     log.info(f"Modo actualizar D+1: {MODO_ACTUALIZAR} (sobrescribe si difiere)")
     log.info(f"Indicadores: {len(INDICADORES)}")
     log.info(f"Max reintentos: {MAX_HORAS_REINTENTO}h cada {PAUSA_REINTENTO_MIN}min")
+    log.info(f"Revision: {DIAS_REVISION} dias, huecos en las {len(INDICADORES)} columnas")
+    log.info(f"Sobrescritura de valores: ultimos {DIAS_SOBRESCRITURA} dias")
     log.info("=" * 55)
 
     import json
