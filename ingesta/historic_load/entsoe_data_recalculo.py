@@ -135,10 +135,11 @@ LOAD_COLS = [
     "ntc_imp_pt_mw", "ntc_exp_pt_mw",
 ]
 
-# Marruecos (flow_es_ma_mw, flow_ma_es_mw) y las seis NTC existen en
-# entsoe_load_inter pero no se descargan: Marruecos no es miembro de ENTSO-E
-# y las NTC conviene tomarlas de ESIOS (indicadores 488-494), donde ya hay
-# historico desde 2020. Quedan NULL.
+# Las columnas de Marruecos se ELIMINARON de entsoe_load_inter el 17/08/2026:
+# Marruecos no es miembro de ENTSO-E y esas cuatro columnas estaban vacias al
+# 100% en 58.054 filas. El dato esta en ESIOS (10209 saldo, 1846/1850 NTC).
+# Las NTC de FR y PT si se descargan aqui como respaldo, aunque la fuente
+# primaria son los indicadores ESIOS 488-494, con historico desde 2020.
 
 # ── Descarga ───────────────────────────────────────────────────────────────────
 
