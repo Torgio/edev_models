@@ -27,7 +27,14 @@ Logica:
   - Revision ultimos 7 dias para rellenar huecos
 
 Cron job (servidor):
-    0 9 * * * /home/ubuntu/tfm-env/bin/python /home/ubuntu/scripts/ingesta/esios_forecast_da_pipeline.py >> /home/ubuntu/scripts/logs/cron_esios_forecast.log 2>&1
+    0 15 * * * /home/ubuntu/tfm-env/bin/python /home/ubuntu/scripts/ingesta/esios_forecast_da_pipeline.py >> /home/ubuntu/scripts/logs/cron_esios_forecast.log 2>&1
+
+    A las 15:00, NO a las 9:00. El indicador 462 (potencia indisponible en
+    PBF) se publica en el dia D una vez publicado el Programa Diario Basico,
+    hacia las 14:00-14:30. Con el cron a las 9:00 ese indicador no existia
+    todavia y quedaba a NULL: se perdieron 8 dias en agosto de 2026 sin un
+    solo error en los logs. Las previsiones canonicas (Circular 4/2019) se
+    publican antes de las 11:00, asi que a las 15:00 estan todas disponibles.
 """
 
 import logging
