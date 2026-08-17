@@ -228,7 +228,7 @@ def fetch_chunk(client, start: date, end: date) -> pd.DataFrame | None:
 
     df = pd.DataFrame(frames)
     df.index = df.index.tz_convert("UTC")
-    df.index.name = "datetime_utc"
+    df.index.name = "datetime"
     return df.reset_index()
 
 # ── Escritura ──────────────────────────────────────────────────────────────────
@@ -247,14 +247,14 @@ def recalcular_tabla(conn, df_nuevo: pd.DataFrame, tabla: str, cols: list,
     if not presentes or df_nuevo.empty:
         return 0
 
-    ts_list = [r["datetime_utc"] for _, r in df_nuevo.iterrows()]
+    ts_list = [r["datetime"] for _, r in df_nuevo.iterrows()]
     cols_str = ", ".join(presentes)
     corregidas = 0
 
     with conn.cursor() as cur:
         # Estado actual de todo el bloque en una sola consulta
         cur.execute(
-            f"SELECT datetime_utc, {cols_str} FROM {tabla} WHERE datetime_utc = ANY(%s)",
+            f"SELECT datetime, {cols_str} FROM {tabla} WHERE datetime = ANY(%s)",
             (ts_list,)
         )
         actuales = {row[0]: row[1:] for row in cur.fetchall()}
@@ -263,7 +263,7 @@ def recalcular_tabla(conn, df_nuevo: pd.DataFrame, tabla: str, cols: list,
         for i, col in enumerate(presentes):
             cambios = []
             for _, row in df_nuevo.iterrows():
-                ts = row["datetime_utc"]
+                ts = row["datetime"]
                 nuevo = row.get(col)
                 if pd.isna(nuevo):
                     continue
@@ -281,7 +281,7 @@ def recalcular_tabla(conn, df_nuevo: pd.DataFrame, tabla: str, cols: list,
                 UPDATE {tabla} AS t
                 SET {col} = v.valor, updated_at = now()
                 FROM (VALUES %s) AS v(ts, valor)
-                WHERE t.datetime_utc = v.ts
+                WHERE t.datetime = v.ts
             """, cambios, template="(%s, %s::numeric)", page_size=500)
 
             contador[f"{tabla}.{col}"] = contador.get(f"{tabla}.{col}", 0) + len(cambios)
@@ -298,23 +298,23 @@ def insertar_faltantes(conn, df_nuevo: pd.DataFrame, tabla: str, cols: list,
     if not presentes or df_nuevo.empty:
         return 0
 
-    ts_list = [r["datetime_utc"] for _, r in df_nuevo.iterrows()]
+    ts_list = [r["datetime"] for _, r in df_nuevo.iterrows()]
     with conn.cursor() as cur:
-        cur.execute(f"SELECT datetime_utc FROM {tabla} WHERE datetime_utc = ANY(%s)",
+        cur.execute(f"SELECT datetime FROM {tabla} WHERE datetime = ANY(%s)",
                     (ts_list,))
         existentes = {row[0] for row in cur.fetchall()}
 
-    df_new = df_nuevo[~df_nuevo["datetime_utc"].isin(existentes)]
+    df_new = df_nuevo[~df_nuevo["datetime"].isin(existentes)]
     if df_new.empty:
         return 0
 
-    insert_cols = ["datetime_utc"] + presentes
+    insert_cols = ["datetime"] + presentes
     records = [tuple(None if pd.isna(row.get(c)) else row.get(c) for c in insert_cols)
                for _, row in df_new.iterrows()]
     with conn.cursor() as cur:
         execute_values(cur,
             f"INSERT INTO {tabla} ({', '.join(insert_cols)}) VALUES %s "
-            f"ON CONFLICT (datetime_utc) DO NOTHING",
+            f"ON CONFLICT (datetime) DO NOTHING",
             records, page_size=500)
     conn.commit()
 
