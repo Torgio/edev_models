@@ -1,7 +1,21 @@
 """
-TFM Energia UCM — ESIOS Forecast DA Daily Pipeline v3
+TFM Energia UCM — ESIOS Forecast DA Daily Pipeline v4
 Descarga automaticamente las previsiones day-ahead de ESIOS
 y las carga en la tabla esios_forecast_da.
+
+Cambios v4 (17/08/2026):
+  - potencia_indisp_pbf_mw (462) SALE de KEY_COLS. Se publica con el PBF
+    hacia las 14:00 del dia D-1, es decir DOS HORAS DESPUES del cierre del
+    mercado diario (12:00 D-1). No esta disponible en el instante de la
+    prediccion, asi que no puede decidir si un dia esta completo. Un retraso
+    del PBF disparaba 60 intentos x 15 indicadores = 900 llamadas a la API.
+  - assert de coherencia KEY_COLS / ESPORADICOS al importar el modulo:
+    una columna no puede exigir reintentos y declarar el null valido a la vez.
+  - Comentario de ESPORADICOS corregido: NO evita reintentos (los decide
+    KEY_COLS via get_day_status). Solo silencia un log.debug.
+  - fetch_indicator_for_day() detecta colisiones de timestamp. Sin filtro
+    geografico la API puede devolver varias filas por hora y el dict se
+    quedaba con la ultima en silencio.
 
 Cambios v3 (02/08/2026):
   - FIX CRITICO: añadido time_agg=average a la URL de la API.
@@ -102,6 +116,12 @@ INDICADORES = {
     1849:  "ntc_pt_exp_prev_mw",
     1846:  "ntc_ma_imp_prev_mw",
     1850:  "ntc_ma_exp_prev_mw",
+    # OJO — 462 NO es utilizable como feature directa del precio de D+1: se
+    # publica con el PBF (~14:00 de D-1), despues del cierre del mercado
+    # diario (12:00 de D-1). Se ingesta porque la indisponibilidad es un
+    # predictor valioso, pero solo vale con lag (potencia_indisp_pbf_lag1) o
+    # sustituyendo la fuente por los outages de ENTSO-E, que se publican
+    # cuando se declaran y no cuando se arma el programa. Ver TEST_415.
     462:   "potencia_indisp_pbf_mw",    # Potencia indisponible de generacion en PBF
     543:   "gen_solartermica_prev_mw",  # Prevision solar termica (OJO: se actualiza cada hora)
     570:   "cap_baleares_prev_mw",      # Capacidad prevista enlace Peninsula-Baleares (~10:30 D+1)
@@ -112,17 +132,24 @@ INDICADORES = {
 # hora fija antes de las 11:00, una hora antes del cierre del mercado diario.
 # Son las unicas usables como features sin fuga de informacion, y las que
 # determinan si el dia se considera completo.
-KEY_COLS = ["demanda_prev_mw", "gen_wind_prev_mw", "potencia_indisp_pbf_mw",
+# potencia_indisp_pbf_mw estuvo aqui hasta la v4 y no debe volver: es una
+# serie posterior al cierre del mercado (ver nota en INDICADORES).
+KEY_COLS = ["demanda_prev_mw", "gen_wind_prev_mw",
             "gen_solar_pv_prev_mw", "gen_renovables_prev_mw"]
 
-# Indicadores esporadicos — null es valido, no se reintenta por ellos
-# 2563 y 462 son relativamente recientes: pueden no tener datos historicos
-# Indicadores esporadicos: null es un resultado valido, no se reintenta por ellos.
+# Indicadores esporadicos: null es un resultado valido para ellos.
+#
+# CUIDADO CON LO QUE ESTE SET HACE DE VERDAD (corregido en v4): NO evita los
+# reintentos. Su unico efecto en el codigo es silenciar un log.debug en
+# cargar_dia(). Los reintentos los decide get_day_status() a traves de
+# KEY_COLS: si una columna no esta en KEY_COLS ya no bloquea el dia, este
+# set o no. Estar en ambas listas a la vez es una contradiccion —de ahi el
+# assert de mas abajo.
+#
 # Verificado 02/08/2026 con el recalculo historico: las seis NTC de horizonte
 # diario (1844-1850) devuelven 0 filas para enero de 2020, es decir que no
 # publicaban en los primeros años de la serie. Lo mismo puede pasar con 2563,
-# 462, 543 y 570. Sin estar aqui, cada una dispararia reintentos cada 5 min
-# durante 5 horas buscando datos que no existen.
+# 462, 543 y 570.
 ESPORADICOS = {
     "demanda_mercado_prev_mw",
     "potencia_indisp_pbf_mw",
@@ -133,6 +160,18 @@ ESPORADICOS = {
     "ntc_ma_imp_prev_mw", "ntc_ma_exp_prev_mw",
     "demanda_residual_prev_mw",
 }
+
+# Una columna no puede exigir reintentos (KEY_COLS) y declarar el null valido
+# (ESPORADICOS) a la vez. Falla al importar, no en produccion a las 15:00.
+_conflicto = set(KEY_COLS) & ESPORADICOS
+assert not _conflicto, (
+    f"KEY_COLS y ESPORADICOS se contradicen en: {sorted(_conflicto)}. "
+    f"Una columna critica no puede tener el null por valido."
+)
+
+# Toda columna de KEY_COLS debe existir como indicador ingestado.
+_huerfanas = set(KEY_COLS) - set(INDICADORES.values())
+assert not _huerfanas, f"KEY_COLS referencia columnas no ingestadas: {sorted(_huerfanas)}"
 
 # ── Logger ─────────────────────────────────────────────────────────────────────
 
@@ -194,6 +233,13 @@ def fetch_indicator_for_day(ind_id: int, target: date, headers: dict) -> dict:
     en cualquier epoca del año (CET UTC+1 o CEST UTC+2).
     Filtra los resultados para devolver solo timestamps del dia target
     en hora española.
+
+    No se envia filtro geografico a proposito (el resto de pipelines usan
+    geo_ids[]=8741). Si algun indicador publica desglosado, la API devuelve
+    varias filas por hora y el dict se queda con la ultima SIN AVISAR: un
+    valor plausible que en realidad es el de una CCAA. El contador de
+    colisiones esta para que eso no pase desapercibido; si salta, ese
+    indicador necesita geo_ids[]=8741 explicito.
     """
     start_utc = target - timedelta(days=1)
     end_utc   = target + timedelta(days=1)
@@ -211,6 +257,7 @@ def fetch_indicator_for_day(ind_id: int, target: date, headers: dict) -> dict:
             valores = r.json().get("indicator", {}).get("values", [])
 
             result = {}
+            colisiones = 0
             for v in valores:
                 dt_str = v.get("datetime_utc") or v.get("datetime")
                 val    = v.get("value")
@@ -223,9 +270,17 @@ def fetch_indicator_for_day(ind_id: int, target: date, headers: dict) -> dict:
                         # Filtrar solo timestamps que en hora española son del dia target
                         dt_spain = dt_utc.astimezone(TZ_SPAIN)
                         if dt_spain.date() == target:
+                            previo = result.get(dt_utc)
+                            if previo is not None and abs(previo - float(val)) > TOLERANCIA:
+                                colisiones += 1
                             result[dt_utc] = float(val)
                     except Exception:
                         pass
+
+            if colisiones:
+                print(f"AVISO ind {ind_id} {target}: {colisiones} colisiones de "
+                      f"timestamp — varias filas por hora, revisar filtro geografico")
+
             return result
         except Exception:
             if intento < 3:
