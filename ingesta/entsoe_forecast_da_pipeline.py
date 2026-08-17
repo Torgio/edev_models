@@ -154,7 +154,12 @@ def intentar(nombre: str, fn):
 def descargar_dia(client, dia: date) -> pd.DataFrame:
     """Devuelve un DataFrame horario con las columnas de COLS que haya."""
     ini = pd.Timestamp(dia, tz=TZ)
-    fin = ini + pd.Timedelta(days=1)
+    # Medianoche LOCAL del dia siguiente, no 'ini + 24h'. El ultimo domingo
+    # de octubre el dia dura 25 horas (la hora local 02:00 se repite, con
+    # offset +02 y +01) y sumar 24h exactas recortaba la ultima hora.
+    # Verificado: los 6 cambios de horario de 2020-2025 quedaron con 24h en
+    # vez de 25. En marzo no se notaba porque ese dia tiene 23.
+    fin = pd.Timestamp(dia + timedelta(days=1), tz=TZ)
 
     datos: dict[str, pd.Series] = {}
 
@@ -187,7 +192,8 @@ def descargar_dia(client, dia: date) -> pd.DataFrame:
 
     df = pd.DataFrame(datos)
 
-    # Recorte al dia solicitado. El precio devuelve 97 valores (incluye la
+    # Recorte al dia solicitado: 23, 24 o 25 horas segun el cambio de hora.
+    # El precio devuelve un valor extra (incluye la
     # medianoche del dia siguiente); sin este filtro se duplicaria la primera
     # hora al cargar dias consecutivos.
     df = df[(df.index >= ini) & (df.index < fin)]
