@@ -43,7 +43,7 @@ TABLE_NAMES  = [
     "esios_pbf_gen",
     "esios_pbf_load_inter",
     "spot_price",
-    "trayport_daily",
+    ##"trayport_daily", No se va a utilizar 
     "trayport_daily_ohlc",
     "trayport_trades"
 
