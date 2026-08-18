@@ -147,3 +147,68 @@ actualización) que nunca aportan señal predictiva.
 **La conclusión**: el 84% que no se usa hoy no es dato desperdiciado — es la evidencia de que cada
 variable que sí entra al modelo pasó un filtro explícito de seguridad y calidad. Ese filtro (y no
 la cantidad de columnas) es lo que hay que poder explicar si se pregunta.
+
+---
+
+## 5. Qué países vecinos entran al modelo, y por qué Alemania no hace falta aunque sí influye
+
+**El problema de negocio**: España no vive aislada — el precio de la luz en otros países europeos
+puede arrastrar el español. Con 10 países disponibles en los datos, había que decidir con criterio
+cuáles aportan señal real y cuáles no, en vez de meterlos todos "por si acaso".
+
+**El criterio, en dos pasos**: primero, ¿hay cable físico entre ese país y España? España solo está
+conectada eléctricamente a **Portugal** y **Francia** — el resto (Alemania, Italia, Suiza, Bélgica,
+Países Bajos, Austria, Polonia, Chequia) no tiene interconexión directa. Segundo, para los que sí
+la tienen, se midió cuánto se parecen sus precios al español: Portugal coincide con España el 95%
+de las horas (es, a efectos prácticos, el mismo mercado); Francia se parece bastante menos (una
+relación real, pero no tan fuerte, porque la capacidad de intercambio entre España y Francia es
+limitada frente al tamaño de los dos mercados).
+
+**El caso Alemania — la corrección importante**: un miembro del equipo con experiencia en el
+sector energético señaló que Alemania sí tiene fama de mover los precios de toda la península
+ibérica, aunque no tenga cable directo. Comprobado con datos: es cierto que el precio alemán
+correlaciona con el español — pero esa relación **desaparece casi por completo en cuanto se
+descuenta lo que ya explica Francia**. En otras palabras: Alemania mueve el precio francés (es el
+mercado más grande e influyente de Europa continental), y Francia mueve el español — pero una vez
+el modelo ya tiene el dato de Francia, el de Alemania no añade información nueva, solo la repite
+de segunda mano.
+
+**La conclusión**: el modelo incluye el precio real (con al menos un día de retraso, nunca del
+propio día que se predice, por la misma razón que el precio español) de Portugal y Francia. No es
+que Alemania "no importe" — importa, pero de forma indirecta, y esa influencia ya queda capturada
+sin necesidad de añadirla por separado. Es un buen ejemplo de por qué conviene medir la relación
+"neta" de cada variable con el precio, no solo la relación simple — evita meter variables
+redundantes que dan la sensación de más información sin aportarla de verdad.
+
+---
+
+## 6. Cómo se tratan los eventos extremos — la crisis energética y el apagón no son el mismo caso
+
+**El problema de negocio**: el histórico del proyecto incluye dos episodios muy distintos de lo
+normal — la crisis energética europea de 2021-2022 (varios años con el precio del gas disparado) y
+el apagón peninsular del 28-abril-2025 (un colapso total de la red, de un día). Meter los dos en el
+modelo sin distinguirlos sería un error — pero tratarlos igual también lo sería, porque no son el
+mismo tipo de fenómeno.
+
+**Un evento puntual, sin repetición, no se puede aprender — se aparta**: el apagón es un caso
+único en seis años de datos. Un modelo no puede aprender un patrón generalizable de un solo
+ejemplo — lo único que haría sería memorizarlo, lo cual no sirve para nada fuera de esa fecha
+exacta. Por eso ese día (y los que dependen de él por el efecto de arrastre de la "memoria
+reciente", ver nota 1) se aparta del entrenamiento y de la evaluación, documentado como lo que es:
+un evento real y extremo, no un error de datos.
+
+**Un cambio sostenido, con cientos de días de ejemplo, sí se puede aprender — pero por su causa,
+no por su etiqueta**: la crisis del gas duró años, así que hay datos de sobra para que el modelo
+aprenda de ella. La forma correcta de hacerlo no es ponerle una etiqueta de "esto fue crisis" —
+eso solo enseñaría a memorizar esa crisis concreta, e serviría de poco si en el futuro sube el gas
+por un motivo distinto. La forma correcta es la que ya se usa: incluir el precio del gas como
+variable de entrada normal, continua. Así el modelo aprende la relación real entre el precio del
+gas y el de la luz, que se puede aplicar a cualquier subida futura del gas, la haya visto antes o
+no — es la diferencia entre enseñarle al modelo "qué pasó" (fragil, no generaliza) y "por qué pasó"
+(un mecanismo, sí generaliza).
+
+**Pendiente de hacer, útil para el capítulo de limitaciones**: el periodo de prueba actual (2026)
+no incluye ninguna crisis parecida, así que todavía no se sabe cómo respondería el modelo si
+volviera a pasar algo así. Antes de dar el modelo por bueno, conviene evaluarlo también sobre
+2021-2022 como prueba de estrés aparte — no como métrica oficial, sino para poder decir con
+seguridad qué tan bien (o mal) se comportaría el sistema ante una crisis similar.

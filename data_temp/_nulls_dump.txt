@@ -1,4 +1,0 @@
-dataset_diario:       2419 filas
-dataset_diario_valido: 2410 filas (target D+1 completo)
-filas excluidas: 9
-rango valido: 2020-01-01 -> 2026-08-13

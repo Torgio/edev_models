@@ -1,6 +1,0 @@
-DATASET_DIARIO (con lags): 2419 dias x 85 columnas
-rango: 2020-01-01 -> 2026-08-15
-
-columnas de lag añadidas: 42
-nulos en lag_1d (esperado: 1 fila, el primer dia de la ventana): 1 filas totalmente nulas
-nulos en lag_7d (esperado: primeros 7 dias de la ventana): 7 filas totalmente nulas
