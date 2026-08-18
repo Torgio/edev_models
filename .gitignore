@@ -19,6 +19,3 @@ ingesta/tensors/
 # diario con la ingesta, no tiene sentido versionarlo (quedaria obsoleto en horas).
 modelos/dataset_maestro.csv
 modelos/espina_horaria.csv
-
-# Volcados de exploracion puntual, no son parte del proyecto
-data_temp/
