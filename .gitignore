@@ -13,3 +13,9 @@ ingesta/data_mibgas_excel/
 !ingesta/check_tables/indicadores.ipynb
 !ingesta/check_tables/Listado_tablas_Postgres.xlsx
 ingesta/tensors/
+.venv/
+
+# Generado por modelos/construir_dataset_maestro.py -- se regenera en un comando, cambia a
+# diario con la ingesta, no tiene sentido versionarlo (quedaria obsoleto en horas).
+modelos/dataset_maestro.csv
+modelos/espina_horaria.csv

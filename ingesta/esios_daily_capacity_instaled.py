@@ -49,6 +49,11 @@ from config import load_config
 
 PENINSULA_GEO_ID = 8741
 
+# diesel_mw (1479), gas_turbine_mw (1480) e hydro_wind_mw (1484) se eliminaron del pipeline
+# y de la tabla (ver commit "capacity_installed_history: eliminar indicadores..."): cero dato
+# en 2.418 dias con geo_trunc=electric_system porque esa capacidad esta toda en
+# Canarias/Baleares/Ceuta/Melilla (sistemas no peninsulares), no en la Peninsula.
+
 # Los 5 primeros dias del mes se reescribe tambien el mes anterior.
 DIAS_CONSOLIDACION = 5
 
