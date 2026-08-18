@@ -122,7 +122,6 @@ INDICADORES = {
     # predictor valioso, pero solo vale con lag (potencia_indisp_pbf_lag1) o
     # sustituyendo la fuente por los outages de ENTSO-E, que se publican
     # cuando se declaran y no cuando se arma el programa. Ver TEST_415.
-    462:   "potencia_indisp_pbf_mw",    # Potencia indisponible de generacion en PBF
     543:   "gen_solartermica_prev_mw",  # Prevision solar termica (OJO: se actualiza cada hora)
     570:   "cap_baleares_prev_mw",      # Capacidad prevista enlace Peninsula-Baleares (~10:30 D+1)
 }
@@ -152,7 +151,6 @@ KEY_COLS = ["demanda_prev_mw", "gen_wind_prev_mw",
 # 462, 543 y 570.
 ESPORADICOS = {
     "demanda_mercado_prev_mw",
-    "potencia_indisp_pbf_mw",
     "gen_solartermica_prev_mw",
     "cap_baleares_prev_mw",
     "ntc_fr_imp_prev_mw", "ntc_fr_exp_prev_mw",

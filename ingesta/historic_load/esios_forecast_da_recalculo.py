@@ -98,7 +98,6 @@ CONTROL = {
     1777:  "gen_wind_prev_mw",
     1779:  "gen_solar_pv_prev_mw",
     10358: "gen_renovables_prev_mw",
-    462:   "potencia_indisp_pbf_mw",
 }
 
 # cap_baleares_prev_mw (570) queda FUERA: no se publica con geo_id=8741 y su

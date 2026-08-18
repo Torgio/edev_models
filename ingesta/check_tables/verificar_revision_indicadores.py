@@ -29,7 +29,6 @@ TZ = ZoneInfo("Europe/Madrid")
 # columna en esios_forecast_da -> indicador ESIOS (id) usado por el pipeline
 INDICADORES = {
     "demanda_residual_prev_mw": 10249,
-    "potencia_indisp_pbf_mw":   462,
     "demanda_prev_mw":          1775,
     "gen_wind_prev_mw":         1777,
     "gen_solar_pv_prev_mw":     1779,
