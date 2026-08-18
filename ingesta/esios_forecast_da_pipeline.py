@@ -1,7 +1,21 @@
 """
-TFM Energia UCM — ESIOS Forecast DA Daily Pipeline v3
+TFM Energia UCM — ESIOS Forecast DA Daily Pipeline v4
 Descarga automaticamente las previsiones day-ahead de ESIOS
 y las carga en la tabla esios_forecast_da.
+
+Cambios v4 (17/08/2026):
+  - potencia_indisp_pbf_mw (462) SALE de KEY_COLS. Se publica con el PBF
+    hacia las 14:00 del dia D-1, es decir DOS HORAS DESPUES del cierre del
+    mercado diario (12:00 D-1). No esta disponible en el instante de la
+    prediccion, asi que no puede decidir si un dia esta completo. Un retraso
+    del PBF disparaba 60 intentos x 15 indicadores = 900 llamadas a la API.
+  - assert de coherencia KEY_COLS / ESPORADICOS al importar el modulo:
+    una columna no puede exigir reintentos y declarar el null valido a la vez.
+  - Comentario de ESPORADICOS corregido: NO evita reintentos (los decide
+    KEY_COLS via get_day_status). Solo silencia un log.debug.
+  - fetch_indicator_for_day() detecta colisiones de timestamp. Sin filtro
+    geografico la API puede devolver varias filas por hora y el dict se
+    quedaba con la ultima en silencio.
 
 Cambios v3 (02/08/2026):
   - FIX CRITICO: añadido time_agg=average a la URL de la API.
@@ -27,7 +41,14 @@ Logica:
   - Revision ultimos 7 dias para rellenar huecos
 
 Cron job (servidor):
-    0 9 * * * /home/ubuntu/tfm-env/bin/python /home/ubuntu/scripts/ingesta/esios_forecast_da_pipeline.py >> /home/ubuntu/scripts/logs/cron_esios_forecast.log 2>&1
+    0 15 * * * /home/ubuntu/tfm-env/bin/python /home/ubuntu/scripts/ingesta/esios_forecast_da_pipeline.py >> /home/ubuntu/scripts/logs/cron_esios_forecast.log 2>&1
+
+    A las 15:00, NO a las 9:00. El indicador 462 (potencia indisponible en
+    PBF) se publica en el dia D una vez publicado el Programa Diario Basico,
+    hacia las 14:00-14:30. Con el cron a las 9:00 ese indicador no existia
+    todavia y quedaba a NULL: se perdieron 8 dias en agosto de 2026 sin un
+    solo error en los logs. Las previsiones canonicas (Circular 4/2019) se
+    publican antes de las 11:00, asi que a las 15:00 estan todas disponibles.
 """
 
 import logging
@@ -47,7 +68,12 @@ from config import load_config
 
 MAX_HORAS_REINTENTO  = 5
 PAUSA_REINTENTO_MIN  = 5
-DIAS_REVISION        = 7
+DIAS_REVISION        = 14
+# Dias recientes en los que se REDESCARGA y SOBRESCRIBE todo, no solo los
+# NULL. ESIOS revisa valores ya publicados: el 10249 (demanda residual) y
+# el 543 (solar termica) se actualizan cada hora, y las NTC se recalculan.
+# Fuera de esta ventana la revision solo rellena huecos, mas barato.
+DIAS_SOBRESCRITURA   = 3
 TIMEOUT_SEC          = 60
 PAUSE_API_SEC        = 0.5
 TZ_SPAIN             = ZoneInfo("Europe/Madrid")
@@ -90,6 +116,12 @@ INDICADORES = {
     1849:  "ntc_pt_exp_prev_mw",
     1846:  "ntc_ma_imp_prev_mw",
     1850:  "ntc_ma_exp_prev_mw",
+    # OJO — 462 NO es utilizable como feature directa del precio de D+1: se
+    # publica con el PBF (~14:00 de D-1), despues del cierre del mercado
+    # diario (12:00 de D-1). Se ingesta porque la indisponibilidad es un
+    # predictor valioso, pero solo vale con lag (potencia_indisp_pbf_lag1) o
+    # sustituyendo la fuente por los outages de ENTSO-E, que se publican
+    # cuando se declaran y no cuando se arma el programa. Ver TEST_415.
     462:   "potencia_indisp_pbf_mw",    # Potencia indisponible de generacion en PBF
     543:   "gen_solartermica_prev_mw",  # Prevision solar termica (OJO: se actualiza cada hora)
     570:   "cap_baleares_prev_mw",      # Capacidad prevista enlace Peninsula-Baleares (~10:30 D+1)
@@ -100,17 +132,24 @@ INDICADORES = {
 # hora fija antes de las 11:00, una hora antes del cierre del mercado diario.
 # Son las unicas usables como features sin fuga de informacion, y las que
 # determinan si el dia se considera completo.
+# potencia_indisp_pbf_mw estuvo aqui hasta la v4 y no debe volver: es una
+# serie posterior al cierre del mercado (ver nota en INDICADORES).
 KEY_COLS = ["demanda_prev_mw", "gen_wind_prev_mw",
             "gen_solar_pv_prev_mw", "gen_renovables_prev_mw"]
 
-# Indicadores esporadicos — null es valido, no se reintenta por ellos
-# 2563 y 462 son relativamente recientes: pueden no tener datos historicos
-# Indicadores esporadicos: null es un resultado valido, no se reintenta por ellos.
+# Indicadores esporadicos: null es un resultado valido para ellos.
+#
+# CUIDADO CON LO QUE ESTE SET HACE DE VERDAD (corregido en v4): NO evita los
+# reintentos. Su unico efecto en el codigo es silenciar un log.debug en
+# cargar_dia(). Los reintentos los decide get_day_status() a traves de
+# KEY_COLS: si una columna no esta en KEY_COLS ya no bloquea el dia, este
+# set o no. Estar en ambas listas a la vez es una contradiccion —de ahi el
+# assert de mas abajo.
+#
 # Verificado 02/08/2026 con el recalculo historico: las seis NTC de horizonte
 # diario (1844-1850) devuelven 0 filas para enero de 2020, es decir que no
 # publicaban en los primeros años de la serie. Lo mismo puede pasar con 2563,
-# 462, 543 y 570. Sin estar aqui, cada una dispararia reintentos cada 5 min
-# durante 5 horas buscando datos que no existen.
+# 462, 543 y 570.
 ESPORADICOS = {
     "demanda_mercado_prev_mw",
     "potencia_indisp_pbf_mw",
@@ -121,6 +160,18 @@ ESPORADICOS = {
     "ntc_ma_imp_prev_mw", "ntc_ma_exp_prev_mw",
     "demanda_residual_prev_mw",
 }
+
+# Una columna no puede exigir reintentos (KEY_COLS) y declarar el null valido
+# (ESPORADICOS) a la vez. Falla al importar, no en produccion a las 15:00.
+_conflicto = set(KEY_COLS) & ESPORADICOS
+assert not _conflicto, (
+    f"KEY_COLS y ESPORADICOS se contradicen en: {sorted(_conflicto)}. "
+    f"Una columna critica no puede tener el null por valido."
+)
+
+# Toda columna de KEY_COLS debe existir como indicador ingestado.
+_huerfanas = set(KEY_COLS) - set(INDICADORES.values())
+assert not _huerfanas, f"KEY_COLS referencia columnas no ingestadas: {sorted(_huerfanas)}"
 
 # ── Logger ─────────────────────────────────────────────────────────────────────
 
@@ -182,6 +233,13 @@ def fetch_indicator_for_day(ind_id: int, target: date, headers: dict) -> dict:
     en cualquier epoca del año (CET UTC+1 o CEST UTC+2).
     Filtra los resultados para devolver solo timestamps del dia target
     en hora española.
+
+    No se envia filtro geografico a proposito (el resto de pipelines usan
+    geo_ids[]=8741). Si algun indicador publica desglosado, la API devuelve
+    varias filas por hora y el dict se queda con la ultima SIN AVISAR: un
+    valor plausible que en realidad es el de una CCAA. El contador de
+    colisiones esta para que eso no pase desapercibido; si salta, ese
+    indicador necesita geo_ids[]=8741 explicito.
     """
     start_utc = target - timedelta(days=1)
     end_utc   = target + timedelta(days=1)
@@ -199,6 +257,7 @@ def fetch_indicator_for_day(ind_id: int, target: date, headers: dict) -> dict:
             valores = r.json().get("indicator", {}).get("values", [])
 
             result = {}
+            colisiones = 0
             for v in valores:
                 dt_str = v.get("datetime_utc") or v.get("datetime")
                 val    = v.get("value")
@@ -211,9 +270,17 @@ def fetch_indicator_for_day(ind_id: int, target: date, headers: dict) -> dict:
                         # Filtrar solo timestamps que en hora española son del dia target
                         dt_spain = dt_utc.astimezone(TZ_SPAIN)
                         if dt_spain.date() == target:
+                            previo = result.get(dt_utc)
+                            if previo is not None and abs(previo - float(val)) > TOLERANCIA:
+                                colisiones += 1
                             result[dt_utc] = float(val)
                     except Exception:
                         pass
+
+            if colisiones:
+                print(f"AVISO ind {ind_id} {target}: {colisiones} colisiones de "
+                      f"timestamp — varias filas por hora, revisar filtro geografico")
+
             return result
         except Exception:
             if intento < 3:
@@ -261,6 +328,27 @@ def get_day_status(conn, target: date, log) -> dict:
     }
 
 
+def cols_con_nulls(conn, target: date) -> list[str]:
+    """Columnas de INDICADORES con al menos un NULL en el dia target.
+
+    get_day_status() solo mira KEY_COLS; esto recorre TODAS las columnas. Es
+    lo que permite que la revision recupere huecos en columnas secundarias.
+    Sin esto, un dia con demanda y renovables completas se marcaba COMPLETO y
+    las otras once columnas quedaban huerfanas para siempre (agosto 2026:
+    8 dias sin potencia_indisp_pbf_mw y 2 sin cap_baleares_prev_mw, sin un
+    solo error en los logs).
+    """
+    start_utc, end_utc = day_range_utc(target)
+    cols = list(INDICADORES.values())
+    sel = ", ".join(f"COUNT(*)-COUNT({c})" for c in cols)
+    with conn.cursor() as cur:
+        cur.execute(
+            f"SELECT {sel} FROM esios_forecast_da "
+            f"WHERE datetime >= %s AND datetime <= %s", (start_utc, end_utc))
+        fila = cur.fetchone()
+    return [c for c, n in zip(cols, fila) if n and n > 0]
+
+
 def get_existing_for_day(conn, col: str, target: date) -> tuple[set, set]:
     """Devuelve (timestamps_existentes, timestamps_con_null) para el dia target."""
     start_utc, end_utc = day_range_utc(target)
@@ -287,7 +375,7 @@ def insert_new(conn, records: list, col: str) -> int:
     sql = f"""
         INSERT INTO esios_forecast_da (datetime, {col})
         VALUES %s
-        ON CONFLICT (time) DO NOTHING
+        ON CONFLICT (datetime) DO NOTHING
     """
     with conn.cursor() as cur:
         execute_values(cur, sql, records, page_size=500)
@@ -369,7 +457,12 @@ def log_pipeline_db(conn, target, intento, ins, upd, status, mensaje, duracion, 
 
 # ── Cargar un dia ──────────────────────────────────────────────────────────────
 
-def cargar_dia(target: date, headers: dict, conn, log) -> tuple[int, int]:
+def cargar_dia(target: date, headers: dict, conn, log,
+               sobrescribir: bool | None = None) -> tuple[int, int]:
+    """sobrescribir=None usa MODO_ACTUALIZAR (comportamiento historico).
+    True  -> reescribe cualquier valor que difiera de la API.
+    False -> solo rellena NULL y horas ausentes."""
+    sobre = MODO_ACTUALIZAR if sobrescribir is None else sobrescribir
     total_ins = total_upd = 0
     expected = expected_hours_utc(target)
 
@@ -379,7 +472,7 @@ def cargar_dia(target: date, headers: dict, conn, log) -> tuple[int, int]:
         missing    = expected - existing
         need_fetch = missing | with_nulls
 
-        if not need_fetch and not MODO_ACTUALIZAR:
+        if not need_fetch and not sobre:
             continue
 
         datos = fetch_indicator_for_day(ind_id, target, headers)
@@ -394,7 +487,7 @@ def cargar_dia(target: date, headers: dict, conn, log) -> tuple[int, int]:
         for ts, valor in datos.items():
             if ts in missing:
                 new_records.append((ts, valor))
-            elif MODO_ACTUALIZAR and ts in expected:
+            elif sobre and ts in expected:
                 # sobrescribe si difiere, no solo si esta NULL
                 update_records.append((ts, valor))
             elif ts in with_nulls:
@@ -404,7 +497,7 @@ def cargar_dia(target: date, headers: dict, conn, log) -> tuple[int, int]:
             total_ins += insert_new(conn, new_records, col)
 
         if update_records:
-            if MODO_ACTUALIZAR:
+            if sobre:
                 total_upd += upsert_overwrite(conn, update_records, col)
             else:
                 total_upd += update_nulls(conn, update_records, col)
@@ -483,14 +576,29 @@ def revisar_semana(headers: dict, db_config: dict, log):
         log.error(f"  Error BD: {e}")
         return
 
-    for i in range(1, DIAS_REVISION + 1):
+    for i in range(0, DIAS_REVISION + 1):
         dia = hoy - timedelta(days=i)
         status = get_day_status(conn, dia, log)
-        if status["es_completo"]:
+        pendientes = cols_con_nulls(conn, dia)
+
+        # Los dias mas recientes se redescargan enteros aunque esten
+        # completos: ESIOS revisa valores ya publicados.
+        sobrescribir = i <= DIAS_SOBRESCRITURA
+
+        if status["es_completo"] and not pendientes and not sobrescribir:
             continue
-        log.info(f"  Rellenando {dia}...")
-        ins, upd = cargar_dia(dia, headers, conn, log)
-        log.info(f"  {dia}: {ins} insert, {upd} update")
+
+        if pendientes:
+            log.info(f"  {dia}: huecos en {', '.join(pendientes)}")
+        elif sobrescribir:
+            log.info(f"  {dia}: revisando valores publicados")
+        else:
+            log.info(f"  Rellenando {dia}...")
+
+        ins, upd = cargar_dia(dia, headers, conn, log,
+                              sobrescribir=sobrescribir)
+        if ins or upd:
+            log.info(f"  {dia}: {ins} insert, {upd} update")
 
     conn.close()
     log.info("--- Revision semanal completada ---\n")
@@ -510,6 +618,8 @@ def run():
     log.info(f"Modo actualizar D+1: {MODO_ACTUALIZAR} (sobrescribe si difiere)")
     log.info(f"Indicadores: {len(INDICADORES)}")
     log.info(f"Max reintentos: {MAX_HORAS_REINTENTO}h cada {PAUSA_REINTENTO_MIN}min")
+    log.info(f"Revision: {DIAS_REVISION} dias, huecos en las {len(INDICADORES)} columnas")
+    log.info(f"Sobrescritura de valores: ultimos {DIAS_SOBRESCRITURA} dias")
     log.info("=" * 55)
 
     import json

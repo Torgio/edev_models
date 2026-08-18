@@ -319,7 +319,7 @@ def fetch_day(client, target: date, log) -> pd.DataFrame | None:
 
     df = pd.DataFrame(frames)
     df.index = df.index.tz_convert("UTC")
-    df.index.name = "datetime_utc"
+    df.index.name = "datetime"
     df = df.round(2)
     return df.reset_index()
 
@@ -331,7 +331,7 @@ def _estado_tabla(cur, tabla: str, cols: list, criticos: set,
     """Estado de una tabla concreta para el dia: horas, criticos y nulls."""
     cur.execute(f"""
         SELECT COUNT(*) FROM {tabla}
-        WHERE datetime_utc >= %s AND datetime_utc <= %s
+        WHERE datetime >= %s AND datetime <= %s
     """, (start_utc, end_utc))
     total = cur.fetchone()[0]
 
@@ -339,7 +339,7 @@ def _estado_tabla(cur, tabla: str, cols: list, criticos: set,
     for col in criticos:
         cur.execute(f"""
             SELECT COUNT(*) FROM {tabla}
-            WHERE datetime_utc >= %s AND datetime_utc <= %s AND {col} IS NOT NULL
+            WHERE datetime >= %s AND datetime <= %s AND {col} IS NOT NULL
         """, (start_utc, end_utc))
         n = cur.fetchone()[0]
         if n < n_expected:
@@ -351,7 +351,7 @@ def _estado_tabla(cur, tabla: str, cols: list, criticos: set,
     for col in cols:
         cur.execute(f"""
             SELECT COUNT(*) FROM {tabla}
-            WHERE datetime_utc >= %s AND datetime_utc <= %s AND {col} IS NULL
+            WHERE datetime >= %s AND datetime <= %s AND {col} IS NULL
         """, (start_utc, end_utc))
         n = cur.fetchone()[0]
         if n > 0:
@@ -428,32 +428,32 @@ def _upsert_tabla(conn, df: pd.DataFrame, tabla: str, cols: list,
 
     with conn.cursor() as cur:
         cur.execute(f"""
-            SELECT datetime_utc FROM {tabla}
-            WHERE datetime_utc >= %s AND datetime_utc <= %s
+            SELECT datetime FROM {tabla}
+            WHERE datetime >= %s AND datetime <= %s
         """, (start_utc, end_utc))
         existing = {row[0] for row in cur.fetchall()}
 
     # INSERT de horas nuevas
-    df_new = df[~df["datetime_utc"].isin(existing)]
+    df_new = df[~df["datetime"].isin(existing)]
     if not df_new.empty:
-        insert_cols = ["datetime_utc"] + presentes
+        insert_cols = ["datetime"] + presentes
         records = [tuple(None if pd.isna(row.get(c)) else row.get(c) for c in insert_cols)
                    for _, row in df_new.iterrows()]
         sql = (f"INSERT INTO {tabla} ({', '.join(insert_cols)}) VALUES %s "
-               f"ON CONFLICT (datetime_utc) DO NOTHING")
+               f"ON CONFLICT (datetime) DO NOTHING")
         with conn.cursor() as cur:
             execute_values(cur, sql, records, page_size=500)
         conn.commit()
         ins = len(records)
 
     # UPDATE de horas existentes que tengan NULLs
-    df_exist = df[df["datetime_utc"].isin(existing)]
+    df_exist = df[df["datetime"].isin(existing)]
     if not df_exist.empty:
         cols_str = ", ".join(presentes)
         with conn.cursor() as cur:
             for _, row in df_exist.iterrows():
-                ts = row["datetime_utc"]
-                cur.execute(f"SELECT {cols_str} FROM {tabla} WHERE datetime_utc = %s", (ts,))
+                ts = row["datetime"]
+                cur.execute(f"SELECT {cols_str} FROM {tabla} WHERE datetime = %s", (ts,))
                 db_row = cur.fetchone()
                 if not db_row:
                     continue
@@ -463,7 +463,7 @@ def _upsert_tabla(conn, df: pd.DataFrame, tabla: str, cols: list,
                     set_clause = ", ".join([f"{c} = %s" for c in to_update])
                     cur.execute(
                         f"UPDATE {tabla} SET {set_clause}, updated_at = now() "
-                        f"WHERE datetime_utc = %s",
+                        f"WHERE datetime = %s",
                         list(to_update.values()) + [ts])
                     upd += 1
         conn.commit()

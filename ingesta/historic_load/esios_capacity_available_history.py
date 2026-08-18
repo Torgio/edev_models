@@ -1,33 +1,64 @@
 """
-TFM Energia UCM — Carga historica de potencia DISPONIBLE (2020-actualidad)
-Descarga y carga AÑO A AÑO, automaticamente sin confirmacion manual.
-Antes de descargar cada bloque, revisa si ya esta cargado en BD para no
-repetir llamadas innecesarias a la API (aunque el upsert ya es idempotente).
+TFM Energia UCM - Carga historica de potencia DISPONIBLE (2020-actualidad)
+Descarga y carga ANO A ANO, por bloques.
+
+CAMBIOS 15/08/2026
+------------------
+1. BUG DE FECHA CORREGIDO (critico). La linea era:
+
+       peninsula["fecha"] = pd.to_datetime(peninsula["datetime"], utc=True).dt.date
+
+   ESIOS devuelve "2024-06-12T00:00:00+02:00". Al pasar a UTC eso es
+   "2024-06-11T22:00:00Z", y .dt.date extrae el DIA ANTERIOR. Verificado:
+   el valor 11952.475 que la API publica para el 12-jun-2024 estaba
+   almacenado bajo la fecha 11-jun-2024. TODA la serie cargada por este
+   script estaba desplazada un dia hacia atras.
+
+   El patron correcto cuando se necesita la fecha local es NO forzar UTC,
+   o bien utc=True seguido de tz_convert("Europe/Madrid") -que es lo que
+   hacen spot_price_history y esios_forecast_da_recalculo, ambos correctos-.
+
+   Consecuencia colateral ya resuelta: la fila espuria de 2019-12-31, que
+   era el 1-ene-2020 desplazado.
+
+2. ELIMINADO el indicador 479 / gas_turbine_mw: solo publica para Asturias
+   y desde jul-2025, con valor constante. Columna eliminada de la tabla.
+
+3. ELIMINADO updated_at del INSERT: la columna ya no existe.
+
+4. COALESCE en el DO UPDATE: un fallo puntual de la API no machaca datos
+   buenos con NULL.
+
+5. total_mw no se escribe: es GENERATED (suma de las 6 tecnologias).
+
+6. Flag --forzar para redescargar bloques ya presentes. Necesario para
+   reparar el desplazamiento de fechas del punto 1.
+
+Uso
+---
+    python esios_capacity_available_history.py
+    python esios_capacity_available_history.py --forzar
+    python esios_capacity_available_history.py --desde 2020 --hasta 2022 --forzar
 """
 
+import argparse
+import calendar
 import sys
 import time
-import calendar
-import requests
+from datetime import date
+from pathlib import Path
+
 import pandas as pd
 import psycopg2
+import requests
 from psycopg2.extras import execute_values
-from pathlib import Path
-from datetime import date
 
-import sys
-from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 from config import load_config
 
 # ══════════════════════════════════════════════════════════════════
-# RANGO A CARGAR
-# ══════════════════════════════════════════════════════════════════
-START_YEAR = 2020
-START_MONTH = 1
-
-END_YEAR = 2026
-END_MONTH = 7
+START_YEAR, START_MONTH = 2020, 1
+END_YEAR, END_MONTH = 2026, 8
 # ══════════════════════════════════════════════════════════════════
 
 PENINSULA_GEO_ID = 8741
@@ -40,7 +71,6 @@ INDICATORS_AVAILABLE = {
     476: "coal_subbituminosa_mw",
     477: "ccgt_mw",
     478: "fuel_mw",
-    479: "gas_turbine_mw",
 }
 
 
@@ -48,30 +78,29 @@ def rango_anual(start: date, end: date):
     tramos = []
     y = start.year
     while y <= end.year:
-        tramo_ini = date(y, 1, 1) if y > start.year else start
-        tramo_fin = date(y, 12, 31) if y < end.year else end
-        tramos.append((tramo_ini, tramo_fin))
+        ini = date(y, 1, 1) if y > start.year else start
+        fin = date(y, 12, 31) if y < end.year else end
+        tramos.append((ini, fin))
         y += 1
     return tramos
 
 
-def dias_ya_cargados(db_config, tramo_ini: date, tramo_fin: date) -> int:
-    """Cuenta cuantas fechas ya existen en la tabla para este tramo."""
+def dias_ya_cargados(db_config, ini: date, fin: date) -> int:
     conn = psycopg2.connect(**db_config)
     cur = conn.cursor()
     cur.execute(
-        "SELECT COUNT(*) FROM esios_capacity_available WHERE date BETWEEN %s AND %s",
-        (tramo_ini, tramo_fin)
-    )
-    count = cur.fetchone()[0]
+        "SELECT COUNT(*) FROM esios_capacity_available "
+        "WHERE date BETWEEN %s AND %s", (ini, fin))
+    n = cur.fetchone()[0]
     cur.close()
     conn.close()
-    return count
+    return n
 
 
-def fetch_indicator_chunk(headers, indicator_id, start: date, end: date, reintentos=2):
+def fetch_indicator_chunk(headers, indicator_id, start: date, end: date,
+                          reintentos=2):
     start_str = start.strftime("%Y-%m-%dT00:00:00")
-    end_str = end.strftime("%Y-%m-%dT23:00:00")
+    end_str = end.strftime("%Y-%m-%dT23:59:00")
 
     for intento in range(reintentos + 1):
         try:
@@ -104,7 +133,21 @@ def fetch_indicator_chunk(headers, indicator_id, start: date, end: date, reinten
             if peninsula.empty:
                 return None
 
-            peninsula["fecha"] = pd.to_datetime(peninsula["datetime"], utc=True).dt.date
+            # utc=True + tz_convert("Europe/Madrid"): el mismo patron que
+            # usan spot_price_history y esios_forecast_da_recalculo.
+            #
+            # utc=True es OBLIGATORIO aqui: al pedir un anio completo la
+            # respuesta mezcla offsets (+01:00 invierno, +02:00 verano) y sin
+            # el pandas devuelve dtype object, con lo que .dt falla.
+            # Pero NO basta con utc=True: hay que reconvertir a Madrid antes
+            # de extraer .date, o la medianoche local cae en el dia anterior
+            # en UTC y toda la serie se desplaza un dia (bug corregido, ver
+            # nota 1 de la cabecera).
+            peninsula["fecha"] = (
+                pd.to_datetime(peninsula["datetime"], utc=True)
+                  .dt.tz_convert("Europe/Madrid")
+                  .dt.date)
+
             return peninsula[["fecha", "value"]]
 
         except Exception as e:
@@ -117,26 +160,28 @@ def fetch_indicator_chunk(headers, indicator_id, start: date, end: date, reinten
     return None
 
 
-def descargar_bloque(headers, tramo_ini: date, tramo_fin: date) -> pd.DataFrame:
+def descargar_bloque(headers, ini: date, fin: date) -> pd.DataFrame:
     series = {}
     for ind_id, col in INDICATORS_AVAILABLE.items():
-        df_serie = fetch_indicator_chunk(headers, ind_id, tramo_ini, tramo_fin)
-        if df_serie is not None:
-            series[col] = df_serie.set_index("fecha")["value"]
+        s = fetch_indicator_chunk(headers, ind_id, ini, fin)
+        if s is not None:
+            series[col] = s.set_index("fecha")["value"]
         time.sleep(0.4)
 
     if not series:
         return pd.DataFrame()
 
-    df_bloque = pd.DataFrame(series)
+    df = pd.DataFrame(series)
 
-    coal_cols = [c for c in ["coal_antracita_mw", "coal_subbituminosa_mw"] if c in df_bloque.columns]
+    coal_cols = [c for c in ("coal_antracita_mw", "coal_subbituminosa_mw")
+                 if c in df.columns]
     if coal_cols:
-        df_bloque["coal_mw"] = df_bloque[coal_cols].sum(axis=1, skipna=True)
-        df_bloque = df_bloque.drop(columns=coal_cols)
+        df["coal_mw"] = df[coal_cols].sum(axis=1, skipna=True)
+        df = df.drop(columns=coal_cols)
 
-    df_bloque.index.name = "fecha"
-    return df_bloque.sort_index()
+    df = df.round(2)
+    df.index.name = "fecha"
+    return df.sort_index()
 
 
 def upsert_bloque(db_config, df: pd.DataFrame) -> int:
@@ -145,79 +190,78 @@ def upsert_bloque(db_config, df: pd.DataFrame) -> int:
 
     cols = list(df.columns)
     col_names = ", ".join(cols)
-    updates = ", ".join([f"{c} = EXCLUDED.{c}" for c in cols])
+    updates = ", ".join(
+        f"{c} = COALESCE(EXCLUDED.{c}, esios_capacity_available.{c})"
+        for c in cols)
+
+    rows = [[fecha] + [float(row[c]) if pd.notna(row[c]) else None
+                       for c in cols]
+            for fecha, row in df.iterrows()]
 
     conn = psycopg2.connect(**db_config)
     cur = conn.cursor()
-
-    rows = []
-    for fecha, row in df.iterrows():
-        valores = [float(row[c]) if pd.notna(row[c]) else None for c in cols]
-        rows.append([fecha] + valores)
-
     sql = f"""
-        INSERT INTO esios_capacity_available (date, {col_names}, updated_at)
+        INSERT INTO esios_capacity_available (date, {col_names})
         VALUES %s
-        ON CONFLICT (date) DO UPDATE SET
-            {updates},
-            updated_at = now()
+        ON CONFLICT (date) DO UPDATE SET {updates}
     """
-    template = "(" + ", ".join(["%s"] * (len(cols) + 1)) + ", now())"
-
-    execute_values(cur, sql, rows, template=template, page_size=200)
+    execute_values(cur, sql, rows, page_size=200)
     conn.commit()
     cur.close()
     conn.close()
-
     return len(rows)
 
 
 def main():
-    start = date(START_YEAR, START_MONTH, 1)
-    ultimo_dia = calendar.monthrange(END_YEAR, END_MONTH)[1]
-    end = date(END_YEAR, END_MONTH, ultimo_dia)
+    p = argparse.ArgumentParser()
+    p.add_argument("--desde", type=int, default=START_YEAR)
+    p.add_argument("--hasta", type=int, default=END_YEAR)
+    p.add_argument("--forzar", action="store_true",
+                   help="Redescargar bloques ya presentes en BD")
+    args = p.parse_args()
 
-    print(f"Cargando historico de potencia DISPONIBLE: {start} a {end}")
-    print("(automatico, por bloques anuales, sin repetir lo ya cargado)\n")
+    start = date(args.desde, START_MONTH, 1)
+    if args.hasta >= END_YEAR:
+        ult = calendar.monthrange(END_YEAR, END_MONTH)[1]
+        end = min(date(END_YEAR, END_MONTH, ult), date.today())
+    else:
+        end = date(args.hasta, 12, 31)
+
+    print(f"Historico potencia DISPONIBLE: {start} a {end}"
+          + ("  [FORZANDO]" if args.forzar else ""))
+    print("Fechas en hora LOCAL de Madrid (bug de desplazamiento corregido).\n")
 
     headers, db_config = load_config()
-    tramos = rango_anual(start, end)
-    total_filas = 0
+    total = 0
 
-    for tramo_ini, tramo_fin in tramos:
-        dias_esperados = (tramo_fin - tramo_ini).days + 1
+    for ini, fin in rango_anual(start, end):
+        esperados = (fin - ini).days + 1
+        print(f"\n{'=' * 60}")
+        print(f"BLOQUE {ini.year} - {ini} a {fin}")
+        print(f"{'=' * 60}")
 
-        print(f"\n{'='*60}")
-        print(f"BLOQUE {tramo_ini.year} — {tramo_ini} a {tramo_fin}")
-        print(f"{'='*60}")
+        ya = dias_ya_cargados(db_config, ini, fin)
+        print(f"  Dias ya en BD: {ya}/{esperados}")
 
-        ya_cargados = dias_ya_cargados(db_config, tramo_ini, tramo_fin)
-        print(f"  Dias ya en BD para este tramo: {ya_cargados}/{dias_esperados}")
-
-        if ya_cargados >= dias_esperados:
-            print(f"  Bloque {tramo_ini.year} ya esta completo en BD. Se omite (sin llamar a la API).")
+        if ya >= esperados and not args.forzar:
+            print("  Completo, se omite (usa --forzar para rehacerlo).")
             continue
 
-        df_bloque = descargar_bloque(headers, tramo_ini, tramo_fin)
-
-        if df_bloque.empty:
-            print(f"  Sin datos descargados para {tramo_ini.year}, se omite.")
+        df = descargar_bloque(headers, ini, fin)
+        if df.empty:
+            print("  Sin datos descargados, se omite.")
             continue
 
-        print(f"  {len(df_bloque)} filas descargadas para {tramo_ini.year}")
-        print(df_bloque.describe().to_string())
+        print(f"  {len(df)} filas descargadas "
+              f"({df.index.min()} .. {df.index.max()})")
 
-        backup_file = f"backup_disponible_{tramo_ini.year}.csv"
-        df_bloque.to_csv(backup_file)
-        print(f"  Backup guardado en {backup_file}")
+        n = upsert_bloque(db_config, df)
+        total += n
+        print(f"  {n} filas cargadas/actualizadas.")
 
-        filas = upsert_bloque(db_config, df_bloque)
-        total_filas += filas
-        print(f"  {filas} filas cargadas/actualizadas en BD para {tramo_ini.year}.")
-
-    print(f"\n{'='*60}")
-    print(f"CARGA FINALIZADA — Total filas cargadas/actualizadas: {total_filas}")
-    print(f"{'='*60}")
+    print(f"\n{'=' * 60}")
+    print(f"FINALIZADO - {total} filas cargadas/actualizadas")
+    print(f"{'=' * 60}")
 
 
 if __name__ == "__main__":
