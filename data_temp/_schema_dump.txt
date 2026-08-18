@@ -1,0 +1,8 @@
+train         1822 dias   2020-01-01 -> 2024-12-31
+validation     364 dias   2025-01-01 -> 2025-12-31
+test           224 dias   2026-01-01 -> 2026-08-13
+
+suma de los 3 bloques: 2410  |  dataset_diario_valido: 2410  |  coinciden: True
+train        precio medio: 92.79 EUR/MWh
+validation   precio medio: 65.40 EUR/MWh
+test         precio medio: 62.13 EUR/MWh

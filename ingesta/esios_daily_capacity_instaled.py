@@ -22,6 +22,15 @@ from config import load_config
 
 PENINSULA_GEO_ID = 8741
 
+# diesel_mw, gas_turbine_mw e hydro_wind_mw quedan SIEMPRE en NULL a proposito.
+# Verificado contra la API real (12-ago-2026): esas tres tecnologias tienen
+# capacidad instalada CERO en la Peninsula -- toda su potencia esta en
+# Canarias/Baleares/Ceuta/Melilla (sistemas no peninsulares, sin sincronizar
+# con la red continental). hydro_wind_mw es la central de El Hierro (Gorona
+# del Viento, 11.32 MW), la unica hidroeolica de España. No es un bug del
+# filtro geo_id=8741: no existe fila de Peninsula porque no hay nada que
+# sumar ahi. No investigar de nuevo -- ver ingesta/_diagnostico_geo_id.py.
+
 INDICATORS_INSTALLED = {
     1475:  "hydro_mw",
     1476:  "pump_mw",

@@ -1,0 +1,510 @@
+Total cells: 28
+
+--- [0] id=3207a50f type=markdown ---
+# EDA pre-modelado — tfm_energia
+
+Punto de partida para el analisis exploratorio antes de estructurar el dataset de modelado predictivo.
+
+Rama: `willy_test` · Fuente: PostgreSQL `tfm_energia` (91.134.143.153) · Credenciales: `ingesta/credentials.json`
+
+--- [1] id=3b6b9e0b type=markdown ---
+## 0. Setup — conexión a la base de datos
+
+--- [2] id=d3594918 type=code ---
+import sys
+from pathlib import Path
+
+sys.path.append(str(Path.cwd().parent / "ingesta"))
+from config import load_config
+
+import pandas as pd
+import psycopg2
+
+pd.set_option("display.max_columns", 60)
+pd.set_option("display.width", 160)
+
+_, DB_CONFIG = load_config()
+conn = psycopg2.connect(**DB_CONFIG)
+
+print("Conectado a", DB_CONFIG["host"], "/", DB_CONFIG["dbname"])
+
+--- [3] id=6092b39e type=markdown ---
+## 1. Inventario de tablas — qué hay y qué falta
+
+Recuento rápido de filas y rango de fechas de las 18 tablas, para no arrancar el EDA a ciegas.
+Ajustado a lo que ya sabemos (ver el artifact de auditoría): 11 tablas con datos, 6 vacías, 1 legacy.
+
+--- [4] id=de931cfe type=code ---
+# tabla: columna de tiempo — actualizado tras la migración del 14-15 agosto
+# (esios_marketdata / entsoe_data / entsoe_prices_da ya no existen)
+TABLAS = {
+    "entsoe_gen_data":            "datetime_utc",
+    "entsoe_load_inter":          "datetime_utc",
+    "esios_gen":                  "datetime",
+    "esios_load_inter":           "datetime",
+    "esios_forecast_da":          "datetime",
+    "esios_capacity_available":   "date",
+    "esios_capacity_installed":   "date",
+    "commodities":                "fecha",
+    "era5_weather_agg":           "ts",
+    "ecmwf_forecast_agg":         "ts",
+    "spot_price":                 "datetime",
+    "entsoe_forecast_da":         "datetime",
+    "esios_pbf_bilateral":        "datetime",
+    "esios_pbf_gen":              "datetime",
+    "esios_pbf_load_inter":       "datetime",
+    "eua_next_dec":               "fecha",
+    "ttf_m1":                     "fecha",
+    "trayport_daily":             "fecha",
+    "trayport_daily_ohlc":        "fecha",
+}
+
+resumen = []
+with conn.cursor() as cur:
+    for tabla, col in TABLAS.items():
+        cur.execute(f"SELECT COUNT(*), MIN({col}), MAX({col}) FROM {tabla}")
+        n, mn, mx = cur.fetchone()
+        resumen.append({"tabla": tabla, "col_tiempo": col, "filas": n, "desde": mn, "hasta": mx})
+
+df_inventario = pd.DataFrame(resumen).sort_values("filas", ascending=False).reset_index(drop=True)
+df_inventario
+
+--- [5] id=05277592 type=markdown ---
+## 2. Carga de las tablas núcleo (familia horaria UTC)
+
+`entsoe_gen_data`, `entsoe_load_inter`, `esios_gen`, `esios_load_inter` y `esios_forecast_da`
+comparten histórico 2020→hoy y granularidad horaria. `esios_gen`/`esios_load_inter` reemplazan a
+`esios_marketdata` desde la migración del 14-ago — ver sección 00 del artifact de auditoría.
+
+⚠️ **Trampa detectada al probar este notebook**: `pd.read_sql(..., parse_dates=[...])` sobre una
+columna `timestamptz` de Postgres que cruza un cambio de hora (CET ↔ CEST) la deja en
+`datetime64[us, UTC+01:00]` — un offset *fijo* — y convierte en `NaT` **la mitad de las filas**
+(las que están en el otro offset). Si luego haces un merge por esa columna, esos `NaT` casan entre
+sí y el resultado explota (lo vimos: un JOIN de 31.583 × 31.583 filas intentó reservar 48 GB).
+Por eso aquí se lee **sin** `parse_dates` y se normaliza a UTC a mano con
+`pd.to_datetime(..., utc=True)` justo después.
+
+--- [6] id=eb024e27 type=code ---
+# Ventana de trabajo — ampliar cuando el pipeline de EDA esté maduro
+START = "2023-01-01"
+END   = "2026-08-15"
+
+def leer_horaria(sql: str, col_ts: str) -> pd.DataFrame:
+    """SELECT + normalizacion UTC manual (ver aviso arriba: NUNCA parse_dates aqui)."""
+    df = pd.read_sql(sql, conn, params={"start": START, "end": END})
+    df[col_ts] = pd.to_datetime(df[col_ts], utc=True)
+    return df
+
+df_gen = leer_horaria(
+    "SELECT * FROM entsoe_gen_data WHERE datetime_utc BETWEEN %(start)s AND %(end)s ORDER BY datetime_utc",
+    "datetime_utc",
+)
+df_load = leer_horaria(
+    "SELECT * FROM entsoe_load_inter WHERE datetime_utc BETWEEN %(start)s AND %(end)s ORDER BY datetime_utc",
+    "datetime_utc",
+)
+df_esios_gen = leer_horaria(
+    "SELECT * FROM esios_gen WHERE datetime BETWEEN %(start)s AND %(end)s ORDER BY datetime",
+    "datetime",
+)
+df_esios_load = leer_horaria(
+    "SELECT * FROM esios_load_inter WHERE datetime BETWEEN %(start)s AND %(end)s ORDER BY datetime",
+    "datetime",
+)
+df_forecast = leer_horaria(
+    "SELECT * FROM esios_forecast_da WHERE datetime BETWEEN %(start)s AND %(end)s ORDER BY datetime",
+    "datetime",
+)
+
+for nombre, df, col in [("entsoe_gen_data", df_gen, "datetime_utc"), ("entsoe_load_inter", df_load, "datetime_utc"),
+                        ("esios_gen", df_esios_gen, "datetime"), ("esios_load_inter", df_esios_load, "datetime"),
+                        ("esios_forecast_da", df_forecast, "datetime")]:
+    dups = df[col].duplicated().sum()
+    print(f"{nombre:<22} {df.shape[0]:>7,} filas  {df.shape[1]:>2} cols  dtype={df[col].dtype}  duplicados={dups}")
+
+--- [7] id=715781f2 type=markdown ---
+## 3. Construir la "espina" horaria — join de las fuentes horarias
+
+`entsoe_gen_data.datetime_utc` como eje (es la tabla más limpia — sin nulos salvo lo esporádico
+documentado). `esios_gen`, `esios_load_inter` y `esios_forecast_da` se unen por timestamp exacto.
+
+Nota: esta espina horaria es para **exploración general** (correlaciones, distribuciones) — el
+dataset real de entrenamiento es el `dataset_diario` de la sección 8, con el target D+1 y solo
+features sin fuga de información. No confundir los dos.
+
+--- [8] id=6f15b72b type=code ---
+espina = df_gen.rename(columns={"datetime_utc": "ts"})
+espina = espina.merge(
+    df_load.rename(columns={"datetime_utc": "ts"}),
+    on="ts", how="left", suffixes=("", "_load"),
+)
+espina = espina.merge(
+    df_esios_gen.rename(columns={"datetime": "ts"}),
+    on="ts", how="left", suffixes=("", "_esiosgen"),
+)
+espina = espina.merge(
+    df_esios_load.rename(columns={"datetime": "ts"}),
+    on="ts", how="left", suffixes=("", "_esiosload"),
+)
+espina = espina.merge(
+    df_forecast.rename(columns={"datetime": "ts"}),
+    on="ts", how="left", suffixes=("", "_fcst"),
+)
+
+assert espina["ts"].is_unique, "la espina no deberia tener timestamps duplicados"
+print(f"espina: {espina.shape[0]:,} filas x {espina.shape[1]} columnas")
+print(f"rango:  {espina['ts'].min()}  ->  {espina['ts'].max()}")
+espina.head()
+
+--- [9] id=aa0a0c52 type=markdown ---
+## 4. Variables diarias (commodities, capacidad) — difundir sobre las 24h
+
+`commodities`, `esios_capacity_available` y `esios_capacity_installed` son 1 fila/día.
+Se replican sobre las 24 horas del día correspondiente (no interpolar). Los nulos de fin de semana
+en `commodities` (Yahoo Finance no cotiza sábado/domingo) se rellenan con el último cierre conocido
+(`ffill`), no con la media.
+
+--- [10] id=6d2e691c type=code ---
+df_commodities = pd.read_sql(
+    "SELECT * FROM commodities WHERE fecha BETWEEN %(start)s AND %(end)s ORDER BY fecha",
+    conn, params={"start": START, "end": END},
+).sort_values("fecha").ffill()   # fines de semana / festivos -> ultimo cierre
+df_commodities["fecha"] = pd.to_datetime(df_commodities["fecha"]).dt.date
+
+df_cap_disp = pd.read_sql(
+    'SELECT * FROM esios_capacity_available WHERE date BETWEEN %(start)s AND %(end)s ORDER BY date',
+    conn, params={"start": START, "end": END},
+)
+df_cap_inst = pd.read_sql(
+    'SELECT * FROM esios_capacity_installed WHERE date BETWEEN %(start)s AND %(end)s ORDER BY date',
+    conn, params={"start": START, "end": END},
+)
+
+espina["fecha"] = espina["ts"].dt.tz_convert("UTC").dt.date
+
+for nombre, df_diario, col_fecha in [
+    ("commodities", df_commodities, "fecha"),
+    ("esios_capacity_available", df_cap_disp, "date"),
+    ("esios_capacity_installed", df_cap_inst, "date"),
+]:
+    df_diario = df_diario.copy()
+    df_diario["fecha"] = pd.to_datetime(df_diario[col_fecha]).dt.date
+    if col_fecha != "fecha":
+        df_diario = df_diario.drop(columns=[col_fecha])
+    espina = espina.merge(df_diario, on="fecha", how="left", suffixes=("", f"_{nombre}"))
+
+assert espina["ts"].is_unique, "la espina no deberia tener timestamps duplicados"
+print(f"espina + variables diarias: {espina.shape[0]:,} filas x {espina.shape[1]} columnas")
+
+--- [11] id=9abfd494 type=markdown ---
+## 5. Clima — ERA5 (real) y ECMWF (previsión)
+
+⚠️ **`era5_weather_agg` solo tiene datos desde 2025-01-01** — con `START = 2023-01-01` de arriba
+esta parte queda vacía a propósito. Bajar `START` a `"2025-01-01"` si quieres features climáticas
+en la espina. `ecmwf_forecast_agg` es aún más corta (unos días) — de momento no sirve para train,
+solo para inferencia D+1 en producción.
+
+Las temperaturas vienen en **Kelvin** — se convierten a Celsius aquí mismo.
+
+--- [12] id=de570d4a type=code ---
+df_era5 = pd.read_sql(
+    "SELECT * FROM era5_weather_agg WHERE ts BETWEEN %(start)s AND %(end)s ORDER BY ts",
+    conn, params={"start": START, "end": END}, parse_dates=["ts"],
+)
+for col in ["t2m_mean", "d2m_mean"]:
+    if col in df_era5.columns:
+        df_era5[col] = df_era5[col] - 273.15   # Kelvin -> Celsius
+
+print(f"era5_weather_agg en la ventana: {df_era5.shape[0]:,} filas")
+
+if not df_era5.empty:
+    espina = espina.merge(
+        df_era5.rename(columns={"ts": "ts_naive"}),
+        left_on=espina["ts"].dt.tz_localize(None), right_on="ts_naive",
+        how="left", suffixes=("", "_era5"),
+    ).drop(columns=["ts_naive", "key_0"], errors="ignore")
+    print(f"espina + era5: {espina.shape[0]:,} filas x {espina.shape[1]} columnas")
+else:
+    print("Sin filas ERA5 en esta ventana — sube START a 2025-01-01 si quieres clima.")
+
+--- [13] id=df1efba2 type=markdown ---
+## 6. Cobertura y calidad — sanity check rápido de la espina final
+
+--- [14] id=6dd32f71 type=code ---
+def resumen_nulos(df: pd.DataFrame, umbral: float = 5.0) -> pd.DataFrame:
+    """Columnas con >umbral% de nulos, ordenadas de mayor a menor."""
+    pct = df.isna().mean().mul(100).round(1)
+    out = pct[pct > umbral].sort_values(ascending=False).rename("pct_nulos")
+    return out.to_frame()
+
+print(f"espina final: {espina.shape[0]:,} filas x {espina.shape[1]} columnas")
+print(f"rango: {espina['ts'].min()} -> {espina['ts'].max()}")
+print(f"huecos horarios: {espina['ts'].diff().dt.total_seconds().gt(3600).sum()} saltos > 1h\n")
+
+resumen_nulos(espina)
+
+--- [15] id=866a6995 type=markdown ---
+## 7. Próximos pasos — estado al 15-ago-2026
+
+- [x] **Target y horizonte**: precio horario D+1, `spot_price.es_esios` — confirmado con el equipo, verificado (cobertura 100% 2020-2026, 3 fuentes casi idénticas).
+- [x] **Framing**: una fila por día D, target = 24 precios horarios de D+1 (ver sección 8).
+- [x] **Catálogo de features seguras vs. con fuga**: resuelto para las 4 tablas núcleo — ver sección 8 y el Banco de Evidencias.
+- [ ] Lags de datos reales (t-24h, t-168h) sobre `entsoe_gen_data`/`esios_gen`/`esios_load_inter`.
+- [ ] Split temporal (walk-forward), nunca aleatorio.
+- [ ] Backfillear ERA5 2020-2024 (`era5_load.py` ya existe) antes de comprometerse a usar clima como feature.
+- [x] `precio_co2_despacho` y `entsoe_data` — ya no existen, no hace falta excluirlas a mano.
+- [ ] Evaluar `esios_pbf_*` como feature D-1 secundaria (sesgo conocido: eólica +15,9%).
+
+--- [16] id=67b32cda type=markdown ---
+## 8. Dataset diario — target D+1 + features seguras
+
+**Framing confirmado con el equipo**: una fila por día D. Target = las 24 horas de precio de D+1
+(`price_h00`...`price_h23`). Así se entrena el modelo una vez al día, igual que se va a usar en
+producción — no una fila por hora con un desplazamiento de 24h.
+
+**Catálogo de features, resuelto en el Excel + Banco de Evidencias (puntos #1-#3):**
+
+| Fuente | Estado | Motivo |
+|---|---|---|
+| `esios_forecast_da` (4 series canónicas: demanda, eólica, solar, renovables) | ✅ segura | Circular 4/2019 CNMC, publicación fija antes del cierre |
+| `esios_forecast_da.demanda_residual_prev_mw` | ❌ excluida | Se revisa hasta 10-14 días — el valor guardado no es el de las 11:00 |
+| `esios_forecast_da.potencia_indisp_pbf_mw` | ❌ excluida | Llega 8 días tarde, siempre — no existe en el momento de predecir |
+| `esios_forecast_da` (NTC, demanda_mercado, etc.) | ⚠️ segura pero esporádica | Nulos esperados en años tempranos, no rellenar |
+| `entsoe_gen_data` / `esios_gen` / `esios_load_inter` reales | ⚠️ solo como lag | Nunca del propio D+1 — únicamente t-24h, t-168h, etc. |
+| Calendario de D+1 (día semana, mes, fin de semana) | ✅ segura | Determinista, se conoce siempre |
+| `commodities` / `esios_capacity_*` de día D | ✅ segura (lag natural) | Ya ocurrieron cuando se predice D+1 |
+
+**Duplicados resueltos** (punto #3): demanda real → `esios_load_inter.ree_load`; eólica/bombeo real →
+`entsoe_gen_data`; solar/termosolar → `esios_gen`. Ver Banco de Evidencias para el detalle.
+
+--- [17] id=4d5d9f39 type=code ---
+# Ventana completa — spot_price ya tiene histórico real 2020-2026 desde la migración del 14-ago
+DATASET_START = "2020-01-01"
+DATASET_END   = "2026-08-15"
+
+# --- Target: precio horario de España, pivotado a 24 columnas por dia ---
+df_price = pd.read_sql(
+    "SELECT datetime, es_esios FROM spot_price WHERE datetime BETWEEN %(start)s AND %(end)s ORDER BY datetime",
+    conn, params={"start": DATASET_START, "end": DATASET_END},
+)
+df_price["datetime"] = pd.to_datetime(df_price["datetime"], utc=True)   # normalizacion UTC manual, NUNCA parse_dates (ver aviso seccion 2)
+df_price["fecha_madrid"] = df_price["datetime"].dt.tz_convert("Europe/Madrid").dt.date
+df_price["hora"] = df_price["datetime"].dt.tz_convert("Europe/Madrid").dt.hour
+
+target_wide = df_price.pivot_table(index="fecha_madrid", columns="hora", values="es_esios", aggfunc="first")
+target_wide.columns = [f"price_h{h:02d}" for h in target_wide.columns]
+target_wide.index.name = "fecha"
+
+print(f"target: {target_wide.shape[0]} dias x {target_wide.shape[1]} horas")
+print(f"rango: {target_wide.index.min()} -> {target_wide.index.max()}")
+print(f"nulos totales: {target_wide.isna().sum().sum()} (esperado: dias de 23h por cambio de hora)")
+target_wide.tail(3)
+
+--- [18] id=fc2e3c17 type=code ---
+# --- Features seguras: las 4 series canónicas de esios_forecast_da, agregadas por día ---
+# esios_forecast_da.datetime ya representa horas de D+1 (publicadas en D) — agrupamos por
+# esa fecha "objetivo" y LUEGO retrasamos el índice 1 día para que quede alineado a la fila
+# del día D que predice, que es como se va a usar en producción.
+COLS_SEGURAS = ["demanda_prev_mw", "gen_wind_prev_mw", "gen_solar_pv_prev_mw", "gen_renovables_prev_mw"]
+
+df_fcst = pd.read_sql(
+    f"SELECT datetime, {', '.join(COLS_SEGURAS)} FROM esios_forecast_da WHERE datetime BETWEEN %(start)s AND %(end)s",
+    conn, params={"start": DATASET_START, "end": DATASET_END},
+)
+df_fcst["datetime"] = pd.to_datetime(df_fcst["datetime"], utc=True)
+df_fcst["fecha_objetivo"] = df_fcst["datetime"].dt.tz_convert("Europe/Madrid").dt.date  # el dia D+1 que predice
+
+features_fcst = df_fcst.groupby("fecha_objetivo")[COLS_SEGURAS].agg(["mean", "min", "max"])
+features_fcst.columns = [f"{c}_{stat}" for c, stat in features_fcst.columns]
+features_fcst.index = (pd.to_datetime(features_fcst.index) - pd.Timedelta(days=1)).date  # -> fila del dia D
+features_fcst.index.name = "fecha"
+
+print(f"features de previsión: {features_fcst.shape[0]} dias x {features_fcst.shape[1]} columnas")
+print("NO se incluyen: demanda_residual_prev_mw (revisión 10-14 días) ni potencia_indisp_pbf_mw (llega 8 días tarde)")
+features_fcst.tail(3)
+
+--- [19] id=fe7a8af9 type=code ---
+# --- Features de día D (commodities, capacidad) + calendario de D+1 ---
+df_comm = pd.read_sql(
+    "SELECT fecha, gas_mibgas, gas_ttf, co2_ets FROM commodities WHERE fecha BETWEEN %(start)s AND %(end)s",
+    conn, params={"start": DATASET_START, "end": DATASET_END},
+)
+df_comm["fecha"] = pd.to_datetime(df_comm["fecha"]).dt.date
+df_comm = df_comm.sort_values("fecha").set_index("fecha").ffill()  # fines de semana -> ultimo cierre, no interpolar
+
+df_capd = pd.read_sql(
+    "SELECT date, total_mw FROM esios_capacity_available WHERE date BETWEEN %(start)s AND %(end)s",
+    conn, params={"start": DATASET_START, "end": DATASET_END},
+)
+df_capd["date"] = pd.to_datetime(df_capd["date"]).dt.date
+df_capd = df_capd.rename(columns={"total_mw": "capacidad_disp_total_mw"}).set_index("date")
+
+# Calendario de D+1 (determinista, siempre "segura" aunque describa el dia que se predice)
+calendario = pd.DataFrame(index=target_wide.index)
+d1 = pd.to_datetime(calendario.index) + pd.Timedelta(days=1)
+calendario["d1_dow"] = d1.dayofweek          # 0=lunes ... 6=domingo
+calendario["d1_month"] = d1.month
+calendario["d1_is_weekend"] = (d1.dayofweek >= 5).astype(int)
+
+print(f"commodities: {df_comm.shape} | capacidad: {df_capd.shape} | calendario: {calendario.shape}")
+
+--- [20] id=2d572de9 type=code ---
+# --- Dataset diario final: target + features seguras, una fila por día D ---
+dataset_diario = target_wide.join([features_fcst, df_comm, df_capd, calendario], how="left")
+
+print(f"DATASET_DIARIO: {dataset_diario.shape[0]} días x {dataset_diario.shape[1]} columnas")
+print(f"rango: {dataset_diario.index.min()} -> {dataset_diario.index.max()}")
+print(f"\nnulos por bloque:")
+print(f"  target (price_h*):    {dataset_diario.filter(like='price_h').isna().sum().sum()}")
+print(f"  previsión (*_prev_mw):{dataset_diario.filter(like='prev_mw').isna().sum().sum()}")
+print(f"  commodities:          {dataset_diario[['gas_mibgas','gas_ttf','co2_ets']].isna().sum().sum()}")
+print(f"  capacidad disponible: {dataset_diario['capacidad_disp_total_mw'].isna().sum()}")
+print(f"  calendario:           {dataset_diario[['d1_dow','d1_month','d1_is_weekend']].isna().sum().sum()}")
+
+dataset_diario.tail(3)
+
+--- [21] id=8327009b type=markdown ---
+## 9. Próximos pasos sobre `dataset_diario`
+
+- [ ] **Lags de datos reales**: `entsoe_gen_data`/`esios_gen`/`esios_load_inter` del día D y anteriores (t-1, t-7) — con los ganadores ya resueltos del punto #3 (demanda → `esios_load_inter`, eólica/bombeo → `entsoe_gen_data`, solar → `esios_gen`).
+- [ ] **esios_pbf_\*** como feature D-1 secundaria, con el sesgo conocido documentado (eólica +15,9%).
+- [ ] **Split temporal walk-forward** — nunca aleatorio. `sklearn.model_selection.TimeSeriesSplit` como punto de partida.
+- [x] **Clima — experimento preliminar (ver sección 10)**: con solo 19 meses de ERA5 (sin backfill), el clima mejora el MAE un +10.3% y concentra el 35% de la importancia del modelo — evidencia suficiente para priorizar el backfill 2020-2024. Aun así, no integrar clima en `dataset_diario` en producción hasta completar el backfill (hoy solo hay 19 meses, insuficiente para entrenar el modelo final).
+- [ ] Revisar los 30 nulos del target (días de 23h) — decidir si se descartan esas filas o se imputan con cuidado.
+- [ ] Baseline (persistencia / ARIMA) sobre `price_h*` antes de cualquier modelo más complejo.
+
+--- [22] id=56f31ee2 type=markdown ---
+## 10. Experimento — ¿aporta el clima aunque falte el backfill 2020-2024?
+
+**Pregunta del equipo**: en vez de esperar al backfill completo de ERA5 (2020-2024), ¿se puede
+evaluar ya si el clima aporta señal, usando solo la ventana que sí existe hoy
+(`era5_weather_agg`: 2025-01-01 → 2026-08-06, ~19 meses)?
+
+**Diseño (walk-forward, mismo periodo de test para ambos modelos)**:
+1. **Modelo base**: `dataset_diario` sin clima, restringido a la ventana de 19 meses.
+2. **Modelo con clima**: el mismo `dataset_diario` + features agregadas de `era5_weather_agg`
+   (temperatura, viento a 10 m y 100 m, radiación, nubosidad, precipitación — media/min/max
+   diarios del día D+1, igual que ya se hace con las previsiones de `esios_forecast_da`).
+3. Split cronológico (nunca aleatorio): los últimos 90 días como test, el resto como train.
+4. Se comparan MAE/RMSE de ambos modelos en el **mismo** periodo de test.
+
+**Caveats explícitos** (esto es una señal preliminar, no la versión final):
+- Usa ERA5 (reanálisis, clima *real* ya ocurrido) como proxy de lo que en producción sería una
+  previsión ECMWF de D+1 — válido para responder "¿el clima correlaciona con el precio?", no
+  para desplegar tal cual (`ecmwf_forecast_agg` solo tiene un puñado de días, insuficiente para
+  entrenar).
+- 19 meses da como mucho una vuelta y media al ciclo anual — el modelo apenas ve dos inviernos.
+  Cualquier mejora aquí es indicativa, no concluyente.
+- Random Forest sin ajustar hiperparámetros, solo para comparar señal, no para producción.
+
+--- [23] id=d7e085e2 type=code ---
+# --- Clima: features ERA5 agregadas a nivel diario, alineadas al dia D (mismo criterio que features_fcst) ---
+df_era5_full = pd.read_sql(
+    "SELECT ts, t2m_mean, wind10_mean, wind100_mean, ssrd_mean, tcc_mean, tp_mean FROM era5_weather_agg ORDER BY ts",
+    conn,
+)
+df_era5_full["ts"] = pd.to_datetime(df_era5_full["ts"], utc=True)   # normalizacion UTC manual, NUNCA parse_dates
+df_era5_full["t2m_mean"] = df_era5_full["t2m_mean"] - 273.15   # Kelvin -> Celsius
+
+COLS_CLIMA = ["t2m_mean", "wind10_mean", "wind100_mean", "ssrd_mean", "tcc_mean", "tp_mean"]
+df_era5_full["fecha_objetivo"] = df_era5_full["ts"].dt.tz_convert("Europe/Madrid").dt.date  # dia D+1 que predice
+
+features_clima = df_era5_full.groupby("fecha_objetivo")[COLS_CLIMA].agg(["mean", "min", "max"])
+features_clima.columns = [f"{c}_{stat}" for c, stat in features_clima.columns]
+features_clima.index = (pd.to_datetime(features_clima.index) - pd.Timedelta(days=1)).date  # -> fila del dia D
+features_clima.index.name = "fecha"
+
+print(f"features de clima: {features_clima.shape[0]} dias x {features_clima.shape[1]} columnas")
+print(f"rango original era5_weather_agg: {df_era5_full['ts'].min()} -> {df_era5_full['ts'].max()}")
+features_clima.tail(3)
+
+--- [24] id=4da1b7e3 type=code ---
+# --- Ventana comun del experimento: solo los dias D donde hay clima real para D+1 ---
+ventana_clima = dataset_diario.index.isin(features_clima.index)
+print(f"dias con clima disponible: {ventana_clima.sum()} de {dataset_diario.shape[0]}")
+
+ds_experimento = dataset_diario.loc[ventana_clima].copy()
+ds_clima_exp = ds_experimento.join(features_clima, how="left")
+
+TARGET_COLS = [c for c in ds_experimento.columns if c.startswith("price_h")]
+FEATURE_COLS_BASE = [c for c in ds_experimento.columns if c not in TARGET_COLS]
+FEATURE_COLS_CLIMA = FEATURE_COLS_BASE + list(features_clima.columns)
+
+print(f"ventana del experimento: {ds_experimento.index.min()} -> {ds_experimento.index.max()}  ({ds_experimento.shape[0]} dias)")
+print(f"features base: {len(FEATURE_COLS_BASE)}  |  features + clima: {len(FEATURE_COLS_CLIMA)}")
+
+--- [25] id=4c9ca03d type=code ---
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+
+# Solo filas con target completo (evita contaminar la comparacion con los ~30 dias de 23h por cambio de hora)
+filas_validas = ds_clima_exp[TARGET_COLS].notna().all(axis=1)
+ds_eval = ds_clima_exp.loc[filas_validas].sort_index()
+print(f"filas utilizables (target completo): {ds_eval.shape[0]} de {ds_clima_exp.shape[0]}")
+
+# Split cronologico (walk-forward simple, NUNCA aleatorio): ultimos 90 dias como test
+N_TEST = 90
+train_idx = ds_eval.index[:-N_TEST]
+test_idx  = ds_eval.index[-N_TEST:]
+print(f"train: {train_idx.min()} -> {train_idx.max()}  ({len(train_idx)} dias)")
+print(f"test:  {test_idx.min()} -> {test_idx.max()}  ({len(test_idx)} dias)")
+
+
+def evaluar(feature_cols, etiqueta):
+    X_train = ds_eval.loc[train_idx, feature_cols].apply(pd.to_numeric, errors="coerce")
+    X_test = ds_eval.loc[test_idx, feature_cols].apply(pd.to_numeric, errors="coerce")
+    mediana_train = X_train.median()
+    X_train = X_train.fillna(mediana_train)
+    X_test = X_test.fillna(mediana_train)   # imputa con la mediana de TRAIN, nunca la de test (evita fuga)
+    y_train = ds_eval.loc[train_idx, TARGET_COLS]
+    y_test = ds_eval.loc[test_idx, TARGET_COLS]
+
+    modelo = RandomForestRegressor(n_estimators=300, max_depth=12, random_state=0, n_jobs=-1)
+    modelo.fit(X_train, y_train)
+    pred = modelo.predict(X_test)
+
+    mae = mean_absolute_error(y_test, pred)
+    rmse = mean_squared_error(y_test, pred) ** 0.5
+    print(f"{etiqueta:<20} MAE={mae:6.2f} EUR/MWh   RMSE={rmse:6.2f} EUR/MWh   n_features={len(feature_cols)}")
+    return modelo, mae, rmse
+
+
+print("=== Comparacion en el MISMO periodo de test ===")
+modelo_base, mae_base, rmse_base = evaluar(FEATURE_COLS_BASE, "sin clima (base)")
+modelo_clima, mae_clima, rmse_clima = evaluar(FEATURE_COLS_CLIMA, "con clima (ERA5)")
+
+mejora_mae = 100 * (mae_base - mae_clima) / mae_base
+mejora_rmse = 100 * (rmse_base - rmse_clima) / rmse_base
+print(f"\nmejora del MAE con clima:  {mejora_mae:+.1f}%")
+print(f"mejora del RMSE con clima: {mejora_rmse:+.1f}%")
+
+--- [26] id=1dccc3be type=code ---
+# Importancia de las features climaticas dentro del modelo "con clima" — para ver si compiten
+# de verdad con demanda/eolica/solar previstas o si el bosque apenas las usa
+importancias = pd.Series(modelo_clima.feature_importances_, index=FEATURE_COLS_CLIMA).sort_values(ascending=False)
+print("Top 15 features por importancia (modelo con clima):")
+print(importancias.head(15))
+
+peso_clima = importancias.loc[list(features_clima.columns)].sum()
+print(f"\npeso conjunto de las {len(features_clima.columns)} features climaticas: {peso_clima * 100:.1f}% de la importancia total")
+
+--- [27] id=354d3f38 type=markdown ---
+**Resultado obtenido (ejecutado 15-ago-2026, ventana 2024-12-31 -> 2026-08-05, test = ultimos 90 dias)**:
+
+| Modelo | MAE | RMSE | nº features |
+|---|---|---|---|
+| Sin clima (base) | 29.62 €/MWh | 37.13 €/MWh | 19 |
+| Con clima (ERA5) | 26.57 €/MWh | 33.60 €/MWh | 37 |
+| **Mejora** | **+10.3%** | **+9.5%** | |
+
+Las 18 variables climáticas concentran el **35% de la importancia total** del modelo con clima —
+`ssrd_mean` (radiación, ligada a solar) y `wind100_mean` (viento a la altura de los aerogeneradores)
+aparecen en el top 15 junto a `co2_ets`, `demanda_prev_mw` y `capacidad_disp_total_mw`.
+
+**Lectura**: incluso con solo 19 meses de historia y un Random Forest sin ajustar, el clima aporta
+una mejora de ~10 puntos porcentuales — no es ruido. Esto respalda priorizar el backfill de ERA5
+2020-2024 frente a otras tareas pendientes: la señal ya es visible con una fracción de los datos
+que habrá disponibles una vez completado. Sigue siendo una cifra preliminar (ventana corta, modelo
+sin ajustar, ERA5 como proxy de una futura previsión ECMWF) — no el resultado final del proyecto,
+pero sí evidencia suficiente para justificar la inversión de tiempo en el backfill ante el equipo.
+

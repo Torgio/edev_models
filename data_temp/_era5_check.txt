@@ -1,0 +1,3 @@
+era5_weather_agg: (datetime.datetime(2025, 1, 1, 0, 0), datetime.datetime(2026, 8, 6, 18, 0), 4663)
+ecmwf_forecast_agg: (datetime.datetime(2026, 8, 8, 0, 0), datetime.datetime(2026, 8, 16, 21, 0), 72)
+cols era5_weather_agg: ['ts', 't2m_mean', 'wind10_mean', 'wind100_mean', 'ssrd_mean', 'tcc_mean', 'tensor_path', 'd2m_mean', 'wind_gust10_mean', 'tp_mean', 'msl_mean', 'tensor_index']
