@@ -525,6 +525,54 @@ def dividir_train_val_test(dataset: pd.DataFrame):
     return dataset[mask_train], dataset[mask_val], dataset[mask_test]
 
 
+# ── Registro de eventos extremos (ver docs/notas_memoria_tfm.md nota 6) ─────────────────────
+# "excluir": True -- anomalia puntual, sin repeticion, un modelo no puede generalizar de un solo
+#   caso (ej. el apagon). Se recomienda excluir del entrenamiento y de la evaluacion.
+# "excluir": False -- cambio de regimen sostenido, con datos de sobra para aprenderlo (ej. la
+#   crisis energetica). NO se excluye -- se maneja via su causa (precio del gas, ya en el
+#   dataset), no con una marca. Se deja documentado aqui igual, por transparencia.
+EVENTOS_EXTREMOS = [
+    {
+        "inicio": "2025-04-28", "fin": "2025-04-29",
+        "descripcion": "Apagon peninsular -- colapso total de la red, recuperacion progresiva "
+                        "(nuclear en 0 MW mas de 24h; ver Banco de Evidencias)",
+        "excluir": True,
+    },
+    {
+        "inicio": "2021-01-01", "fin": "2022-12-31",
+        "descripcion": "Crisis energetica europea -- precio del gas disparado, ya modelado via "
+                        "gas_mibgas/gas_ttf/co2_eua_dec como feature continua",
+        "excluir": False,
+    },
+]
+
+
+def marcar_eventos_extremos(dataset: pd.DataFrame) -> pd.DataFrame:
+    """Añade una columna `evento_extremo` (bool): True si la fila D esta afectada por un evento
+    marcado "excluir": True -- porque el TARGET (D+1) cae dentro del evento, o porque algun LAG
+    real (D-1, D-7) trae datos del evento y contamina la fila aunque D+1 sea un dia normal.
+    No borra nada -- deja la decision de excluir (o no) a quien entrena el modelo:
+
+        ds = marcar_eventos_extremos(construir_dataset_diario())
+        ds_sin_eventos = ds[~ds["evento_extremo"]].drop(columns="evento_extremo")
+    """
+    fechas_evento = set()
+    for ev in EVENTOS_EXTREMOS:
+        if not ev["excluir"]:
+            continue
+        fechas_evento.update(d.date() for d in pd.date_range(ev["inicio"], ev["fin"], freq="D"))
+
+    idx = pd.to_datetime(dataset.index)
+    d_mas_1 = pd.Series((idx + pd.Timedelta(days=1)).date, index=dataset.index)
+    d_menos_1 = pd.Series((idx - pd.Timedelta(days=1)).date, index=dataset.index)
+    d_menos_7 = pd.Series((idx - pd.Timedelta(days=7)).date, index=dataset.index)
+
+    afectada = d_mas_1.isin(fechas_evento) | d_menos_1.isin(fechas_evento) | d_menos_7.isin(fechas_evento)
+    out = dataset.copy()
+    out["evento_extremo"] = afectada.values
+    return out
+
+
 if __name__ == "__main__":
     import argparse
 
