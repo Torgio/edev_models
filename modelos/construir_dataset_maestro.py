@@ -69,17 +69,39 @@ COLS_SEGURAS_FORECAST = ["demanda_mercado_prev_mw", "gen_wind_prev_mw", "gen_sol
 # era un duplicado exacto de esios_pbf_gen.unavailable_power_mw, y estar en la tabla de forecasts
 # inducia a creerla leak-safe pre-cierre cuando en realidad es dato de PBF, post-cierre).
 
-# Ganadores del punto #3 (duplicados de fuente resueltos).
-# TABLA_DEMANDA_REAL: esios_load_inter/entsoe_load_inter se unificaron en `load_inter` el
-# 19-ago-2026. Demanda real -> entsoe_load, NUNCA ree_load: desde dic-2025 REE empieza a sumarle
-# una estimacion de autoconsumo a ree_load, y la brecha crece mes a mes (verificado: +435 MW en
-# dic-2025 -> +2.495 MW en jul-2026) -- la serie cambia de significado a mitad del historico.
+# Ganadores del punto #3 + matriz de generacion ESIOS/ENTSO-E del equipo (19-ago-2026, ver
+# docs/notas_memoria_tfm.md). Regla general confirmada dos veces ya (demanda y ahora solar):
+# NINGUNA serie de ESIOS que incorpore autoconsumo es homogenea en 2020-2026 -- desde dic-2025
+# REE le suma una estimacion creciente, y como el train (2020-2024) queda 0% afectado y el test
+# (2026) 100% afectado, es el tipo de bug que un modelo no detecta solo, hay que evitarlo a mano.
+#
+# Demanda real -> entsoe_load (load_inter), NUNCA ree_load: brecha +435 MW en dic-2025 hasta
+# +2.495 MW en jul-2026, verificado.
 TABLA_DEMANDA_REAL = "load_inter"
 COLS_DEMANDA_REAL = ["entsoe_load"]
-TABLA_EOLICA_BOMBEO_REAL = "entsoe_gen_data"
-COLS_EOLICA_BOMBEO_REAL = ["wind_mw", "pumping_gen_mw", "pumping_cons_mw"]
-TABLA_SOLAR_REAL = "esios_gen"
-COLS_SOLAR_REAL = ["ree_gsolar_mw", "ree_gsolter_mw"]
+
+# ENTSO-E gana eolica, bombeo e hidraulica -- las dos hidraulicas SEPARADAS (run-of-river y
+# embalse), nunca el total_hydro_mw agregado (colinealidad exacta con sus componentes). ESIOS
+# descartada en los tres: el bombeo tiene valores falsos en 2021-2024 (23-43 MW cuando eran
+# 589-917, no son NULL, son datos incorrectos), y ree_ghidro_mw mezcla hidraulica con consumo de
+# bombeo (llega a -2.739 MW al mediodia).
+TABLA_ENTSOE_REAL = "entsoe_gen_data"
+COLS_ENTSOE_REAL = ["wind_mw", "pumping_gen_mw", "pumping_cons_mw", "hydro_run_river_mw", "hydro_reservoir_mw"]
+
+# ESIOS gana termosolar (ree_gsolter_mw: parque congelado, sin autoconsumo, genera de noche con
+# almacenamiento termico -- no afectada por el problema de arriba) y CCGT puro (ree_gccgas_mw,
+# indicador 550). El gas de ENTSO-E (gas_mw, B04) mezcla CCGT + cogeneracion -- ~1.900 MW de
+# media que no es estable (varia 1.526 MW entre 2020 y 2026, porque la cogeneracion cayo un 60%
+# en el periodo). Interesa el CCGT solo: es el que marca el precio marginal, la cogeneracion es
+# inelastica al precio (va por proceso industrial) y sumarlas diluye la señal.
+TABLA_ESIOS_REAL = "esios_gen"
+COLS_ESIOS_REAL = ["ree_gsolter_mw", "ree_gccgas_mw"]
+# ree_gsolar_mw (FV) se EXCLUYE de COLS_ESIOS_REAL a proposito: incorpora autoconsumo desde
+# dic-2025, mismo problema que ree_load (verificado: brecha de -546 a +1.387 MW entre sep-2025 y
+# ago-2026). Se reconstruye una FV limpia por resta en vez de leerla directo -- ver
+# _features_lag_reales: GREATEST(0, entsoe_gen_data.solar_mw - esios_gen.ree_gsolter_mw). ENTSO-E
+# solar_mw es B16 = FV+termosolar sin el problema de autoconsumo (es de ENTSO-E, no de ESIOS);
+# restarle la termosolar limpia de ESIOS deja una FV limpia.
 
 
 def _conectar():
@@ -327,37 +349,46 @@ def _calendario(index_fechas) -> pd.DataFrame:
 
 
 def _features_lag_reales(conn) -> pd.DataFrame:
-    """Demanda, eolica/bombeo y solar reales (ganadores del punto #3), agregadas por dia
-    y desplazadas a D-1 y D-7 -- nunca el propio dia D (que aun no ha terminado al predecir)."""
+    """Demanda, eolica/bombeo/hidraulica, termosolar+CCGT, y FV limpia (reconstruida), todas
+    reales -- agregadas por dia y desplazadas a D-1 y D-7. Nunca el propio dia D (que aun no ha
+    terminado al predecir)."""
     df_load = pd.read_sql(
         f"SELECT datetime, {', '.join(COLS_DEMANDA_REAL)} FROM {TABLA_DEMANDA_REAL} "
         f"WHERE datetime BETWEEN %(start)s AND %(end)s",
         conn, params={"start": DATASET_START, "end": DATASET_END},
     )
-    df_eolica = pd.read_sql(
-        f"SELECT datetime, {', '.join(COLS_EOLICA_BOMBEO_REAL)} FROM {TABLA_EOLICA_BOMBEO_REAL} "
+    df_entsoe = pd.read_sql(
+        f"SELECT datetime, {', '.join(COLS_ENTSOE_REAL)} FROM {TABLA_ENTSOE_REAL} "
         f"WHERE datetime BETWEEN %(start)s AND %(end)s",
         conn, params={"start": DATASET_START, "end": DATASET_END},
     )
-    df_solar = pd.read_sql(
-        f"SELECT datetime, {', '.join(COLS_SOLAR_REAL)} FROM {TABLA_SOLAR_REAL} "
+    df_esios = pd.read_sql(
+        f"SELECT datetime, {', '.join(COLS_ESIOS_REAL)} FROM {TABLA_ESIOS_REAL} "
         f"WHERE datetime BETWEEN %(start)s AND %(end)s",
         conn, params={"start": DATASET_START, "end": DATASET_END},
     )
+    # FV limpia: NUNCA se lee ree_gsolar_mw directo (contaminada de autoconsumo desde dic-2025).
+    # Se reconstruye por resta: GREATEST(0, entsoe.solar_mw - esios.ree_gsolter_mw). El GREATEST
+    # corrige los casos (~1% de las horas) donde la resta da un valor negativo por ruido de
+    # redondeo entre las dos fuentes.
+    df_solar_fv = pd.read_sql(
+        "SELECT e.datetime, GREATEST(0, e.solar_mw - s.ree_gsolter_mw) AS solar_fv_mw "
+        "FROM entsoe_gen_data e JOIN esios_gen s ON e.datetime = s.datetime "
+        "WHERE e.datetime BETWEEN %(start)s AND %(end)s AND e.solar_mw IS NOT NULL AND s.ree_gsolter_mw IS NOT NULL",
+        conn, params={"start": DATASET_START, "end": DATASET_END},
+    )
 
-    df_load["datetime"] = pd.to_datetime(df_load["datetime"], utc=True)
-    df_eolica["datetime"] = pd.to_datetime(df_eolica["datetime"], utc=True)
-    df_solar["datetime"] = pd.to_datetime(df_solar["datetime"], utc=True)
+    piezas_horarias = [
+        (df_load, COLS_DEMANDA_REAL), (df_entsoe, COLS_ENTSOE_REAL),
+        (df_esios, COLS_ESIOS_REAL), (df_solar_fv, ["solar_fv_mw"]),
+    ]
+    aggs = []
+    for df, cols in piezas_horarias:
+        df["datetime"] = pd.to_datetime(df["datetime"], utc=True)  # normalizacion UTC manual, NUNCA parse_dates
+        df["fecha"] = df["datetime"].dt.tz_convert("Europe/Madrid").dt.date
+        aggs.append(df.groupby("fecha")[cols].agg(["mean", "min", "max"]))
 
-    df_load["fecha"] = df_load["datetime"].dt.tz_convert("Europe/Madrid").dt.date
-    df_eolica["fecha"] = df_eolica["datetime"].dt.tz_convert("Europe/Madrid").dt.date
-    df_solar["fecha"] = df_solar["datetime"].dt.tz_convert("Europe/Madrid").dt.date
-
-    agg_load = df_load.groupby("fecha")[COLS_DEMANDA_REAL].agg(["mean", "min", "max"])
-    agg_eolica = df_eolica.groupby("fecha")[COLS_EOLICA_BOMBEO_REAL].agg(["mean", "min", "max"])
-    agg_solar = df_solar.groupby("fecha")[COLS_SOLAR_REAL].agg(["mean", "min", "max"])
-
-    real_diario = agg_load.join([agg_eolica, agg_solar], how="outer")
+    real_diario = aggs[0].join(aggs[1:], how="outer")
     real_diario.columns = [f"{c}_{stat}" for c, stat in real_diario.columns]
 
     lag1 = _construir_lag(real_diario, 1, "lag1d")
