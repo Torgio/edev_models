@@ -58,6 +58,14 @@ INDICATORS_AVAILABLE = {
     478: "fuel_mw",
 }
 
+# gas_turbine_mw (479) esta en NULL para 2019-2024 a proposito: verificado
+# contra la API real (13-ago-2026) que el indicador simplemente no existia
+# publicado antes del 14-jul-2025 (HTTP 200 con respuesta vacia en fechas
+# anteriores, no es un error ni un problema de geo_id). SI hay capacidad
+# real (~560 MW en Peninsula en fechas recientes) -- no es "sin carga
+# disponible", es que ESIOS empezo a publicar el indicador tarde. No
+# investigar de nuevo.
+
 
 def dias_ya_en_bd(db_config, fechas: list) -> set:
     """Devuelve el subconjunto de 'fechas' que YA existen en la tabla."""

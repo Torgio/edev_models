@@ -74,7 +74,6 @@ INDICADORES = {
     1849:  "ntc_pt_exp_prev_mw",
     1846:  "ntc_ma_imp_prev_mw",
     1850:  "ntc_ma_exp_prev_mw",
-    462:   "potencia_indisp_pbf_mw",
     543:   "gen_solartermica_prev_mw",
     570:   "cap_baleares_prev_mw",
 }

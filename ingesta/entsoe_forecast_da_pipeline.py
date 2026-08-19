@@ -19,6 +19,12 @@ SOLO PREVISIONES. Las columnas de PROGRAMA (gen/cons scheduled, posicion neta,
 saldos programados) se eliminaron el 15/08/2026: no son prevision y ya estan,
 con desglose por tecnologia, en esios_pbf_gen y esios_pbf_load_inter.
 
+El 17/08/2026 se retiraron otras tres por el mismo criterio, mas duplicidad:
+las NTC de FR/PT (identicas a entsoe_load_inter, y peores que las seis de
+ESIOS) y el precio frances (identico a spot_price.fr_entsoe, y no es una
+prevision sino el resultado de la subasta acoplada). La tabla queda haciendo
+lo que su nombre promete: cuatro previsiones day-ahead de ENTSO-E.
+
 Uso
 ---
     python entsoe_forecast_da_pipeline.py                # D+1 + revision 7 dias
@@ -71,11 +77,28 @@ COLS = [
     "load_forecast_mw",
     "wind_forecast_mw",
     "solar_forecast_mw",
-    "ntc_fr_mw",
-    "ntc_pt_mw",
-    "price_fr_eur_mwh",
 ]
 # renewables_forecast_mw NO se lista: es GENERATED, la calcula PostgreSQL.
+#
+# ELIMINADAS EL 17/08/2026 — duplicados exactos verificados sobre la serie
+# completa, con diferencia media 0,00:
+#
+#   ntc_fr_mw / ntc_pt_mw
+#       Identicas a entsoe_load_inter.ntc_exp_fr_mw / ntc_exp_pt_mw
+#       (r = 1,0000, diferencia 0,00 en 34.848 horas). Y el nombre no decia lo
+#       importante: son solo de EXPORTACION, no la capacidad de la frontera.
+#       Las NTC utiles son las SEIS de ESIOS (indicadores 488-494: imp/exp x
+#       FR/PT/MA), completas desde 2020-11, frente al hueco de ~976 dias que
+#       arrastran las de ENTSO-E desde diciembre de 2023.
+#
+#   price_fr_eur_mwh
+#       Identica a spot_price.fr_entsoe (0 discrepancias, dif_max 0,01). Y no
+#       era una prevision: ENTSO-E no publica previsiones de precio. Es el
+#       resultado de la subasta acoplada SDAC, que casa TODOS los mercados
+#       europeos a la vez al cierre de las 12:00 de D-1. Por tanto el precio
+#       frances del dia D no existe cuando hay que predecir el precio español
+#       del dia D: es fuga por circularidad y solo vale con lag. Su sitio es
+#       spot_price, junto a las otras 13 zonas.
 
 INSERT_SQL = f"""
 INSERT INTO {TABLA} (datetime, {', '.join(COLS)})
@@ -154,7 +177,12 @@ def intentar(nombre: str, fn):
 def descargar_dia(client, dia: date) -> pd.DataFrame:
     """Devuelve un DataFrame horario con las columnas de COLS que haya."""
     ini = pd.Timestamp(dia, tz=TZ)
-    fin = ini + pd.Timedelta(days=1)
+    # Medianoche LOCAL del dia siguiente, no 'ini + 24h'. El ultimo domingo
+    # de octubre el dia dura 25 horas (la hora local 02:00 se repite, con
+    # offset +02 y +01) y sumar 24h exactas recortaba la ultima hora.
+    # Verificado: los 6 cambios de horario de 2020-2025 quedaron con 24h en
+    # vez de 25. En marzo no se notaba porque ese dia tiene 23.
+    fin = pd.Timestamp(dia + timedelta(days=1), tz=TZ)
 
     datos: dict[str, pd.Series] = {}
 
@@ -172,23 +200,19 @@ def descargar_dia(client, dia: date) -> pd.DataFrame:
     guardar("wind_forecast_mw", a_horario(ren, "Wind Onshore"))
     guardar("solar_forecast_mw", a_horario(ren, "Solar"))
 
-    for col, vecino in (("ntc_fr_mw", "FR"), ("ntc_pt_mw", "PT")):
-        guardar(col, a_horario(
-            intentar(f"NTC {vecino}",
-                     lambda v=vecino: client.query_net_transfer_capacity_dayahead(
-                         PAIS, v, start=ini, end=fin))))
-
-    guardar("price_fr_eur_mwh", a_horario(
-        intentar("precio FR", lambda: client.query_day_ahead_prices(
-            "FR", start=ini, end=fin))))
+    # Aqui se pedian las NTC de FR/PT y el precio frances. Se retiraron el
+    # 17/08/2026 (ver COLS): tres peticiones menos a la API por dia y por
+    # ejecucion, sin perder ningun dato — los tres estan en otras tablas con
+    # mejor cobertura.
 
     if not datos:
         return pd.DataFrame()
 
     df = pd.DataFrame(datos)
 
-    # Recorte al dia solicitado. El precio devuelve 97 valores (incluye la
-    # medianoche del dia siguiente); sin este filtro se duplicaria la primera
+    # Recorte al dia solicitado: 23, 24 o 25 horas segun el cambio de hora.
+    # Algunas series de ENTSO-E devuelven un valor extra que corresponde a la
+    # medianoche del dia siguiente; sin este filtro se duplicaria la primera
     # hora al cargar dias consecutivos.
     df = df[(df.index >= ini) & (df.index < fin)]
 

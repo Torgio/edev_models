@@ -1,0 +1,18 @@
+# Dependencias para análisis y notebooks (EDA, modelado).
+# Complementa a requirements.txt, que es SOLO de ingesta y no trae ni
+# matplotlib ni Jupyter.
+# Las versiones coinciden con requirements.txt donde se solapan, para que
+# los dos entornos no se contradigan.
+
+pandas==3.0.3
+numpy==2.4.6
+SQLAlchemy==2.0.51
+psycopg2-binary==2.9.12
+openpyxl==3.1.5
+python-dateutil==2.9.0.post0
+pytz==2026.2
+
+# Análisis y visualización (no están en requirements.txt)
+matplotlib
+jupyter
+ipykernel

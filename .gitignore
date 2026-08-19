@@ -13,4 +13,6 @@ ingesta/data_mibgas_excel/
 !ingesta/check_tables/indicadores.ipynb
 !ingesta/check_tables/Listado_tablas_Postgres.xlsx
 ingesta/tensors/
-data/bronze
+data/bronze/
+ingesta/logs/
+.preview_tmp/

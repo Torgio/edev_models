@@ -135,10 +135,11 @@ LOAD_COLS = [
     "ntc_imp_pt_mw", "ntc_exp_pt_mw",
 ]
 
-# Marruecos (flow_es_ma_mw, flow_ma_es_mw) y las seis NTC existen en
-# entsoe_load_inter pero no se descargan: Marruecos no es miembro de ENTSO-E
-# y las NTC conviene tomarlas de ESIOS (indicadores 488-494), donde ya hay
-# historico desde 2020. Quedan NULL.
+# Las columnas de Marruecos se ELIMINARON de entsoe_load_inter el 17/08/2026:
+# Marruecos no es miembro de ENTSO-E y esas cuatro columnas estaban vacias al
+# 100% en 58.054 filas. El dato esta en ESIOS (10209 saldo, 1846/1850 NTC).
+# Las NTC de FR y PT si se descargan aqui como respaldo, aunque la fuente
+# primaria son los indicadores ESIOS 488-494, con historico desde 2020.
 
 # ── Descarga ───────────────────────────────────────────────────────────────────
 
@@ -227,7 +228,7 @@ def fetch_chunk(client, start: date, end: date) -> pd.DataFrame | None:
 
     df = pd.DataFrame(frames)
     df.index = df.index.tz_convert("UTC")
-    df.index.name = "datetime_utc"
+    df.index.name = "datetime"
     return df.reset_index()
 
 # ── Escritura ──────────────────────────────────────────────────────────────────
@@ -246,14 +247,14 @@ def recalcular_tabla(conn, df_nuevo: pd.DataFrame, tabla: str, cols: list,
     if not presentes or df_nuevo.empty:
         return 0
 
-    ts_list = [r["datetime_utc"] for _, r in df_nuevo.iterrows()]
+    ts_list = [r["datetime"] for _, r in df_nuevo.iterrows()]
     cols_str = ", ".join(presentes)
     corregidas = 0
 
     with conn.cursor() as cur:
         # Estado actual de todo el bloque en una sola consulta
         cur.execute(
-            f"SELECT datetime_utc, {cols_str} FROM {tabla} WHERE datetime_utc = ANY(%s)",
+            f"SELECT datetime, {cols_str} FROM {tabla} WHERE datetime = ANY(%s)",
             (ts_list,)
         )
         actuales = {row[0]: row[1:] for row in cur.fetchall()}
@@ -262,7 +263,7 @@ def recalcular_tabla(conn, df_nuevo: pd.DataFrame, tabla: str, cols: list,
         for i, col in enumerate(presentes):
             cambios = []
             for _, row in df_nuevo.iterrows():
-                ts = row["datetime_utc"]
+                ts = row["datetime"]
                 nuevo = row.get(col)
                 if pd.isna(nuevo):
                     continue
@@ -280,7 +281,7 @@ def recalcular_tabla(conn, df_nuevo: pd.DataFrame, tabla: str, cols: list,
                 UPDATE {tabla} AS t
                 SET {col} = v.valor, updated_at = now()
                 FROM (VALUES %s) AS v(ts, valor)
-                WHERE t.datetime_utc = v.ts
+                WHERE t.datetime = v.ts
             """, cambios, template="(%s, %s::numeric)", page_size=500)
 
             contador[f"{tabla}.{col}"] = contador.get(f"{tabla}.{col}", 0) + len(cambios)
@@ -297,23 +298,23 @@ def insertar_faltantes(conn, df_nuevo: pd.DataFrame, tabla: str, cols: list,
     if not presentes or df_nuevo.empty:
         return 0
 
-    ts_list = [r["datetime_utc"] for _, r in df_nuevo.iterrows()]
+    ts_list = [r["datetime"] for _, r in df_nuevo.iterrows()]
     with conn.cursor() as cur:
-        cur.execute(f"SELECT datetime_utc FROM {tabla} WHERE datetime_utc = ANY(%s)",
+        cur.execute(f"SELECT datetime FROM {tabla} WHERE datetime = ANY(%s)",
                     (ts_list,))
         existentes = {row[0] for row in cur.fetchall()}
 
-    df_new = df_nuevo[~df_nuevo["datetime_utc"].isin(existentes)]
+    df_new = df_nuevo[~df_nuevo["datetime"].isin(existentes)]
     if df_new.empty:
         return 0
 
-    insert_cols = ["datetime_utc"] + presentes
+    insert_cols = ["datetime"] + presentes
     records = [tuple(None if pd.isna(row.get(c)) else row.get(c) for c in insert_cols)
                for _, row in df_new.iterrows()]
     with conn.cursor() as cur:
         execute_values(cur,
             f"INSERT INTO {tabla} ({', '.join(insert_cols)}) VALUES %s "
-            f"ON CONFLICT (datetime_utc) DO NOTHING",
+            f"ON CONFLICT (datetime) DO NOTHING",
             records, page_size=500)
     conn.commit()
 
