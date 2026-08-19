@@ -283,5 +283,133 @@ Así que D-02 no solo dice qué columna descartar: dice cuál añadir. Y ahora s
 
 ---
 
-*Siguiente decisión pendiente: las zonas horarias mezcladas entre tablas, y la
-contradicción `ree_load` / `entsoe_load` (las dos bloqueantes).*
+## D-03 · Ninguna serie de ESIOS con autoconsumo dentro es homogénea desde diciembre de 2025
+
+**Fecha:** 19 de agosto de 2026
+**Estado:** cerrada
+**Afecta a:** `ree_load` · `ree_gsolar_mw` · y potencialmente a cualquier otra serie de ESIOS que incorpore autoconsumo
+**Evidencia:** `ingesta/_tests/TEST_702_efecto_autoconsumo_esios.py` · 58.127 horas, 2020 a agosto de 2026
+
+### La pregunta
+
+Dos afirmaciones independientes, hechas por dos personas distintas y sobre columnas
+distintas, describían el mismo fenómeno:
+
+> `load_inter_pipeline.py` (18-ago): *"ree_load incorpora la estimación de autoconsumo
+> desde dic-2025 y deja de ser homogénea."*
+
+> `matriz_generacion_esios_entsoe.xlsx` (19-ago): *"ESIOS separa [la solar] pero su FV
+> incorpora autoconsumo desde dic-2025."*
+
+Si las dos eran ciertas, el problema no era de una columna: era un criterio general.
+Y había una contradicción abierta, porque `construir_dataset_maestro.py` usaba las dos
+versiones afectadas — `ree_load` para la demanda y `ree_gsolar_mw` para la solar.
+
+### La evidencia
+
+Antes de diciembre de 2025, las series de ESIOS y ENTSO-E son la misma cosa:
+
+| | Correlación | Diferencia media | Mediana |
+|---|---|---|---|
+| Demanda | 0,99897 | −6,7 MW | −1,7 MW |
+| Solar FV | 0,99762 | +0,3 MW | −0,7 MW |
+
+Sobre una demanda que ronda los 28.000 MW, eso es ruido de redondeo.
+
+Desde diciembre, se separan — y **con la misma magnitud, mes a mes**:
+
+| Mes | Diferencia en demanda | Diferencia en solar FV |
+|---|---|---|
+| nov-2025 | 1,3 | 6,7 |
+| **dic-2025** | **434,7** | **435,7** |
+| ene-2026 | 685,7 | 687,5 |
+| feb-2026 | 1.038,1 | 1.043,5 |
+| mar-2026 | 1.599,7 | 1.500,2 |
+| abr-2026 | 1.806,9 | 1.824,1 |
+| may-2026 | 2.002,3 | 2.025,5 |
+| jun-2026 | 2.200,6 | 2.106,0 |
+| jul-2026 | 2.495,4 | 2.194,3 |
+| ago-2026 | 2.112,6 | 2.105,9 |
+
+El salto total es de **1.582 MW en la demanda y 1.519 MW en la solar**. Prácticamente
+el mismo número, y las dos series arrancan el mismo mes.
+
+### Por qué las dos suben a la vez, y en la misma cantidad
+
+No es casualidad ni un doble error: es **coherencia contable**. El autoconsumo se genera
+y se consume en el mismo punto, así que al incorporarlo entra por los dos lados del
+balance. Si REE estima 2.100 MW de autoconsumo, los suma a la generación fotovoltaica
+*y* a la demanda, porque esa energía efectivamente se produce y efectivamente se consume.
+
+Que las dos diferencias coincidan mes a mes es, de hecho, la mejor prueba de que la
+explicación es correcta. Dos errores independientes no darían la misma cifra.
+
+### Es autoconsumo fotovoltaico, sin lugar a dudas
+
+El perfil horario desde el corte es una campana solar de manual:
+
+| | Noche (23-04h) | Mediodía (11-15h) |
+|---|---|---|
+| Diferencia en demanda | 117,3 MW | 3.933,8 MW |
+| Diferencia en solar FV | 2,1 MW | 3.894,7 MW |
+
+Y la correlación con la generación fotovoltaica real es de **0,82** para la demanda y
+**0,91** para la solar.
+
+Un detalle menor que merece anotarse: la diferencia de demanda nocturna no es exactamente
+cero, sino de 100 a 170 MW. Podría ser autoconsumo no solar —cogeneración industrial,
+baterías domésticas— o simplemente ruido del método de estimación de REE. No afecta a la
+decisión, pero conviene no afirmar que el autoconsumo es *solo* fotovoltaico.
+
+### El argumento que cierra la discusión
+
+| Tramo del split | Horas | Afectadas por el cambio |
+|---|---|---|
+| train (2020 → 2024) | 43.848 | **0,0 %** |
+| validation (2025) | 8.760 | 8,5 % |
+| test (2026 →) | 5.519 | **100,0 %** |
+
+El modelo aprendería con datos donde el autoconsumo no existe y se evaluaría con datos
+donde vale más de 2.000 MW de media. **No es una preferencia de fuente: es que la
+variable no significa lo mismo en entrenamiento y en test.**
+
+Y no es siquiera un escalón que el modelo pudiera aprender: es una rampa que va de 435 MW
+en diciembre a 2.500 MW en julio, porque REE incorpora el autoconsumo de forma progresiva.
+
+### La decisión
+
+**Ninguna serie de ESIOS que incorpore autoconsumo puede usarse como si fuera homogénea
+en el rango 2020-2026.** En concreto, sobre `construir_dataset_maestro.py`:
+
+| Ahora | Debe pasar a |
+|---|---|
+| `COLS_DEMANDA_REAL = ["ree_load"]` | la demanda de ENTSO-E |
+| `COLS_SOLAR_REAL = ["ree_gsolar_mw", "ree_gsolter_mw"]` | FV derivada: `GREATEST(0, entsoe.solar_mw − ree_gsolter_mw)` + `ree_gsolter_mw` |
+
+La termosolar (`ree_gsolter_mw`) **no está afectada**: su parque está congelado y no tiene
+autoconsumo, así que sigue siendo la fuente buena para separar la FV del B16 de ENTSO-E.
+
+Las versiones de ESIOS se conservan como columnas documentales. Su diferencia con las de
+ENTSO-E **estima el autoconsumo peninsular**, una magnitud que ninguna fuente publica por
+separado: unos 2.100 MW de media en agosto de 2026, con picos de 4.000 MW a mediodía.
+
+### Hallazgo colateral: el dataset maestro no se puede ejecutar
+
+Al preparar el test apareció que **`esios_load_inter` ya no existe** en la base de datos:
+la sustituyó `load_inter` el 18 de agosto. Y `construir_dataset_maestro.py` la lee en dos
+sitios —la demanda real y las NTC— así que **ahora mismo falla al ejecutarse**.
+
+Eso convierte la decisión nº 11 del Excel de "conviene hacerlo" a "hay que hacerlo ya", y
+conviene avisar antes de que alguien pierda una tarde con el error.
+
+### Qué queda por hacer
+
+1. Avisar al equipo de que el dataset maestro está roto por el cambio de nombre de tabla.
+2. Actualizar `construir_dataset_maestro.py`: tabla `load_inter`, demanda de ENTSO-E y
+   FV derivada.
+3. Añadir el autoconsumo al apartado de contexto de la memoria. Es un cambio regulatorio
+   con efecto medible sobre los datos, y tenemos una estimación propia de su magnitud.
+
+---
+
+*Siguiente decisión pendiente: las zonas horarias mezcladas entre tablas (bloqueante).*
