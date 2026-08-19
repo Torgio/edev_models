@@ -393,6 +393,24 @@ Las versiones de ESIOS se conservan como columnas documentales. Su diferencia co
 ENTSO-E **estima el autoconsumo peninsular**, una magnitud que ninguna fuente publica por
 separado: unos 2.100 MW de media en agosto de 2026, con picos de 4.000 MW a mediodía.
 
+### Validación cruzada (añadida el 19-ago, desde la decisión D-04)
+
+Al investigar otra cosa apareció una comprobación independiente de esta estimación.
+
+`esios_capacity_installed.autoconsume_solar_pv_mw` —la **potencia instalada** de
+autoconsumo fotovoltaico declarada por REE— vale **9.100 MW en agosto de 2026**, y viene
+creciendo desde los 25 MW de enero de 2020.
+
+Nuestra estimación de **generación** media de autoconsumo en ese mismo mes era de 2.100 MW.
+Sobre 9.100 MW instalados, eso da un **factor de capacidad del 23 %**, que es exactamente
+el rango esperable para fotovoltaica en España.
+
+Es una validación por una vía completamente distinta: la estimación salió de restar dos
+series de demanda horaria, y el contraste viene de una tabla de potencia instalada mensual
+que no interviene en aquel cálculo. Que el cociente sea físicamente razonable refuerza
+bastante el resultado, y conviene mencionarlo en la memoria: convierte «la diferencia entre
+dos fuentes» en «la diferencia entre dos fuentes, contrastada contra la potencia instalada».
+
 ### Hallazgo colateral: el dataset maestro no se puede ejecutar
 
 Al preparar el test apareció que **`esios_load_inter` ya no existe** en la base de datos:
@@ -409,6 +427,152 @@ conviene avisar antes de que alguien pierda una tarde con el error.
    FV derivada.
 3. Añadir el autoconsumo al apartado de contexto de la memoria. Es un cambio regulatorio
    con efecto medible sobre los datos, y tenemos una estimación propia de su magnitud.
+
+---
+
+## D-04 · Lo que sobra en la base, y una tabla menos informativa de lo que parece
+
+**Fecha:** 19 de agosto de 2026
+**Estado:** cerrada
+**Afecta a:** `trayport_daily` · `esios_capacity_available_fc` · `esios_capacity_installed`
+**Evidencia:** `ingesta/check_tables/revision_huerfanos.py`
+
+### La pregunta
+
+Arrastrábamos dos candidatos a borrar —`trayport_daily` y una columna huérfana en
+`ecmwf_forecast_agg`— identificados de oídas, sin comprobar. La pregunta era si de verdad
+sobraban, y si había más que nadie hubiera mirado.
+
+El criterio elegido: una columna solo se considera huérfana si está vacía **y además** no
+aparece en ningún fichero del repositorio. La segunda condición es la que importa. Una
+columna vacía puede estar esperando a que alguien active su pipeline; si nadie la nombra
+en el código, no espera nada.
+
+### Lo que se buscaba
+
+**`trayport_daily`** sigue en la base con 41 filas y **22 menciones en el código**, así que
+por el criterio estricto no es huérfana. Pero los datos dicen otra cosa: dejó de recibir
+filas el 16 de agosto, mientras `trayport_trades` y `trayport_daily_ohlc` siguen hasta el
+17. El cron de las 8:00 continúa activo, de modo que el pipeline se reorientó a las tablas
+nuevas y ésta quedó abandonada de hecho.
+
+→ **Proponer su borrado**, después de revisar que esas 22 menciones son el propio pipeline
+y el comentario de `bronzeDF_pipeline.py` que ya la da por descartada, y no un uso real.
+
+**La columna huérfana de `ecmwf_forecast_agg` ya no existe**: alguien la limpió. Lo único
+que aparece al 100 % NULL es `coal_subbituminosa_mw`, y está en
+`esios_capacity_available_fc` — la tabla que creamos ayer. Las 8 menciones son de nuestro
+propio script.
+
+→ **Retirar el indicador 476 del script.** No es un fallo: ESIOS no publica esa serie, cosa
+que ya constaba de la tabla anterior. Pero gasta una llamada a la API cada mañana para
+traer nada.
+
+### Lo que no se buscaba, y es lo interesante
+
+El bloque de columnas constantes destapó seis series que no varían en seis años y medio:
+
+| Tabla | Columna | Valor | Filas |
+|---|---|---|---|
+| `esios_capacity_installed` | `ccgt_mw` | 24.561,85 | 2.422 |
+| `esios_capacity_installed` | `nuclear_mw` | 7.117,29 | 2.422 |
+| `esios_capacity_installed` | `pump_mw` | 3.331,40 | 2.422 |
+| `esios_capacity_installed` | `fuel_mw` | 7,95 | 2.422 |
+| `esios_capacity_available` | `fuel_mw` | 7,90 | 2.422 |
+| `esios_capacity_installed` | `autoconsume_battery_mw` | 5,00 | 1.206 |
+
+Hay que separarlas en dos grupos, y la distinción es importante.
+
+**Las cinco primeras son correctas.** España no ha conectado ninguna central nuclear ni
+ningún ciclo combinado nuevo desde 2020, y la capacidad de bombeo tampoco se ha movido.
+El dato refleja la realidad.
+
+**Pero eso no las hace útiles.** Una columna con varianza cero no puede explicar nada en un
+modelo. No es un problema de la base de datos: es un problema de selección de features.
+
+**La sexta sí era sospechosa, y quedó confirmada.** `autoconsume_battery_mw` está clavada
+en 5,00 MW, y no encajaba con lo que sabemos del sistema.
+
+Comprobado contra su propia tabla, sin salir de la base de datos:
+
+| Año | Días con dato | Valores distintos | Autoconsumo baterías | Autoconsumo solar FV |
+|---|---|---|---|---|
+| 2020 | 0 | 0 | — | 25,6 → 457,0 |
+| 2021 | 0 | 0 | — | 481,7 → 752,2 |
+| 2022 | 0 | 0 | — | 800,1 → 1.700,4 |
+| 2023 | 245 | **1** | 5,00 | 1.991,2 → 3.719,3 |
+| 2024 | 366 | **1** | 5,00 | 4.011,3 → 6.433,6 |
+| 2025 | 365 | **1** | 5,00 | 6.696,7 → 8.472,2 |
+| 2026 | 230 | **1** | 5,00 | 8.560,5 → 9.100,8 |
+
+El hermano de la misma familia, el autoconsumo solar fotovoltaico, tiene **doce valores
+distintos cada año** —uno por mes, como corresponde— y crece de 25 MW a 9.100 MW. La misma
+tabla, el mismo pipeline y la misma carga mensual.
+
+→ **El indicador 2366 está congelado en origen.** No es un fallo de ingesta: la serie no se
+mueve en la fuente. `autoconsume_battery_mw` se descarta.
+
+### Nota de método: dos intentos fallidos antes de acertar
+
+El camino hasta esta comprobación merece anotarse, porque el error fue de diseño.
+
+El primer intento consultó la API pidiendo un día suelto. Devolvió vacío para los cuatro
+indicadores, incluido el de control. El segundo replicó la consulta del pipeline con
+`time_trunc=month` y volvió a devolver vacío. Solo al imprimir la respuesta en crudo
+apareció la causa: **HTTP 403 con una página de cortafuegos anti-bots**. Habíamos lanzado
+más de cien peticiones en unos minutos desde una IP doméstica, y ESIOS la bloqueó.
+
+Dos lecciones. La primera, que el `try/except` que devolvía `None` ante cualquier fallo
+impedía distinguir «la API dice que no hay datos» de «la API no me deja entrar»; un test
+que no puede distinguir eso no sirve. La segunda, que **la respuesta estaba en la base de
+datos desde el principio**: si la carga histórica se hizo mes a mes, lo guardado *es* lo
+que devolvía la fuente en cada momento. No hacía falta salir a Internet.
+
+### La decisión
+
+1. **Proponer el borrado de `trayport_daily`** tras revisar sus 22 menciones.
+2. **Retirar el indicador 476** de `esios_capacity_available_fc.py`.
+3. **No borrar las columnas constantes de la base**: el dato es correcto y tiene valor
+   documental. Lo que hay que hacer es **excluirlas del conjunto de features**.
+4. **Descartar `autoconsume_battery_mw` como feature**, por indicador congelado en origen.
+   Se mantiene la columna y la ingesta: el dato es un registro fiel de lo que publica la
+   fuente, y si ESIOS lo descongelara, el pipeline seguiría funcionando sin tocar nada.
+   Mismo criterio que con las columnas constantes.
+
+### La conclusión que se lleva a la reunión
+
+`esios_capacity_installed` es **bastante menos informativa de lo que aparenta**. Tiene 24
+columnas, pero cuatro son constantes y varias más apenas se mueven; las que de verdad
+varían son solar, eólica e híbridos, que son justamente las tecnologías en crecimiento.
+
+Conviene saberlo antes de que alguien añada las 24 al dataset esperando que aporten algo.
+Y encaja con lo que ya sabíamos por otras vías: esta tabla es contexto estructural, no una
+fuente de señal.
+
+### Nota de método
+
+Lo que iba a ser una limpieza de restos acabó siendo un hallazgo sobre la utilidad de una
+tabla. Merece la pena anotarlo: el criterio de «vacía **y** sin menciones en el código»
+descartó casi todos los candidatos de oídas, y en cambio la comprobación de varianza —que
+no estaba en el plan— fue la que dio algo aprovechable.
+
+### Implementación
+
+- ✅ **Indicador 476 retirado** de `esios_capacity_available_fc.py` el 19-ago. El script
+  pasa de ocho indicadores a siete. La línea se deja comentada en su sitio, con el motivo,
+  por si ESIOS volviera a publicar la serie. Desplegado en el servidor.
+- ✅ **Indicador 2366 comprobado** el 19-ago: congelado en origen, confirmado con la tabla
+  año a año. `autoconsume_battery_mw` pasa a DESCARTAR en el Excel.
+- ✅ **`autoconsume_solar_pv_mw` confirmada como buena** y marcada MANTENER: doce valores
+  distintos por año, de 25 MW a 9.100 MW. Sirve además de validación cruzada de la D-03.
+
+### Qué queda por hacer
+
+1. Revisar las 22 menciones de `trayport_daily` antes de proponer el borrado.
+2. Añadir un comentario junto al indicador 2366 en `esios_daily_capacity_instaled.py`,
+   para que nadie vuelva a investigarlo desde cero dentro de tres meses.
+3. Excluir las columnas constantes del conjunto de features cuando se construya el dataset
+   (no borrarlas de la base: el dato es correcto).
 
 ---
 
