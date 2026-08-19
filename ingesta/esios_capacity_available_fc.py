@@ -1,8 +1,12 @@
 """
 TFM Energia UCM — Potencia DISPONIBLE con horizonte (captura anticipada)
 ========================================================================
-Hermano de esios_daily_capacity_available.py. Carga los mismos ocho
-indicadores (472-479), pero guardando ADEMAS la fecha en que se consulto.
+Hermano de esios_daily_capacity_available.py. Carga los mismos indicadores de
+potencia disponible, pero guardando ADEMAS la fecha en que se consulto.
+
+Siete indicadores: 472-475 y 477-479. El 476 (hulla sub-bituminosa) se retiro
+el 19-ago-2026 tras comprobar que ESIOS no lo publica — ver nota en el
+diccionario INDICADORES.
 
 POR QUE EXISTE ESTE SCRIPT
 La ficha oficial de ESIOS dice, para los ocho indicadores:
@@ -98,7 +102,14 @@ INDICADORES = {
     473: "pump_mw",
     474: "nuclear_mw",
     475: "coal_antracita_mw",
-    476: "coal_subbituminosa_mw",
+    # 476 coal_subbituminosa_mw — RETIRADO el 19-ago-2026.
+    # Devolvia 0 dias con dato en las 45 fechas de la primera captura, y en la
+    # tabla antigua (esios_capacity_available) lleva vacia desde 2020: el
+    # inventario del 26-jul ya lo anotaba como "consistentemente sin datos,
+    # probable planta fuera de servicio". No es un fallo de carga: ESIOS no
+    # publica la serie. Mantenerlo solo gastaba una llamada a la API cada
+    # mañana para traer una columna NULL.
+    # Si algun dia volviese a publicarse, basta con descomentar esta linea.
     477: "ccgt_mw",
     478: "fuel_mw",
     479: "gas_turbine_mw",
