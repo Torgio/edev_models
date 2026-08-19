@@ -5,9 +5,11 @@ Este script construye las DOS estructuras de tiempo que todo el equipo debe comp
 la presentacion del miercoles, para que cada quien pueda hacer su propio EDA/modelado sobre
 exactamente la misma base:
 
-  A) ESPINA HORARIA (`construir_espina_horaria`) -- union por timestamp exacto de las 5 tablas
-     nucleo (entsoe_gen_data, esios_gen, esios_load_inter, esios_forecast_da) + variables diarias
-     (commodities, capacidad) difundidas sobre las 24h. Para EDA, correlaciones, graficos.
+  A) ESPINA HORARIA (`construir_espina_horaria`) -- union por timestamp exacto de las tablas
+     nucleo (entsoe_gen_data, entsoe_load_inter, esios_gen, load_inter, esios_forecast_da) +
+     variables diarias (commodities, capacidad) difundidas sobre las 24h. Para EDA, correlaciones,
+     graficos. NOTA (19-ago-2026): esios_load_inter se elimino, sustituida por `load_inter`
+     (demanda + interconexiones consolidadas, ESIOS+ENTSO-E unificado).
 
   B) DATASET DIARIO (`construir_dataset_diario`) -- una fila por dia D, target = las 24 horas de
      precio de D+1 (nunca del propio D), solo features sin fuga de informacion, lags de datos
@@ -56,15 +58,24 @@ VAL_END = pd.Timestamp("2025-12-31").date()      # validation: TRAIN_END+1 -> VA
 # test: VAL_END+1 -> fecha mas reciente disponible
 
 # Features seguras de esios_forecast_da (catalogo verificado, ver Banco de Evidencias punto #1-2).
-# gen_renovables_prev_mw se EXCLUYE a proposito: es gen_wind_prev_mw + gen_solar_pv_prev_mw exacto
-# (verificado 18-ago-2026, identidad exacta en las 58.127 filas donde las tres tienen dato) --
-# colinealidad perfecta si entran los tres a la vez. Se quedan los dos componentes, no el agregado.
-COLS_SEGURAS_FORECAST = ["demanda_prev_mw", "gen_wind_prev_mw", "gen_solar_pv_prev_mw"]
-# EXCLUIDAS a propósito: demanda_residual_prev_mw (revision 10-14 dias), potencia_indisp_pbf_mw (llega 8 dias tarde)
+# demanda_prev_mw (1775) se CAMBIO a demanda_mercado_prev_mw (2563) el 19-ago-2026 -- el equipo
+# verifico que 1775 tiene un sesgo creciente (hasta +2.386 MW en 2026) y el doble de error en
+# todos los años frente al 2563. gen_renovables_prev_mw se EXCLUYE a proposito: es
+# gen_wind_prev_mw + gen_solar_pv_prev_mw exacto (verificado 18-ago-2026, identidad exacta en las
+# 58.127 filas donde las tres tienen dato) -- colinealidad perfecta si entran los tres a la vez.
+COLS_SEGURAS_FORECAST = ["demanda_mercado_prev_mw", "gen_wind_prev_mw", "gen_solar_pv_prev_mw"]
+# EXCLUIDA a proposito: demanda_residual_prev_mw (revision 10-14 dias).
+# potencia_indisp_pbf_mw ya NO EXISTE en esios_forecast_da (el equipo la elimino el 19-ago-2026 --
+# era un duplicado exacto de esios_pbf_gen.unavailable_power_mw, y estar en la tabla de forecasts
+# inducia a creerla leak-safe pre-cierre cuando en realidad es dato de PBF, post-cierre).
 
-# Ganadores del punto #3 (duplicados de fuente resueltos)
-TABLA_DEMANDA_REAL = "esios_load_inter"
-COLS_DEMANDA_REAL = ["ree_load"]
+# Ganadores del punto #3 (duplicados de fuente resueltos).
+# TABLA_DEMANDA_REAL: esios_load_inter/entsoe_load_inter se unificaron en `load_inter` el
+# 19-ago-2026. Demanda real -> entsoe_load, NUNCA ree_load: desde dic-2025 REE empieza a sumarle
+# una estimacion de autoconsumo a ree_load, y la brecha crece mes a mes (verificado: +435 MW en
+# dic-2025 -> +2.495 MW en jul-2026) -- la serie cambia de significado a mitad del historico.
+TABLA_DEMANDA_REAL = "load_inter"
+COLS_DEMANDA_REAL = ["entsoe_load"]
 TABLA_EOLICA_BOMBEO_REAL = "entsoe_gen_data"
 COLS_EOLICA_BOMBEO_REAL = ["wind_mw", "pumping_gen_mw", "pumping_cons_mw"]
 TABLA_SOLAR_REAL = "esios_gen"
@@ -110,8 +121,8 @@ def construir_espina_horaria(start: str = DATASET_START, end: str = DATASET_END)
             conn, "SELECT * FROM esios_gen WHERE datetime BETWEEN %(start)s AND %(end)s ORDER BY datetime",
             "datetime", params,
         )
-        df_esios_load = _leer_horaria(
-            conn, "SELECT * FROM esios_load_inter WHERE datetime BETWEEN %(start)s AND %(end)s ORDER BY datetime",
+        df_load_inter = _leer_horaria(
+            conn, "SELECT * FROM load_inter WHERE datetime BETWEEN %(start)s AND %(end)s ORDER BY datetime",
             "datetime", params,
         )
         df_forecast = _leer_horaria(
@@ -136,7 +147,7 @@ def construir_espina_horaria(start: str = DATASET_START, end: str = DATASET_END)
     espina = df_gen.rename(columns={"datetime": "ts"})
     espina = espina.merge(df_load.rename(columns={"datetime": "ts"}), on="ts", how="left", suffixes=("", "_load"))
     espina = espina.merge(df_esios_gen.rename(columns={"datetime": "ts"}), on="ts", how="left", suffixes=("", "_esiosgen"))
-    espina = espina.merge(df_esios_load.rename(columns={"datetime": "ts"}), on="ts", how="left", suffixes=("", "_esiosload"))
+    espina = espina.merge(df_load_inter.rename(columns={"datetime": "ts"}), on="ts", how="left", suffixes=("", "_loadinter"))
     espina = espina.merge(df_forecast.rename(columns={"datetime": "ts"}), on="ts", how="left", suffixes=("", "_fcst"))
     assert espina["ts"].is_unique, "la espina no deberia tener timestamps duplicados -- revisar duplicados de fuente"
 
@@ -209,8 +220,9 @@ def _features_forecast(conn) -> pd.DataFrame:
 
 
 # NTC (capacidad de interconexion) -- ganador del punto #3, publicada antes del cierre igual que
-# las previsiones. Solo Francia y Portugal (Marruecos existe en la tabla pero no se resolvio en
-# el punto #3 -- ver ree_ntc_impma/ree_ntc_expma si se decide incluirlo mas adelante).
+# las previsiones. Ahora en `load_inter` (antes esios_load_inter, eliminada 19-ago-2026). Solo
+# Francia y Portugal (Marruecos existe en la tabla pero no se resolvio en el punto #3 -- ver
+# ree_ntc_impma/ree_ntc_expma si se decide incluirlo mas adelante).
 COLS_NTC = ["ree_ntc_impfr", "ree_ntc_expfr", "ree_ntc_imppt", "ree_ntc_exppt"]
 
 # entsoe_forecast_da: revivida el 17-ago-2026 (antes 192 filas, ahora historico completo).
@@ -220,10 +232,10 @@ COLS_FORECAST_ENTSOE = ["load_forecast_mw", "wind_forecast_mw", "solar_forecast_
 
 
 def _features_ntc(conn) -> pd.DataFrame:
-    """NTC Francia/Portugal de esios_load_inter -- mismo criterio de alineacion que
+    """NTC Francia/Portugal de load_inter -- mismo criterio de alineacion que
     _features_forecast (publicada antes del cierre, describe D+1, se coloca en la fila D)."""
     df = pd.read_sql(
-        f"SELECT datetime, {', '.join(COLS_NTC)} FROM esios_load_inter WHERE datetime BETWEEN %(start)s AND %(end)s",
+        f"SELECT datetime, {', '.join(COLS_NTC)} FROM load_inter WHERE datetime BETWEEN %(start)s AND %(end)s",
         conn, params={"start": DATASET_START, "end": DATASET_END},
     )
     df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
