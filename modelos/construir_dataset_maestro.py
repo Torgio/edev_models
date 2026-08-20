@@ -490,7 +490,11 @@ def _features_lag_precio_vecinos(conn) -> pd.DataFrame:
     return lag1.join(lag7, how="outer")
 
 
-COLS_CLIMA = ["t2m_mean", "wind10_mean", "wind100_mean", "ssrd_mean", "tcc_mean", "tp_mean"]
+# Las 9 columnas de medicion de era5_weather_agg -- ampliado 20-ago-2026 a peticion del equipo,
+# antes solo se usaban 6. Quedan fuera tensor_path/tensor_index: son metadatos internos del
+# pipeline de descarga (ruta del tensor NetCDF, indice), no variables fisicas.
+COLS_CLIMA = ["t2m_mean", "d2m_mean", "wind10_mean", "wind100_mean", "wind_gust10_mean",
+              "ssrd_mean", "tcc_mean", "tp_mean", "msl_mean"]
 
 
 def _features_clima(conn) -> pd.DataFrame:
@@ -501,15 +505,19 @@ def _features_clima(conn) -> pd.DataFrame:
     seguridad sigue siendo real y vale la pena tenerla presente pese a la aprobacion: ERA5 es
     reanalisis (clima REAL ya ocurrido), no una prevision. Usar el clima de D+1 asume que en
     produccion se tendria una prevision ECMWF igual de buena para D+1, lo cual todavia no esta
-    validado (`ecmwf_forecast_agg` solo tiene unos dias de historico). El equipo decidio aceptar
-    esa asuncion por ahora -- para desactivarla, `incluir_clima=False`.
+    validado (`ecmwf_forecast_agg` solo tiene unos dias de historico) -- pendiente de conversacion
+    del equipo, ver conversacion 20-ago-2026. El equipo decidio aceptar esa asuncion por ahora
+    -- para desactivarla, `incluir_clima=False`.
     """
     df = pd.read_sql(
         f"SELECT ts, {', '.join(COLS_CLIMA)} FROM era5_weather_agg WHERE ts BETWEEN %(start)s AND %(end)s ORDER BY ts",
         conn, params={"start": DATASET_START, "end": DATASET_END},
     )
     df["ts"] = pd.to_datetime(df["ts"], utc=True)   # normalizacion UTC manual, NUNCA parse_dates
-    df["t2m_mean"] = df["t2m_mean"] - 273.15   # Kelvin -> Celsius
+    # Kelvin -> Celsius: t2m (temperatura) y d2m (punto de rocio) son las dos unicas en Kelvin
+    # (verificado 20-ago-2026: d2m_mean ronda 276-277, mismo rango que t2m_mean sin convertir).
+    df["t2m_mean"] = df["t2m_mean"] - 273.15
+    df["d2m_mean"] = df["d2m_mean"] - 273.15
     df["fecha_objetivo"] = df["ts"].dt.tz_convert("Europe/Madrid").dt.date  # dia D+1 que describe
 
     feats = df.groupby("fecha_objetivo")[COLS_CLIMA].agg(["mean", "min", "max"])
