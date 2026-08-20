@@ -87,11 +87,16 @@ COLS_SEGURAS_FORECAST = [
 # documentada en D-03 (brecha +435 a +2.495 MW dic-2025/jul-2026). El equipo decidio usar ree_load
 # de todas formas -- si se quiere volver a entsoe_load, es cambiar esta lista.
 #
+# entsoe_load añadida el 20-ago-2026 (adicion de ultimo momento del equipo, no un reemplazo de
+# ree_load -- las dos entran juntas). OJO para quien la use: las dos miden lo mismo salvo por el
+# autoconsumo (D-03), asi que en 2020-2024 son practicamente identicas y desde dic-2025 se separan
+# cada vez mas -- entran ambas tal como se indico, sin resolver esa redundancia aqui.
+#
 # load_inter tambien aporta netflow/total_net_flow/gen_peninsular: son dato REAL ya ocurrido
 # (no una capacidad publicada de antemano como el NTC), asi que van aqui con el resto de reales
 # con lag D-1/D-7, no en COLS_NTC (que sigue el criterio "seguro, D+1" de _features_ntc).
 TABLA_DEMANDA_REAL = "load_inter"
-COLS_DEMANDA_REAL = ["ree_load", "ree_netflow_fr", "ree_netflow_pt", "ree_netflow_ma",
+COLS_DEMANDA_REAL = ["ree_load", "entsoe_load", "ree_netflow_fr", "ree_netflow_pt", "ree_netflow_ma",
                       "total_net_flow_mw", "gen_peninsular_mw"]
 
 # ENTSO-E gana eolica, hidraulica fluyente, consumo de bombeo, biomasa, residuos, otras
@@ -492,12 +497,12 @@ def _features_clima(conn) -> pd.DataFrame:
     """Clima (ERA5) agregado por dia, alineado a D+1 -- MISMO criterio de shift que
     `_features_forecast` (describe D+1, se coloca en la fila D que lo usaria).
 
-    OJO -- esto NO es equivalente en seguridad al resto de features "seguras": ERA5 es
+    Incluida por defecto desde el 20-ago-2026, con visto bueno del equipo. OJO -- la salvedad de
+    seguridad sigue siendo real y vale la pena tenerla presente pese a la aprobacion: ERA5 es
     reanalisis (clima REAL ya ocurrido), no una prevision. Usar el clima de D+1 asume que en
     produccion se tendria una prevision ECMWF igual de buena para D+1, lo cual todavia no esta
-    validado (`ecmwf_forecast_agg` solo tiene unos dias de historico). Por eso esta funcion NO
-    se incluye por defecto en `construir_dataset_diario` -- solo con `incluir_clima=True`,
-    a proposito, para dejar clara la diferencia con el resto del catalogo.
+    validado (`ecmwf_forecast_agg` solo tiene unos dias de historico). El equipo decidio aceptar
+    esa asuncion por ahora -- para desactivarla, `incluir_clima=False`.
     """
     df = pd.read_sql(
         f"SELECT ts, {', '.join(COLS_CLIMA)} FROM era5_weather_agg WHERE ts BETWEEN %(start)s AND %(end)s ORDER BY ts",
@@ -514,15 +519,17 @@ def _features_clima(conn) -> pd.DataFrame:
     return feats
 
 
-def construir_dataset_diario(solo_filas_validas: bool = True, incluir_clima: bool = False,
+def construir_dataset_diario(solo_filas_validas: bool = True, incluir_clima: bool = True,
                               incluir_columnas_pendientes: bool = False) -> pd.DataFrame:
     """Construye el dataset maestro completo: target D+1 + features seguras + lags reales.
 
     Parametros:
         solo_filas_validas: si True (por defecto), excluye filas con el target D+1 incompleto
             (cambio de hora en marzo, borde final de la ventana de datos).
-        incluir_clima: si True, añade las features de ERA5 (ver `_features_clima` -- proxy de
-            una futura previsión ECMWF de D+1, no producción-segura tal cual). Por defecto False.
+        incluir_clima: si True (por defecto desde 20-ago-2026, con visto bueno del equipo), añade
+            las features de ERA5 (ver `_features_clima` -- proxy de una futura previsión ECMWF de
+            D+1, no producción-segura tal cual, salvedad aceptada por el equipo). `False` para
+            desactivarlo.
         incluir_columnas_pendientes: si True, añade las 4 familias de columnas que la reunion del
             equipo del 20-ago-2026 dejo FUERA del dataset por ahora (previsión ENTSO-E, diferencia
             entre previsiones, capacidad disponible, precio de paises vecinos) -- ver
