@@ -3,13 +3,18 @@ Extracción + normalización mínima del eje temporal, tabla por tabla, leyendo
 directo de Postgres (nunca de CSV — el CSV solo se usó para validar la
 lógica de join antes de tener acceso a la base real).
 
+Trae SOLO las columnas configuradas en bronze_config.TABLES (más time_col) --
+no "SELECT *" y descarte posterior. Menos tráfico de red, y la lista de
+columnas queda documentada en un solo lugar (ver docs/decisiones_datos.md
+para el motivo de cada columna elegida).
+
 Corre independiente del script/notebook de unión: actualizar el parquet de
 una tabla no implica tocar las demás ni recalcular el merge.
 
 Uso:
-    python extraccion_bronze.py                            # todas las tablas de TABLES
-    python extraccion_bronze.py esios_gen                  # solo esa tabla
-    python extraccion_bronze.py esios_gen entsoe_gen_data   # varias
+    python extract_bronze.py                            # todas las tablas de TABLES
+    python extract_bronze.py esios_gen                  # solo esa tabla
+    python extract_bronze.py esios_gen entsoe_gen_data   # varias
 
 Conexión a Postgres: mismo patrón que ingesta/historic_load/era5_load.py
 (config.load_config() -> psycopg2.connect(**db_config)). Si tu config.py no
@@ -34,22 +39,45 @@ def get_connection():
     return psycopg2.connect(**db_config)
 
 
-def load_raw(table_name: str, conn) -> pd.DataFrame:
-    return pd.read_sql(f"SELECT * FROM {table_name}", conn)
+def load_raw(table_name: str, conn, columns: list[str] | None, time_col: str) -> pd.DataFrame:
+    """SELECT solo de las columnas configuradas + time_col. Si "columns" es None
+    (tabla sin lista explícita todavía), trae todo -- comportamiento anterior,
+    para no romper una tabla que aún no pasó por la matriz de decisiones."""
+    if columns:
+        cols_sql = ", ".join([time_col] + columns)
+        query = f"SELECT {cols_sql} FROM {table_name}"
+    else:
+        query = f"SELECT * FROM {table_name}"
+    return pd.read_sql(query, conn)
 
 
-def normalize_time_axis(df: pd.DataFrame, time_col: str, prefix: str) -> pd.DataFrame:
+def normalize_time_axis(df: pd.DataFrame, time_col: str, prefix: str, grain: str = "hourly") -> pd.DataFrame:
+    """Normaliza el eje temporal según la granularidad de la tabla:
+      - hourly / 3h: columna de tiempo -> ts_utc, tz-aware. La diferencia entre
+        hourly y 3h no cambia esta función -- se resuelve al unir (01_union_bronze.ipynb),
+        no acá.
+      - daily: columna de tiempo -> date_local (fecha, sin hora). Estas tablas se
+        difunden sobre 24h al unir, no se buscan por instante exacto.
+    """
     df = df.drop(columns=[c for c in DROP_COLS if c in df.columns])
-    df = df.rename(columns={time_col: "ts_utc"})
-    df["ts_utc"] = pd.to_datetime(df["ts_utc"], utc=True)
-    rename_map = {c: f"{prefix}_{c}" for c in df.columns if c != "ts_utc"}
+
+    if grain == "daily":
+        df = df.rename(columns={time_col: "date_local"})
+        df["date_local"] = pd.to_datetime(df["date_local"]).dt.date
+        key_col = "date_local"
+    else:
+        df = df.rename(columns={time_col: "ts_utc"})
+        df["ts_utc"] = pd.to_datetime(df["ts_utc"], utc=True)
+        key_col = "ts_utc"
+
+    rename_map = {c: f"{prefix}_{c}" for c in df.columns if c != key_col}
     return df.rename(columns=rename_map)
 
 
 def extraer_tabla(table_name: str, conn) -> Path:
     cfg = TABLES[table_name]
-    df = load_raw(table_name, conn)
-    df = normalize_time_axis(df, cfg["time_col"], cfg["prefix"])
+    df = load_raw(table_name, conn, cfg.get("columns"), cfg["time_col"])
+    df = normalize_time_axis(df, cfg["time_col"], cfg["prefix"], cfg.get("grain", "hourly"))
 
     BRONZE_DIR.mkdir(parents=True, exist_ok=True)
     path = raw_path(table_name)
