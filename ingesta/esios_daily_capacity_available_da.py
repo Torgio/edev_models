@@ -1,12 +1,15 @@
 """
-TFM Energia UCM — Potencia DISPONIBLE con horizonte (captura anticipada)
+TFM Energia UCM — Potencia DISPONIBLE del dia siguiente (D+1)
 ========================================================================
-Hermano de esios_daily_capacity_available.py. Carga los mismos indicadores de
-potencia disponible, pero guardando ADEMAS la fecha en que se consulto.
+Unico script de potencia disponible desde el 23-ago-2026. Escribe las 24
+horas de D+1 en esios_capacity_available con es_declarado=true. El valor
+anticipado se publica a las 4:30 de D, antes del cierre del mercado diario
+(12:00 de D-1), asi que entra al modelo sin fuga de informacion.
 
-Seis indicadores: 472-475, 477 y 478. Retirados el 476 (hulla sub-bituminosa,
-el 19-ago-2026 tras comprobar que ESIOS no lo publica — ver nota en el
-diccionario INDICADORES.
+Seis indicadores: 472-475, 477 y 478. Retirados dos:
+  476 (hulla sub-bituminosa) el 19-ago-2026: ESIOS no lo publica.
+  479 (Gas Natural) el 23-ago-2026: sin historico, cero puntos en 2023 y
+      nulo en 58.241 de 58.265 filas. Ver nota en INDICADORES.
 
 POR QUE EXISTE ESTE SCRIPT
 La ficha oficial de ESIOS dice, para los ocho indicadores:
