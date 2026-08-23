@@ -4,7 +4,7 @@ TFM Energia UCM — Potencia DISPONIBLE con horizonte (captura anticipada)
 Hermano de esios_daily_capacity_available.py. Carga los mismos indicadores de
 potencia disponible, pero guardando ADEMAS la fecha en que se consulto.
 
-Siete indicadores: 472-475 y 477-479. El 476 (hulla sub-bituminosa) se retiro
+Seis indicadores: 472-475, 477 y 478. Retirados el 476 (hulla sub-bituminosa,
 el 19-ago-2026 tras comprobar que ESIOS no lo publica — ver nota en el
 diccionario INDICADORES.
 
@@ -116,7 +116,6 @@ INDICADORES = {
     # Si algun dia volviese a publicarse, basta con descomentar esta linea.
     477: "ccgt_mw",
     478: "fuel_mw",
-    479: "gas_turbine_mw",
 }
 COLUMNAS = list(INDICADORES.values())
 
