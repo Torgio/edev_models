@@ -1,0 +1,332 @@
+"""
+TFM Energia UCM — Potencia DISPONIBLE con horizonte (captura anticipada)
+========================================================================
+Hermano de esios_daily_capacity_available.py. Carga los mismos indicadores de
+potencia disponible, pero guardando ADEMAS la fecha en que se consulto.
+
+Siete indicadores: 472-475 y 477-479. El 476 (hulla sub-bituminosa) se retiro
+el 19-ago-2026 tras comprobar que ESIOS no lo publica — ver nota en el
+diccionario INDICADORES.
+
+POR QUE EXISTE ESTE SCRIPT
+La ficha oficial de ESIOS dice, para los ocho indicadores:
+
+    "Publicacion: diariamente a partir de las 4:30 horas con los datos por
+     dia y hora del trimestre actual y el siguiente."
+
+Es decir: a las 4:30 del dia D ya se conoce la potencia disponible declarada
+para D+1, D+7 y meses vista. Siete horas y media ANTES del cierre del mercado
+diario (12:00 de D-1). Eso la convierte en una de las mejores features del
+proyecto: se calcula como potencia instalada menos indisponibilidades
+declaradas por los sujetos del mercado, asi que anticipa paradas de nucleares
+y mantenimientos antes de que ocurran.
+
+EL PROBLEMA QUE RESUELVE
+esios_daily_capacity_available.py corre a las 21:05, y para cada fecha pide a
+la API SOLO esa fecha. La fila del dia X se crea el dia X por la noche y con
+REVISAR_EXISTENTES=False no se vuelve a tocar. Resultado: la tabla guarda
+"lo que se sabia del dia X al final del dia X", no "lo que se sabia el dia D
+sobre el dia D+1". Se pierde justo el horizonte hacia adelante, que es lo que
+la hace valiosa.
+
+Y hay una trampa: usar esa tabla tal cual como feature mete el valor
+registrado a las 21:05 del mismo dia que se quiere predecir. Casi siempre se
+parecera al declarado la vispera, SALVO cuando hay una parada imprevista, que
+es precisamente el caso que mas mueve el precio. La fuga de informacion se
+concentraria en los eventos que mas importan.
+
+QUE HACE ESTE SCRIPT
+Cada manana, despues de la publicacion de las 4:30, consulta el horizonte
+completo y guarda una fila por (run_date, target_datetime). Con eso se puede
+preguntar: "el dia D a las 5:30, que potencia disponible habia declarada para
+D+1?" — que es exactamente la pregunta que hay que hacerle a una feature.
+
+    esios_capacity_available_fc
+        run_date     DATE   fecha en que se hizo la consulta
+        target_datetime TIMESTAMPTZ  hora a la que se refiere el dato
+        <8 columnas de tecnologia>
+        PRIMARY KEY (run_date, target_datetime)
+
+LIMITACION QUE HAY QUE ASUMIR Y DOCUMENTAR EN LA MEMORIA
+El pasado NO se puede reconstruir. La API devuelve el valor VIGENTE para una
+fecha, no el que estaba declarado hace seis meses. Asi que la serie
+anticipatoria empieza el dia que se ponga en marcha este script.
+Consecuencia practica:
+  - Modelos entrenados con historico 2020-2026: usar la tabla antigua CON LAG.
+  - A partir de hoy: se acumula la serie buena, utilizable sin lag.
+No es un fallo del diseño, es una limitacion de la fuente. Mismo caso que
+ecmwf_forecast_load.py, que tampoco puede recuperar pronosticos pasados.
+
+CRON (servidor) — despues de la publicacion de las 4:30, con margen:
+    CRON_TZ=Europe/Madrid
+    30 5 * * * /home/ubuntu/tfm-env/bin/python /home/ubuntu/scripts/ingesta/esios_capacity_available_fc.py >> /home/ubuntu/scripts/logs/cron_capacity_fc.log 2>&1
+
+CRON_TZ=Europe/Madrid y no UTC: en UTC el script se lanzaria a las 7:30 de
+Madrid en verano y a las 6:30 en invierno, y no queremos que la hora de
+captura baile con la estacion (mismo criterio que esios_load_inter_pipeline).
+
+USO
+    python esios_capacity_available_fc.py                  # hoy, horizonte por defecto
+    python esios_capacity_available_fc.py --dias 60        # horizonte mas largo
+    python esios_capacity_available_fc.py --run 2026-08-18 # repetir una captura
+    python esios_capacity_available_fc.py --dry-run        # sin escribir en BD
+"""
+
+from zoneinfo import ZoneInfo
+import argparse
+import sys
+import time
+from datetime import date, datetime, timedelta
+from pathlib import Path
+
+import requests
+import psycopg2
+from psycopg2.extras import execute_values
+
+sys.path.append(str(Path(__file__).parent))
+from config import load_config
+
+# ── Configuracion ─────────────────────────────────────────────────────────────
+
+PENINSULA_GEO_ID = 8741
+DIAS_HORIZONTE   = 2       # D+0 y D+1. Solo interesa el D+1, unico sin
+                           # fuga (publicado a las 4:30 de D). Usar
+                           # --dias N si hace falta mas horizonte.
+                           # actual y el siguiente, pero mas alla de ~6 semanas
+                           # el dato es la ultima disponibilidad propagada y
+                           # aporta poco. 45 dias cubre de sobra el D+1 que
+                           # necesita el modelo y deja margen para analisis.
+PAUSA_API_SEC    = 0.4
+TIMEOUT_SEC      = 30
+TABLA            = "esios_capacity_available_fc"
+TZ_MADRID        = ZoneInfo("Europe/Madrid")
+
+INDICADORES = {
+    472: "hydro_mw",
+    473: "pump_mw",
+    474: "nuclear_mw",
+    475: "coal_antracita_mw",
+    # 476 coal_subbituminosa_mw — RETIRADO el 19-ago-2026.
+    # Devolvia 0 dias con dato en las 45 fechas de la primera captura, y en la
+    # tabla antigua (esios_capacity_available) lleva vacia desde 2020: el
+    # inventario del 26-jul ya lo anotaba como "consistentemente sin datos,
+    # probable planta fuera de servicio". No es un fallo de carga: ESIOS no
+    # publica la serie. Mantenerlo solo gastaba una llamada a la API cada
+    # mañana para traer una columna NULL.
+    # Si algun dia volviese a publicarse, basta con descomentar esta linea.
+    477: "ccgt_mw",
+    478: "fuel_mw",
+    479: "gas_turbine_mw",
+}
+COLUMNAS = list(INDICADORES.values())
+
+
+def log(msg):
+    print(f"{datetime.now():%H:%M:%S}  {msg}", flush=True)
+
+
+# ── Esquema ───────────────────────────────────────────────────────────────────
+
+def ensure_table(conn):
+    """Crea la tabla si no existe. No borra ni modifica datos existentes."""
+    cols = ",\n            ".join(f"{c} DOUBLE PRECISION" for c in COLUMNAS)
+    with conn.cursor() as cur:
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS {TABLA} (
+            run_date        DATE NOT NULL,
+            target_datetime TIMESTAMPTZ NOT NULL,
+            {cols},
+            created_at      TIMESTAMP DEFAULT now(),
+            PRIMARY KEY (run_date, target_datetime)
+            )
+        """)
+        # Indice para la consulta tipica: "dame el horizonte de esta captura"
+        cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{TABLA}_target ON {TABLA} (target_datetime)")
+    conn.commit()
+
+
+# ── API ESIOS ─────────────────────────────────────────────────────────────────
+
+def fetch_indicador(headers, indicator_id, desde: date, hasta: date):
+    """Descarga un indicador para todo el rango de una sola vez.
+
+    Devuelve {fecha: valor}. Una peticion por indicador en lugar de una por
+    indicador y dia: 8 llamadas en total en vez de 8 x 45 = 360.
+
+    time_trunc=hour + time_agg=avg: puntos horarios nativos. El time_agg es
+    imprescindible pese a ser granularidad nativa — la agregacion por defecto
+    de ESIOS es SUM, y el dia de vuelta al horario de invierno las dos horas
+    02:00 caen bajo la misma etiqueta local y se suman (verificado el
+    31-oct-2021: ccgt 40996 = 2 x 20498). La version anterior pedia day + avg
+    y perdia el perfil
+    intradiario — verificado el 23-ago-2026: el indicador 472 tenia 6 valores
+    distintos en 24 horas con un rango de 286 MW, y el 473 cuatro valores con
+    69 MW. El 474 (nuclear) salia plano ese dia por no haber maniobras, no por
+    la granularidad.
+
+    geo_trunc=electric_system reagrega los geos por sistema electrico ANTES de
+    devolverlos, asi que las CCAA peninsulares llegan ya sumadas bajo 8741.
+    Sin esto, los indicadores publicados solo a nivel autonomico no aparecen.
+    """
+    params = {
+        "start_date": desde.strftime("%Y-%m-%dT00:00:00"),
+        "end_date":   hasta.strftime("%Y-%m-%dT23:59:00"),
+        "time_trunc": "hour",
+        "time_agg":   "avg",
+        "geo_agg":    "sum",
+        "geo_trunc":  "electric_system",
+    }
+    try:
+        r = requests.get(f"https://api.esios.ree.es/indicators/{indicator_id}",
+                         headers=headers, params=params, timeout=TIMEOUT_SEC)
+        if r.status_code != 200:
+            log(f"    indicador {indicator_id}: HTTP {r.status_code}")
+            return {}
+        valores = r.json().get("indicator", {}).get("values", [])
+    except Exception as e:
+        log(f"    indicador {indicator_id}: {type(e).__name__} {e}")
+        return {}
+
+    out = {}
+    for v in valores:
+        if v.get("geo_id") not in (PENINSULA_GEO_ID, None):
+            continue
+        if v.get("value") is None:
+            continue
+        f = datetime.fromisoformat(v["datetime"])
+        out[f] = round(float(v["value"]), 2)
+    return out
+
+
+def capturar(headers, run: date, dias: int):
+    """Devuelve {target_datetime: {columna: valor}} para todo el horizonte."""
+    desde, hasta = run, run + timedelta(days=dias - 1)
+    log(f"Horizonte: {desde} -> {hasta}  ({dias} dias)")
+
+    filas = {}
+    for ind_id, col in INDICADORES.items():
+        serie = fetch_indicador(headers, ind_id, desde, hasta)
+        log(f"  {col:<24} {len(serie):>5} horas con dato")
+        for f, v in serie.items():
+            filas.setdefault(f, {})[col] = v
+        time.sleep(PAUSA_API_SEC)
+    return filas
+
+
+# ── Escritura ─────────────────────────────────────────────────────────────────
+
+def guardar(conn, run: date, filas: dict):
+    """Inserta la captura. ON CONFLICT actualiza: repetir una captura del mismo
+    dia sobrescribe, que es lo correcto — es la misma foto, tomada otra vez."""
+    if not filas:
+        log("Sin datos que guardar.")
+        return 0
+
+    registros = []
+    for target in sorted(filas):
+        vals = filas[target]
+        registros.append([run, target] + [vals.get(c) for c in COLUMNAS])
+
+    # Tabla de vintage desactivada el 23-ago-2026: se guarda unicamente el
+    # D+1 en esios_capacity_available. El horizonte de 45 dias se descarta.
+
+    # El D+1 va ademas a la tabla maestra: es el valor anticipado sin fuga,
+    # y pisa al consolidado que dejo ahi la carga historica.
+    manana = run + timedelta(days=1)
+    maestro = [r[1:] for r in registros
+               if r[1].astimezone(TZ_MADRID).date() == manana]
+    if maestro:
+        sets_m = ", ".join(f"{c} = EXCLUDED.{c}" for c in COLUMNAS)
+        sql_m = f"""
+            INSERT INTO esios_capacity_available
+                   (datetime, {', '.join(COLUMNAS)}, es_declarado)
+            VALUES %s
+            ON CONFLICT (datetime) DO UPDATE SET {sets_m},
+                   es_declarado = true
+        """
+        with conn.cursor() as cur:
+            execute_values(cur, sql_m, [r + [True] for r in maestro])
+        conn.commit()
+        log(f"D+1: {len(maestro)} horas escritas en esios_capacity_available")
+
+    return len(registros)
+
+
+def resumen(conn, run: date):
+    """Comprobacion rapida: tenemos el D+1 completo en la tabla maestra?"""
+    manana = run + timedelta(days=1)
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT count(*), min(ccgt_mw), max(ccgt_mw)
+            FROM esios_capacity_available
+            WHERE es_declarado
+              AND (datetime AT TIME ZONE 'Europe/Madrid')::date = %s
+        """, (manana,))
+        horas, ccgt_min, ccgt_max = cur.fetchone()
+    if not horas:
+        log(f"AVISO: no hay dato para D+1 ({manana}). Revisar si la "
+            f"publicacion de las 4:30 se retraso.")
+    else:
+        log(f"D+1 ({manana}): {horas} horas   ccgt {ccgt_min}-{ccgt_max}")
+
+
+def main():
+    p = argparse.ArgumentParser(description="Captura anticipada de potencia disponible")
+    p.add_argument("--run",  help="Fecha de captura (por defecto hoy)")
+    p.add_argument("--dias", type=int, default=DIAS_HORIZONTE, help="Dias de horizonte")
+    p.add_argument("--dry-run", action="store_true", help="No escribe en BD")
+    args = p.parse_args()
+
+    run = date.fromisoformat(args.run) if args.run else date.today()
+    log(f"Captura de potencia disponible — run_date = {run}")
+
+    headers, db_config = load_config()
+    filas = capturar(headers, run, args.dias)
+    log(f"{len(filas)} horas con al menos un dato")
+
+    if args.dry_run:
+        log("--dry-run: no se escribe en BD")
+        for f in sorted(filas)[:5]:
+            log(f"  {f}: {filas[f]}")
+        return
+
+    conn = psycopg2.connect(**db_config)
+    try:
+        # ensure_table(conn)   # tabla de vintage desactivada 23-ago-2026
+        n = guardar(conn, run, filas)
+        log(f"{n} filas guardadas en {TABLA}")
+        resumen(conn, run)
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    main()
+
+
+# =============================================================================
+# COMO SE USA ESTO COMO FEATURE
+# =============================================================================
+#
+# Para predecir el dia D+1 usando lo que se sabia el dia D:
+#
+#     SELECT target_datetime, nuclear_mw, ccgt_mw, hydro_mw, pump_mw
+#     FROM esios_capacity_available_fc
+#     WHERE (target_datetime AT TIME ZONE 'Europe/Madrid')::date = run_date + 1;
+#
+# Eso da, para cada dia, la disponibilidad que estaba declarada la vispera.
+# Es la version sin fuga de informacion.
+#
+# Y la feature mas interesante no es el nivel, sino el CAMBIO respecto a lo
+# que se creia antes: una revision a la baja de la nuclear entre D-7 y D-1
+# significa una parada que acaba de declararse.
+#
+#     SELECT a.target_datetime,
+#            a.nuclear_mw - b.nuclear_mw AS revision_nuclear_7d
+#     FROM esios_capacity_available_fc a
+#     JOIN esios_capacity_available_fc b
+#       ON b.target_datetime = a.target_datetime
+#      AND b.run_date    = a.run_date - INTERVAL '6 days'
+#     WHERE (a.target_datetime AT TIME ZONE 'Europe/Madrid')::date = a.run_date + 1;
+#
+# Esa columna no existe en ninguna otra tabla del proyecto.
