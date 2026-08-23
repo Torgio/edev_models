@@ -15,6 +15,6 @@ ingesta/data_mibgas_excel/
 ingesta/tensors/
 ingesta/logs/
 .preview_tmp/
-
-ingesta/logs/
-.preview_tmp/
+modelos/dataset_maestro.csv
+modelos/espina_horaria.csv
+modelos/artefactos/

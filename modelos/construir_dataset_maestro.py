@@ -271,6 +271,32 @@ def _features_forecast(conn) -> pd.DataFrame:
     return feats
 
 
+# Autoconsumo previsto -- de la nueva vista materializada `forecast` (22-ago-2026), NO de
+# esios_forecast_da. c_autoconsumo_prev es la estimacion numerica (puede ser negativa -- pendiente
+# de confirmar con el equipo que representa exactamente); autoconsumo_estimado es un booleano,
+# se convierte a 0/1. Añadida como evaluacion, no reemplaza nada del catalogo ya verificado.
+COLS_AUTOCONSUMO_PREV = ["c_autoconsumo_prev", "autoconsumo_estimado"]
+
+
+def _features_autoconsumo_prev(conn) -> pd.DataFrame:
+    """Autoconsumo previsto de D+1, de la vista `forecast` -- mismo criterio de alineacion que
+    _features_forecast (se asume publicada antes del cierre, igual que el resto de esa vista)."""
+    df = pd.read_sql(
+        f"SELECT datetime, {', '.join(COLS_AUTOCONSUMO_PREV)} FROM forecast "
+        f"WHERE datetime BETWEEN %(start)s AND %(end)s",
+        conn, params={"start": DATASET_START, "end": DATASET_END},
+    )
+    df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
+    df["autoconsumo_estimado"] = df["autoconsumo_estimado"].astype("Int64")
+    df["fecha_objetivo"] = df["datetime"].dt.tz_convert("Europe/Madrid").dt.date
+
+    feats = df.groupby("fecha_objetivo")[COLS_AUTOCONSUMO_PREV].agg(["mean", "min", "max"])
+    feats.columns = [f"{c}_{stat}" for c, stat in feats.columns]
+    feats.index = (pd.to_datetime(feats.index) - pd.Timedelta(days=1)).date
+    feats.index.name = "fecha"
+    return feats
+
+
 # NTC (capacidad de interconexion) -- ganador del punto #3, publicada antes del cierre igual que
 # las previsiones. Ahora en `load_inter` (antes esios_load_inter, eliminada 19-ago-2026). Marruecos
 # (ree_ntc_impma/expma) se incluye desde el 20-ago-2026 a peticion del equipo -- antes se dejaba
@@ -355,7 +381,12 @@ def _features_diferencia_previsiones(conn) -> pd.DataFrame:
     return feats
 
 
-COLS_COMMODITIES = ["gas_mibgas", "gas_ttf", "co2_ets", "carbon_api2", "co2_eua_dec", "gas_ttf_m1"]
+# co2_ets, gas_ttf y carbon_api2 se retiraron el 22-ago-2026 a peticion del equipo (ver
+# conversacion) -- OJO: la importancia de features del LightGBM ganador (nota 14 de la memoria)
+# tenia a gas_ttf en la posicion #6 y carbon_api2 en la #8 de 237 variables, asi que este cambio
+# se aplica siguiendo la instruccion explicita del equipo, no porque la evidencia propia lo
+# respalde. Vale la pena revisar el impacto una vez reentrenados los modelos.
+COLS_COMMODITIES = ["gas_mibgas", "co2_eua_dec", "gas_ttf_m1"]
 
 
 def _features_dia_d(conn) -> pd.DataFrame:
@@ -370,16 +401,28 @@ def _features_dia_d(conn) -> pd.DataFrame:
     return df_comm
 
 
+COLS_CAPACIDAD_DISPONIBLE = ["hydro_mw", "pump_mw", "nuclear_mw", "coal_antracita_mw", "ccgt_mw", "fuel_mw"]
+
+
 def _features_capacidad_disponible(conn) -> pd.DataFrame:
-    """Capacidad disponible del propio dia D (lag natural). FUERA del dataset por defecto desde
-    20-ago-2026 -- decision de reunion del equipo, ver docs/columnas_pendientes_equipo.md. Solo
-    se activa con `incluir_columnas_pendientes=True` en `construir_dataset_diario`."""
-    df_capd = pd.read_sql(
-        "SELECT date, total_mw FROM esios_capacity_available WHERE date BETWEEN %(start)s AND %(end)s",
+    """Capacidad disponible del propio dia D (lag natural). CORREGIDO 22-ago-2026: el equipo
+    cambio `esios_capacity_available` de diaria+agregada (columnas `date`,`total_mw`, ya no
+    existen) a HORARIA y por tecnologia (`datetime` + 6 columnas) -- exactamente el desglose que
+    la decision D-01 dejaba pendiente. Se agrega por dia (mean/min/max) igual que el resto de
+    reales horarias del dataset. Sigue FUERA del dataset por defecto -- decision de reunion del
+    equipo, ver docs/columnas_pendientes_equipo.md. Solo se activa con
+    `incluir_columnas_pendientes=True` en `construir_dataset_diario`."""
+    df = pd.read_sql(
+        f"SELECT datetime, {', '.join(COLS_CAPACIDAD_DISPONIBLE)} FROM esios_capacity_available "
+        f"WHERE datetime BETWEEN %(start)s AND %(end)s",
         conn, params={"start": DATASET_START, "end": DATASET_END},
     )
-    df_capd["date"] = pd.to_datetime(df_capd["date"]).dt.date
-    return df_capd.rename(columns={"total_mw": "capacidad_disp_total_mw"}).set_index("date")
+    df["datetime"] = pd.to_datetime(df["datetime"], utc=True)  # normalizacion UTC manual, NUNCA parse_dates
+    df["fecha"] = df["datetime"].dt.tz_convert("Europe/Madrid").dt.date
+    feats = df.groupby("fecha")[COLS_CAPACIDAD_DISPONIBLE].agg(["mean", "min", "max"])
+    feats.columns = [f"capacidad_disp_{c}_{stat}" for c, stat in feats.columns]
+    feats.index.name = "fecha"
+    return feats
 
 
 def _calendario(index_fechas) -> pd.DataFrame:
@@ -467,16 +510,20 @@ def _features_lag_precio(target_wide_sin_shift: pd.DataFrame) -> pd.DataFrame:
     return lag1.join(lag7, how="outer")
 
 
-# Portugal y Francia son los UNICOS paises de spot_price con interconexion fisica a España.
-# El resto (Alemania, Italia, Suiza, Belgica, Holanda, Austria, Polonia, Chequia) no tiene cable
-# a España -- su correlacion con el precio español (0.5-0.68) probablemente ya la capturan
-# gas_ttf/co2_ets, y meterlos sin un canal causal real arriesga redundancia sin justificacion.
-COLS_PRECIO_VECINOS = ["pt_entsoe", "fr_entsoe"]
+# Ampliado 22-ago-2026 a peticion del equipo, "para probar": TODOS los paises de spot_price,
+# no solo Portugal/Francia (los unicos con interconexion fisica). Antes se excluia el resto
+# (Alemania, Italia, Suiza, Belgica, Holanda, Austria, Polonia, Chequia) razonando que su
+# correlacion con España (0.5-0.68) ya la capturaban gas_ttf/co2_ets -- esto es exactamente lo
+# que esta prueba busca confirmar o refutar con evidencia. es_entsoe/es_omie/pt_omie se EXCLUYEN
+# a proposito: son fuentes alternativas del propio precio español/portugues (no un pais "vecino"
+# distinto), no aportan una señal nueva sobre otro mercado.
+COLS_PRECIO_VECINOS = ["pt_entsoe", "fr_entsoe", "de_lu_entsoe", "it_nord_entsoe", "ch_entsoe",
+                        "be_entsoe", "nl_entsoe", "at_entsoe", "pl_entsoe", "cz_entsoe"]
 
 
 def _features_lag_precio_vecinos(conn) -> pd.DataFrame:
-    """Precio real de Portugal y Francia, D-1 y D-7 -- NUNCA el propio D+1. FUERA del dataset por
-    defecto desde 20-ago-2026 -- decision de reunion del equipo, ver
+    """Precio real de los paises de spot_price, D-1 y D-7 -- NUNCA el propio D+1. FUERA del
+    dataset por defecto desde 20-ago-2026 -- decision de reunion del equipo, ver
     docs/columnas_pendientes_equipo.md. Solo se activa con `incluir_columnas_pendientes=True`.
     El precio de esos paises para D+1 se fija en la MISMA subasta simultanea que el español
     (acoplamiento SDAC/MIBEL) -- no se conoce con antelacion, usarlo sin lag seria casi tan
@@ -569,6 +616,7 @@ def construir_dataset_diario(solo_filas_validas: bool = True, incluir_clima: boo
 
         target = _target_d1(conn)                       # con shift -1: target real de D+1
         feats_fcst = _features_forecast(conn)
+        feats_autoconsumo = _features_autoconsumo_prev(conn)
         feats_ntc = _features_ntc(conn)
         feats_dia_d = _features_dia_d(conn)
         cal = _calendario(target.index)
@@ -586,7 +634,7 @@ def construir_dataset_diario(solo_filas_validas: bool = True, incluir_clima: boo
     finally:
         conn.close()
 
-    piezas = [feats_fcst, feats_ntc, feats_dia_d, cal, feats_lag_real, feats_lag_precio]
+    piezas = [feats_fcst, feats_autoconsumo, feats_ntc, feats_dia_d, cal, feats_lag_real, feats_lag_precio]
     for pieza in (feats_fcst_entsoe, feats_diff_previsiones, feats_capacidad, feats_lag_precio_vecinos, feats_clima):
         if pieza is not None:
             piezas.append(pieza)
