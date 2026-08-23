@@ -65,6 +65,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from config import load_config
+from refresh_pdbc import refrescar_pdbc
 
 # ── Configuracion ──────────────────────────────────────────────────────────────
 
@@ -542,6 +543,15 @@ def run(target: date | None = None):
     # ── PASO 2: rellenar huecos de dias anteriores ──
     log.info(f"\n=== PASO 2: Revision ultimos {DIAS_REVISION} dias ===")
     revisar_dias_anteriores(headers, db_config, log)
+
+    # esios_pdbc_gen = PDBF menos bilaterales. Se refresca aqui para que
+    # no dependa de un cron aparte que se pueda olvidar.
+    import psycopg2 as _pg
+    _c = _pg.connect(**db_config)
+    try:
+        refrescar_pdbc(log, _c)
+    finally:
+        _c.close()
 
     log.info("\nPipeline ESIOS PBF finalizado")
 
