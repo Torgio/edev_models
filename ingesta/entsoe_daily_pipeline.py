@@ -59,6 +59,8 @@ from psycopg2.extras import execute_values
 from entsoe import EntsoePandasClient
 
 from config import load_config
+from refresh_generation import refrescar_generation
+from refresh_generation import refrescar_generation
 
 # ── Configuracion ──────────────────────────────────────────────────────────────
 
@@ -631,6 +633,16 @@ def run():
 
     log.info(f"\n=== PASO 2: Revision ultimos {DIAS_REVISION} dias ===")
     revisar_semana(client, db_config, log)
+
+    # generation necesita las dos tablas base. esios_gen_daily corre a las
+    # 19:30, cuando ENTSO-E aun no tiene el dia: sin esta segunda llamada el
+    # dia entra siempre con 24h de retraso (verificado 23-ago-2026).
+    import psycopg2 as _pg
+    _c = _pg.connect(**db_config)
+    try:
+        refrescar_generation(log, _c)
+    finally:
+        _c.close()
 
     log.info("\nPipeline ENTSO-E finalizado")
 
