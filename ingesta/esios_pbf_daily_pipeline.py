@@ -65,6 +65,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from config import load_config
+from refresh_pdbc import refrescar_pdbc
 
 # ── Configuracion ──────────────────────────────────────────────────────────────
 
@@ -542,6 +543,32 @@ def run(target: date | None = None):
     # ── PASO 2: rellenar huecos de dias anteriores ──
     log.info(f"\n=== PASO 2: Revision ultimos {DIAS_REVISION} dias ===")
     revisar_dias_anteriores(headers, db_config, log)
+
+    # esios_pdbc_gen = PDBF menos bilaterales. Se refresca aqui para que
+    # no dependa de un cron aparte que se pueda olvidar.
+    import psycopg2 as _pg
+    _c = _pg.connect(**db_config)
+    # ESIOS no publica punto cuando el programa es cero, y el INSERT va
+    # columna a columna: la columna queda NULL. Para las termicas esporadicas
+    # eso significa "no acoplado", es decir 0 MW, no dato ausente.
+    with _c.cursor() as _cur:
+        _cur.execute("""
+            UPDATE esios_pbf_gen
+            SET ccgt_mw = COALESCE(ccgt_mw,0), coal_mw = COALESCE(coal_mw,0),
+                fuel_gas_mw = COALESCE(fuel_gas_mw,0),
+                hybrid_mw = COALESCE(hybrid_mw,0)
+            WHERE datetime > now() - interval '10 days'
+              AND (ccgt_mw IS NULL OR coal_mw IS NULL
+                   OR fuel_gas_mw IS NULL OR hybrid_mw IS NULL)
+        """)
+        if _cur.rowcount:
+            log.info(f"  termicas esporadicas: {_cur.rowcount} nulos a cero")
+    _c.commit()
+
+    try:
+        refrescar_pdbc(log, _c)
+    finally:
+        _c.close()
 
     log.info("\nPipeline ESIOS PBF finalizado")
 

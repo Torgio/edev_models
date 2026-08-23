@@ -63,6 +63,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from config import load_config
+from refresh_forecast import refrescar_forecast
 
 # ── Configuracion ──────────────────────────────────────────────────────────────
 
@@ -630,6 +631,13 @@ def run():
 
     log.info(f"\n=== PASO 2: Revision ultimos {DIAS_REVISION} dias ===")
     revisar_semana(headers, db_config, log)
+
+    import psycopg2 as _pg
+    _c = _pg.connect(**db_config)
+    try:
+        refrescar_forecast(log, _c)
+    finally:
+        _c.close()
 
     log.info("\nPipeline ESIOS Forecast finalizado")
 

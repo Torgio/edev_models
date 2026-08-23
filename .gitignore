@@ -16,3 +16,7 @@ ingesta/tensors/
 data/bronze/
 ingesta/logs/
 .preview_tmp/
+*.bak
+*.bak[0-9]
+*.log
+fallidos_*.txt
