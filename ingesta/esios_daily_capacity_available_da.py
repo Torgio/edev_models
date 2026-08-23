@@ -294,7 +294,7 @@ def main():
     try:
         # ensure_table(conn)   # tabla de vintage desactivada 23-ago-2026
         n = guardar(conn, run, filas)
-        log(f"{n} filas guardadas en {TABLA}")
+        log(f"{n} horas procesadas")
         resumen(conn, run)
     finally:
         conn.close()
