@@ -2,7 +2,7 @@
 TFM Energia UCM — Potencia DISPONIBLE del dia siguiente (D+1)
 ========================================================================
 Unico script de potencia disponible desde el 23-ago-2026. Escribe las 24
-horas de D+1 en esios_capacity_available con es_declarado=true. El valor
+horas de D+1 en esios_capacity_available. El valor
 anticipado se publica a las 4:30 de D, antes del cierre del mercado diario
 (12:00 de D-1), asi que entra al modelo sin fuga de informacion.
 
@@ -241,13 +241,12 @@ def guardar(conn, run: date, filas: dict):
         sets_m = ", ".join(f"{c} = EXCLUDED.{c}" for c in COLUMNAS)
         sql_m = f"""
             INSERT INTO esios_capacity_available
-                   (datetime, {', '.join(COLUMNAS)}, es_declarado)
+                   (datetime, {', '.join(COLUMNAS)})
             VALUES %s
-            ON CONFLICT (datetime) DO UPDATE SET {sets_m},
-                   es_declarado = true
+            ON CONFLICT (datetime) DO UPDATE SET {sets_m}
         """
         with conn.cursor() as cur:
-            execute_values(cur, sql_m, [r + [True] for r in maestro])
+            execute_values(cur, sql_m, maestro)
         conn.commit()
         log(f"D+1: {len(maestro)} horas escritas en esios_capacity_available")
 
@@ -261,8 +260,7 @@ def resumen(conn, run: date):
         cur.execute("""
             SELECT count(*), min(ccgt_mw), max(ccgt_mw)
             FROM esios_capacity_available
-            WHERE es_declarado
-              AND (datetime AT TIME ZONE 'Europe/Madrid')::date = %s
+            WHERE (datetime AT TIME ZONE 'Europe/Madrid')::date = %s
         """, (manana,))
         horas, ccgt_min, ccgt_max = cur.fetchone()
     if not horas:
