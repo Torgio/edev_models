@@ -70,6 +70,7 @@ import psycopg2
 from psycopg2.extras import execute_values
 
 from config import load_config
+from refresh_generation import refrescar_generation
 
 # ── Configuracion ─────────────────────────────────────────────────────────────
 
@@ -335,6 +336,9 @@ def run(target: date | None = None):
             t_ins += i
             t_upd += u
         log.info(f"  revision: {t_ins} insert, {t_upd} update")
+
+        log.info("\n=== PASO 3: refresco de generation ===")
+        refrescar_generation(log, conn)
 
     except Exception as e:
         log.error(f"Error: {e}")

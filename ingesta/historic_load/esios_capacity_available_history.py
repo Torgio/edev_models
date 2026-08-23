@@ -68,7 +68,6 @@ INDICATORS_AVAILABLE = {
     473: "pump_mw",
     474: "nuclear_mw",
     475: "coal_antracita_mw",
-    476: "coal_subbituminosa_mw",
     477: "ccgt_mw",
     478: "fuel_mw",
 }
@@ -89,8 +88,10 @@ def dias_ya_cargados(db_config, ini: date, fin: date) -> int:
     conn = psycopg2.connect(**db_config)
     cur = conn.cursor()
     cur.execute(
-        "SELECT COUNT(*) FROM esios_capacity_available "
-        "WHERE date BETWEEN %s AND %s", (ini, fin))
+        "SELECT COUNT(DISTINCT (datetime AT TIME ZONE 'Europe/Madrid')::date) "
+        "FROM esios_capacity_available "
+        "WHERE (datetime AT TIME ZONE 'Europe/Madrid')::date "
+        "BETWEEN %s AND %s", (ini, fin))
     n = cur.fetchone()[0]
     cur.close()
     conn.close()
@@ -110,7 +111,7 @@ def fetch_indicator_chunk(headers, indicator_id, start: date, end: date,
                 params={
                     "start_date": start_str,
                     "end_date": end_str,
-                    "time_trunc": "day",
+                    "time_trunc": "hour",
                     "time_agg": "avg",
                     "geo_agg": "sum",
                     "geo_trunc": "electric_system",
@@ -143,12 +144,11 @@ def fetch_indicator_chunk(headers, indicator_id, start: date, end: date,
             # de extraer .date, o la medianoche local cae en el dia anterior
             # en UTC y toda la serie se desplaza un dia (bug corregido, ver
             # nota 1 de la cabecera).
-            peninsula["fecha"] = (
+            peninsula["ts"] = (
                 pd.to_datetime(peninsula["datetime"], utc=True)
-                  .dt.tz_convert("Europe/Madrid")
-                  .dt.date)
+                  .dt.tz_convert("Europe/Madrid"))
 
-            return peninsula[["fecha", "value"]]
+            return peninsula[["ts", "value"]]
 
         except Exception as e:
             print(f"    ERROR: {str(e)[:100]}, intento {intento+1}")
@@ -165,7 +165,7 @@ def descargar_bloque(headers, ini: date, fin: date) -> pd.DataFrame:
     for ind_id, col in INDICATORS_AVAILABLE.items():
         s = fetch_indicator_chunk(headers, ind_id, ini, fin)
         if s is not None:
-            series[col] = s.set_index("fecha")["value"]
+            series[col] = s.set_index("ts")["value"]
         time.sleep(0.4)
 
     if not series:
@@ -173,14 +173,9 @@ def descargar_bloque(headers, ini: date, fin: date) -> pd.DataFrame:
 
     df = pd.DataFrame(series)
 
-    coal_cols = [c for c in ("coal_antracita_mw", "coal_subbituminosa_mw")
-                 if c in df.columns]
-    if coal_cols:
-        df["coal_mw"] = df[coal_cols].sum(axis=1, skipna=True)
-        df = df.drop(columns=coal_cols)
 
     df = df.round(2)
-    df.index.name = "fecha"
+    df.index.name = "datetime"
     return df.sort_index()
 
 
@@ -194,16 +189,16 @@ def upsert_bloque(db_config, df: pd.DataFrame) -> int:
         f"{c} = COALESCE(EXCLUDED.{c}, esios_capacity_available.{c})"
         for c in cols)
 
-    rows = [[fecha] + [float(row[c]) if pd.notna(row[c]) else None
+    rows = [[ts] + [float(row[c]) if pd.notna(row[c]) else None
                        for c in cols]
-            for fecha, row in df.iterrows()]
+            for ts, row in df.iterrows()]
 
     conn = psycopg2.connect(**db_config)
     cur = conn.cursor()
     sql = f"""
-        INSERT INTO esios_capacity_available (date, {col_names})
+        INSERT INTO esios_capacity_available (datetime, {col_names})
         VALUES %s
-        ON CONFLICT (date) DO UPDATE SET {updates}
+        ON CONFLICT (datetime) DO UPDATE SET {updates}
     """
     execute_values(cur, sql, rows, page_size=200)
     conn.commit()
