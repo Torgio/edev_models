@@ -186,11 +186,11 @@ def construir_espina_horaria(start: str = DATASET_START, end: str = DATASET_END)
         ).sort_values("fecha").ffill()   # fines de semana/festivos -> ultimo cierre, no interpolar
         df_commodities["fecha"] = pd.to_datetime(df_commodities["fecha"]).dt.date
         df_cap_disp = pd.read_sql(
-            "SELECT * FROM esios_capacity_available WHERE date BETWEEN %(start)s AND %(end)s ORDER BY date",
+            "SELECT * FROM esios_capacity_available WHERE datetime BETWEEN %(start)s AND %(end)s ORDER BY date",
             conn, params=params,
         )
         df_cap_inst = pd.read_sql(
-            "SELECT * FROM esios_capacity_installed WHERE date BETWEEN %(start)s AND %(end)s ORDER BY date",
+            "SELECT * FROM esios_capacity_installed WHERE datetime BETWEEN %(start)s AND %(end)s ORDER BY date",
             conn, params=params,
         )
     finally:
@@ -375,7 +375,7 @@ def _features_capacidad_disponible(conn) -> pd.DataFrame:
     20-ago-2026 -- decision de reunion del equipo, ver docs/columnas_pendientes_equipo.md. Solo
     se activa con `incluir_columnas_pendientes=True` en `construir_dataset_diario`."""
     df_capd = pd.read_sql(
-        "SELECT date, total_mw FROM esios_capacity_available WHERE date BETWEEN %(start)s AND %(end)s",
+        "SELECT date, total_mw FROM esios_capacity_available WHERE datetime BETWEEN %(start)s AND %(end)s",
         conn, params={"start": DATASET_START, "end": DATASET_END},
     )
     df_capd["date"] = pd.to_datetime(df_capd["date"]).dt.date
