@@ -37,15 +37,15 @@ concentraria en los eventos que mas importan.
 
 QUE HACE ESTE SCRIPT
 Cada manana, despues de la publicacion de las 4:30, consulta el horizonte
-completo y guarda una fila por (run_date, target_date). Con eso se puede
+completo y guarda una fila por (run_date, target_datetime). Con eso se puede
 preguntar: "el dia D a las 5:30, que potencia disponible habia declarada para
 D+1?" — que es exactamente la pregunta que hay que hacerle a una feature.
 
     esios_capacity_available_fc
         run_date     DATE   fecha en que se hizo la consulta
-        target_date  DATE   fecha a la que se refiere el dato
+        target_datetime TIMESTAMPTZ  hora a la que se refiere el dato
         <8 columnas de tecnologia>
-        PRIMARY KEY (run_date, target_date)
+        PRIMARY KEY (run_date, target_datetime)
 
 LIMITACION QUE HAY QUE ASUMIR Y DOCUMENTAR EN LA MEMORIA
 El pasado NO se puede reconstruir. La API devuelve el valor VIGENTE para una
@@ -72,6 +72,7 @@ USO
     python esios_capacity_available_fc.py --dry-run        # sin escribir en BD
 """
 
+from zoneinfo import ZoneInfo
 import argparse
 import sys
 import time
@@ -96,6 +97,7 @@ DIAS_HORIZONTE   = 45      # D+0 .. D+44. La publicacion cubre el trimestre
 PAUSA_API_SEC    = 0.4
 TIMEOUT_SEC      = 30
 TABLA            = "esios_capacity_available_fc"
+TZ_MADRID        = ZoneInfo("Europe/Madrid")
 
 INDICADORES = {
     472: "hydro_mw",
@@ -129,15 +131,15 @@ def ensure_table(conn):
     with conn.cursor() as cur:
         cur.execute(f"""
             CREATE TABLE IF NOT EXISTS {TABLA} (
-            run_date    DATE NOT NULL,
-            target_date DATE NOT NULL,
+            run_date        DATE NOT NULL,
+            target_datetime TIMESTAMPTZ NOT NULL,
             {cols},
-            created_at  TIMESTAMP DEFAULT now(),
-            PRIMARY KEY (run_date, target_date)
+            created_at      TIMESTAMP DEFAULT now(),
+            PRIMARY KEY (run_date, target_datetime)
             )
         """)
         # Indice para la consulta tipica: "dame el horizonte de esta captura"
-        cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{TABLA}_target ON {TABLA} (target_date)")
+        cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{TABLA}_target ON {TABLA} (target_datetime)")
     conn.commit()
 
 
@@ -149,9 +151,16 @@ def fetch_indicador(headers, indicator_id, desde: date, hasta: date):
     Devuelve {fecha: valor}. Una peticion por indicador en lugar de una por
     indicador y dia: 8 llamadas en total en vez de 8 x 45 = 360.
 
-    time_agg=avg porque es POTENCIA (MW): una capacidad no se acumula a lo
-    largo del dia. Sin especificarlo, ESIOS agrega por SUMA y el valor sale
-    inflado — el mismo error que obligo a recalcular otras tablas.
+    time_trunc=hour + time_agg=avg: puntos horarios nativos. El time_agg es
+    imprescindible pese a ser granularidad nativa — la agregacion por defecto
+    de ESIOS es SUM, y el dia de vuelta al horario de invierno las dos horas
+    02:00 caen bajo la misma etiqueta local y se suman (verificado el
+    31-oct-2021: ccgt 40996 = 2 x 20498). La version anterior pedia day + avg
+    y perdia el perfil
+    intradiario — verificado el 23-ago-2026: el indicador 472 tenia 6 valores
+    distintos en 24 horas con un rango de 286 MW, y el 473 cuatro valores con
+    69 MW. El 474 (nuclear) salia plano ese dia por no haber maniobras, no por
+    la granularidad.
 
     geo_trunc=electric_system reagrega los geos por sistema electrico ANTES de
     devolverlos, asi que las CCAA peninsulares llegan ya sumadas bajo 8741.
@@ -160,7 +169,7 @@ def fetch_indicador(headers, indicator_id, desde: date, hasta: date):
     params = {
         "start_date": desde.strftime("%Y-%m-%dT00:00:00"),
         "end_date":   hasta.strftime("%Y-%m-%dT23:59:00"),
-        "time_trunc": "day",
+        "time_trunc": "hour",
         "time_agg":   "avg",
         "geo_agg":    "sum",
         "geo_trunc":  "electric_system",
@@ -182,20 +191,20 @@ def fetch_indicador(headers, indicator_id, desde: date, hasta: date):
             continue
         if v.get("value") is None:
             continue
-        f = datetime.fromisoformat(v["datetime"][:19]).date()
+        f = datetime.fromisoformat(v["datetime"])
         out[f] = round(float(v["value"]), 2)
     return out
 
 
 def capturar(headers, run: date, dias: int):
-    """Devuelve {target_date: {columna: valor}} para todo el horizonte."""
+    """Devuelve {target_datetime: {columna: valor}} para todo el horizonte."""
     desde, hasta = run, run + timedelta(days=dias - 1)
     log(f"Horizonte: {desde} -> {hasta}  ({dias} dias)")
 
     filas = {}
     for ind_id, col in INDICADORES.items():
         serie = fetch_indicador(headers, ind_id, desde, hasta)
-        log(f"  {col:<24} {len(serie):>3} dias con dato")
+        log(f"  {col:<24} {len(serie):>5} horas con dato")
         for f, v in serie.items():
             filas.setdefault(f, {})[col] = v
         time.sleep(PAUSA_API_SEC)
@@ -218,13 +227,33 @@ def guardar(conn, run: date, filas: dict):
 
     sets = ", ".join(f"{c} = EXCLUDED.{c}" for c in COLUMNAS)
     sql = f"""
-        INSERT INTO {TABLA} (run_date, target_date, {', '.join(COLUMNAS)})
+        INSERT INTO {TABLA} (run_date, target_datetime, {', '.join(COLUMNAS)})
         VALUES %s
-        ON CONFLICT (run_date, target_date) DO UPDATE SET {sets}
+        ON CONFLICT (run_date, target_datetime) DO UPDATE SET {sets}
     """
     with conn.cursor() as cur:
         execute_values(cur, sql, registros)
     conn.commit()
+
+    # El D+1 va ademas a la tabla maestra: es el valor anticipado sin fuga,
+    # y pisa al consolidado que dejo ahi la carga historica.
+    manana = run + timedelta(days=1)
+    maestro = [r[1:] for r in registros
+               if r[1].astimezone(TZ_MADRID).date() == manana]
+    if maestro:
+        sets_m = ", ".join(f"{c} = EXCLUDED.{c}" for c in COLUMNAS)
+        sql_m = f"""
+            INSERT INTO esios_capacity_available
+                   (datetime, {', '.join(COLUMNAS)}, es_declarado)
+            VALUES %s
+            ON CONFLICT (datetime) DO UPDATE SET {sets_m},
+                   es_declarado = true
+        """
+        with conn.cursor() as cur:
+            execute_values(cur, sql_m, [r + [True] for r in maestro])
+        conn.commit()
+        log(f"D+1: {len(maestro)} horas escritas en esios_capacity_available")
+
     return len(registros)
 
 
@@ -233,15 +262,20 @@ def resumen(conn, run: date):
     manana = run + timedelta(days=1)
     with conn.cursor() as cur:
         cur.execute(f"""
-            SELECT nuclear_mw, ccgt_mw, hydro_mw
-            FROM {TABLA} WHERE run_date = %s AND target_date = %s
+            SELECT count(*), min(nuclear_mw), max(nuclear_mw),
+                             min(ccgt_mw),    max(ccgt_mw)
+            FROM {TABLA}
+            WHERE run_date = %s
+              AND (target_datetime AT TIME ZONE 'Europe/Madrid')::date = %s
         """, (run, manana))
-        fila = cur.fetchone()
-    if fila and any(v is not None for v in fila):
-        log(f"D+1 ({manana}) capturado — nuclear={fila[0]} ccgt={fila[1]} hidro={fila[2]}")
-    else:
+        horas, nuc_min, nuc_max, ccgt_min, ccgt_max = cur.fetchone()
+    if not horas:
         log(f"AVISO: no hay dato para D+1 ({manana}). Revisar si la publicacion "
             f"de las 4:30 se retraso.")
+    else:
+        log(f"D+1 ({manana}): {horas} horas capturadas "
+            f"(24 normalmente, 23 o 25 en cambio de hora)")
+        log(f"    nuclear {nuc_min}-{nuc_max}   ccgt {ccgt_min}-{ccgt_max}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -258,7 +292,7 @@ def main():
 
     headers, db_config = load_config()
     filas = capturar(headers, run, args.dias)
-    log(f"{len(filas)} fechas con al menos un dato")
+    log(f"{len(filas)} horas con al menos un dato")
 
     if args.dry_run:
         log("--dry-run: no se escribe en BD")
@@ -286,9 +320,9 @@ if __name__ == "__main__":
 #
 # Para predecir el dia D+1 usando lo que se sabia el dia D:
 #
-#     SELECT target_date, nuclear_mw, ccgt_mw, hydro_mw, pump_mw
+#     SELECT target_datetime, nuclear_mw, ccgt_mw, hydro_mw, pump_mw
 #     FROM esios_capacity_available_fc
-#     WHERE run_date = target_date - INTERVAL '1 day';
+#     WHERE (target_datetime AT TIME ZONE 'Europe/Madrid')::date = run_date + 1;
 #
 # Eso da, para cada dia, la disponibilidad que estaba declarada la vispera.
 # Es la version sin fuga de informacion.
@@ -297,12 +331,12 @@ if __name__ == "__main__":
 # que se creia antes: una revision a la baja de la nuclear entre D-7 y D-1
 # significa una parada que acaba de declararse.
 #
-#     SELECT a.target_date,
+#     SELECT a.target_datetime,
 #            a.nuclear_mw - b.nuclear_mw AS revision_nuclear_7d
 #     FROM esios_capacity_available_fc a
 #     JOIN esios_capacity_available_fc b
-#       ON b.target_date = a.target_date
+#       ON b.target_datetime = a.target_datetime
 #      AND b.run_date    = a.run_date - INTERVAL '6 days'
-#     WHERE a.run_date = a.target_date - INTERVAL '1 day';
+#     WHERE (a.target_datetime AT TIME ZONE 'Europe/Madrid')::date = a.run_date + 1;
 #
 # Esa columna no existe en ninguna otra tabla del proyecto.

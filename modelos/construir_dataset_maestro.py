@@ -401,6 +401,14 @@ def _features_lag_reales(conn) -> pd.DataFrame:
         f"WHERE datetime BETWEEN %(start)s AND %(end)s",
         conn, params={"start": DATASET_START, "end": DATASET_END},
     )
+    # entsoe_load en 0 exacto es fisicamente imposible para demanda peninsular (verificado
+    # 21-ago-2026: 9 horas de 58.151, 8 seguidas el 1-jul-2026 madrugada + 1 aislada el
+    # 17-mar-2026 -- corte de ingesta puntual, no un problema sistemico. Caen en el tramo de
+    # test, asi que sin este fix corromperian los lags D-1/D-7 de esos dias especificos con un
+    # cero irreal. Se pasan a NaN para que la agregacion diaria (mean/min/max) las ignore, en vez
+    # de tratarlas como demanda real de 0 MW).
+    if "entsoe_load" in df_load.columns:
+        df_load.loc[df_load["entsoe_load"] == 0, "entsoe_load"] = pd.NA
     df_entsoe = pd.read_sql(
         f"SELECT datetime, {', '.join(COLS_ENTSOE_REAL)} FROM {TABLA_ENTSOE_REAL} "
         f"WHERE datetime BETWEEN %(start)s AND %(end)s",
@@ -587,6 +595,11 @@ def construir_dataset_diario(solo_filas_validas: bool = True, incluir_clima: boo
     if solo_filas_validas:
         target_cols = [c for c in dataset.columns if c.startswith("price_h")]
         dataset = dataset[dataset[target_cols].notna().all(axis=1)].copy()
+
+    # Redondeo a 2 decimales -- a peticion del equipo, 21-ago-2026. round() solo toca columnas
+    # numericas de coma flotante; el calendario (d1_dow/d1_month/d1_is_weekend, enteros) no se ve
+    # afectado. No cambia ninguna decision de modelado, solo la presentacion de los valores.
+    dataset = dataset.round(2)
 
     return dataset
 
