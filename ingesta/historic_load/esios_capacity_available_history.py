@@ -199,7 +199,6 @@ def upsert_bloque(db_config, df: pd.DataFrame) -> int:
         INSERT INTO esios_capacity_available (datetime, {col_names})
         VALUES %s
         ON CONFLICT (datetime) DO UPDATE SET {updates}
-        WHERE NOT esios_capacity_available.es_declarado
     """
     execute_values(cur, sql, rows, page_size=200)
     conn.commit()

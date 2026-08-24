@@ -1,12 +1,15 @@
 """
-TFM Energia UCM — Potencia DISPONIBLE con horizonte (captura anticipada)
+TFM Energia UCM — Potencia DISPONIBLE del dia siguiente (D+1)
 ========================================================================
-Hermano de esios_daily_capacity_available.py. Carga los mismos indicadores de
-potencia disponible, pero guardando ADEMAS la fecha en que se consulto.
+Unico script de potencia disponible desde el 23-ago-2026. Escribe las 24
+horas de D+1 en esios_capacity_available. El valor
+anticipado se publica a las 4:30 de D, antes del cierre del mercado diario
+(12:00 de D-1), asi que entra al modelo sin fuga de informacion.
 
-Siete indicadores: 472-475 y 477-479. El 476 (hulla sub-bituminosa) se retiro
-el 19-ago-2026 tras comprobar que ESIOS no lo publica — ver nota en el
-diccionario INDICADORES.
+Seis indicadores: 472-475, 477 y 478. Retirados dos:
+  476 (hulla sub-bituminosa) el 19-ago-2026: ESIOS no lo publica.
+  479 (Gas Natural) el 23-ago-2026: sin historico, cero puntos en 2023 y
+      nulo en 58.241 de 58.265 filas. Ver nota en INDICADORES.
 
 POR QUE EXISTE ESTE SCRIPT
 La ficha oficial de ESIOS dice, para los ocho indicadores:
@@ -116,7 +119,6 @@ INDICADORES = {
     # Si algun dia volviese a publicarse, basta con descomentar esta linea.
     477: "ccgt_mw",
     478: "fuel_mw",
-    479: "gas_turbine_mw",
 }
 COLUMNAS = list(INDICADORES.values())
 
@@ -239,13 +241,12 @@ def guardar(conn, run: date, filas: dict):
         sets_m = ", ".join(f"{c} = EXCLUDED.{c}" for c in COLUMNAS)
         sql_m = f"""
             INSERT INTO esios_capacity_available
-                   (datetime, {', '.join(COLUMNAS)}, es_declarado)
+                   (datetime, {', '.join(COLUMNAS)})
             VALUES %s
-            ON CONFLICT (datetime) DO UPDATE SET {sets_m},
-                   es_declarado = true
+            ON CONFLICT (datetime) DO UPDATE SET {sets_m}
         """
         with conn.cursor() as cur:
-            execute_values(cur, sql_m, [r + [True] for r in maestro])
+            execute_values(cur, sql_m, maestro)
         conn.commit()
         log(f"D+1: {len(maestro)} horas escritas en esios_capacity_available")
 
@@ -259,8 +260,7 @@ def resumen(conn, run: date):
         cur.execute("""
             SELECT count(*), min(ccgt_mw), max(ccgt_mw)
             FROM esios_capacity_available
-            WHERE es_declarado
-              AND (datetime AT TIME ZONE 'Europe/Madrid')::date = %s
+            WHERE (datetime AT TIME ZONE 'Europe/Madrid')::date = %s
         """, (manana,))
         horas, ccgt_min, ccgt_max = cur.fetchone()
     if not horas:
