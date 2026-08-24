@@ -20,3 +20,7 @@ ingesta/logs/
 *.bak[0-9]
 *.log
 fallidos_*.txt
+
+# Datasets que superan el limite de 100 MB de GitHub
+ingesta/dt_maestro_sergio/**/dataset_horario_v0*.csv
+ingesta/dt_maestro_sergio/**/dataset_*.csv

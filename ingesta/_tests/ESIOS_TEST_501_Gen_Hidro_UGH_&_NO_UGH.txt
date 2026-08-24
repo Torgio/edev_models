@@ -1,0 +1,271 @@
+"""
+TFM Energia UCM — TEST 502: geo_id de la hidraulica desglosada (1150 / 1151)
+============================================================================
+LA DUDA
+Los indicadores 1150 (Hidraulica UGH) y 1151 (Hidraulica no UGH) son GENERACION
+MEDIDA REAL con el desglose que interesa para el modelo:
+
+  UGH     = centrales de una misma cuenca gestionadas en conjunto. Tienen
+            embalse, deciden cuando generar segun el precio, y por tanto
+            MARCAN PRECIO MARGINAL. Incluyen bombeo mixto.
+  no UGH  = fluyentes. Turbinan lo que baja por el rio, sin capacidad de
+            decidir. Entran a precio cero, como la solar.
+
+Son variables con comportamiento economico OPUESTO, asi que separarlas importa
+para el modelo. En tiempo real ESIOS solo publica la hidraulica agregada
+(546 / 2080); el desglose solo existe con retraso M+1, lo cual es perfectamente
+utilizable para entrenar aunque no sirva en produccion en tiempo real.
+
+LO QUE HAY QUE COMPROBAR ANTES DE USARLOS
+Su descripcion dice "se puede desglosar por provincias", asi que la agregacion
+por defecto podria ser nacional o venir troceada por provincia. El resto de la
+base de datos usa geo_id=8741 (Peninsula), y ya se descartaron los indicadores
+2065/2066/2067 del bombeo precisamente por usar geo_id=3 (España con islas).
+Aqui hay que verificar lo mismo: si no hay geo_id=8741, habria que decidir si
+sumar provincias o descartar el desglose.
+
+Se comprueba tambien el 10035 (Generacion medida Hidraulica, el agregado) para
+ver si su total coincide con 1150 + 1151, lo que confirmaria que el desglose
+es exhaustivo.
+
+USO
+    python ESIOS_TEST_502_geo_hidraulica.py
+    python ESIOS_TEST_502_geo_hidraulica.py --mes 2026-05
+"""
+
+import argparse
+import json
+import sys
+from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
+
+import requests
+
+BASE_URL   = "https://api.esios.ree.es/indicators"
+TIMEOUT    = 90
+CREDS_PATH = Path(__file__).parent.parent / "credentials.json"
+
+GEO_PENINSULA = 8741
+GEO_NACIONAL  = 3
+
+INDICADORES = {
+    1150:  "Generacion medida Hidraulica UGH",
+    1151:  "Generacion medida Hidraulica no UGH",
+    10035: "Generacion medida Hidraulica (agregado)",
+    546:   "Generacion T.Real hidraulica (control, ya en uso)",
+}
+
+
+def get_headers() -> dict:
+    creds = json.load(open(CREDS_PATH))
+    return {"Host": creds["Host"], "x-api-key": creds["x-api-key"],
+            "Accept": "application/json"}
+
+
+def pedir(ind_id, desde, hasta, headers, geo_id=None, agregar=False):
+    url = f"{BASE_URL}/{ind_id}?start_date={desde}T00:00:00&end_date={hasta}T23:59:59"
+    if agregar:
+        url += "&time_trunc=hour&time_agg=average"
+    if geo_id:
+        url += f"&geo_ids[]={geo_id}"
+    r = requests.get(url, headers=headers, timeout=TIMEOUT)
+    r.raise_for_status()
+    return r.json().get("indicator", {})
+
+
+# ── 1. Que geos ofrece cada indicador ─────────────────────────────────────────
+
+def geos_disponibles(headers, desde, hasta):
+    print("=" * 90)
+    print("1. GEOS DISPONIBLES EN CADA INDICADOR")
+    print("=" * 90)
+    print(f"  periodo: {desde} a {hasta}\n")
+
+    resultado = {}
+    for ind_id, etiqueta in INDICADORES.items():
+        print(f"  --- {ind_id}: {etiqueta}")
+        try:
+            ind = pedir(ind_id, desde, hasta, headers)
+        except Exception as e:
+            print(f"      ERROR: {str(e)[:70]}\n")
+            continue
+
+        vals = ind.get("values", [])
+        if not vals:
+            print("      sin datos en este periodo (¿retraso M+1?)\n")
+            resultado[ind_id] = {}
+            continue
+
+        geos = defaultdict(int)
+        nombres = {}
+        for v in vals:
+            g = v.get("geo_id")
+            if g is not None:
+                geos[g] += 1
+                nombres[g] = v.get("geo_name")
+
+        print(f"      {len(vals)} valores en {len(geos)} geos")
+        for g, n in sorted(geos.items(), key=lambda x: -x[1])[:8]:
+            marca = ""
+            if g == GEO_PENINSULA:
+                marca = "   <<< PENINSULA, el que usa el resto de la BD"
+            elif g == GEO_NACIONAL:
+                marca = "   (nacional: incluye islas, NO usar)"
+            print(f"        geo_id={g:<6} {str(nombres.get(g))[:28]:<28} "
+                  f"{n:>5} valores{marca}")
+        if len(geos) > 8:
+            print(f"        ... y {len(geos)-8} geos mas (probablemente provincias)")
+        resultado[ind_id] = dict(geos)
+        print()
+    return resultado
+
+
+# ── 2. Serie peninsular y cuadre del desglose ─────────────────────────────────
+
+def serie_peninsular(headers, desde, hasta):
+    print("=" * 90)
+    print("2. SERIE PENINSULAR Y CUADRE DEL DESGLOSE")
+    print("=" * 90)
+    print(f"  Se piden con geo_ids[]={GEO_PENINSULA} y agregacion horaria.")
+    print("  Si 1150 + 1151 se parece a 10035, el desglose es exhaustivo.\n")
+
+    series = {}
+    for ind_id in (1150, 1151, 10035, 546):
+        try:
+            ind = pedir(ind_id, desde, hasta, headers,
+                        geo_id=GEO_PENINSULA, agregar=True)
+            d = {}
+            for v in ind.get("values", []):
+                if v.get("value") is None:
+                    continue
+                dt = datetime.fromisoformat(v["datetime"].replace("Z", "+00:00"))
+                d[dt] = float(v["value"])
+            series[ind_id] = d
+            print(f"  {ind_id}: {len(d)} horas con dato")
+        except Exception as e:
+            print(f"  {ind_id}: ERROR {str(e)[:60]}")
+            series[ind_id] = {}
+
+    ugh, no_ugh = series.get(1150, {}), series.get(1151, {})
+    agg, treal  = series.get(10035, {}), series.get(546, {})
+
+    comunes = sorted(set(ugh) & set(no_ugh))
+    if not comunes:
+        print("""
+  No hay horas con datos en ambos indicadores para geo_id=8741.
+  Puede ser por el retraso M+1: probar con un mes mas antiguo usando --mes.""")
+        return series
+
+    print(f"\n  {len(comunes)} horas con UGH y no UGH. Primeras 12:\n")
+    print(f"    {'hora':<17} {'UGH':>10} {'no UGH':>10} {'suma':>10} "
+          f"{'10035':>10} {'546 T.Real':>11}")
+    for dt in comunes[:12]:
+        u, n = ugh[dt], no_ugh[dt]
+        a = agg.get(dt)
+        t = treal.get(dt)
+        f = lambda v: f"{v:>10.1f}" if isinstance(v, float) else f"{'-':>10}"
+        t_s = f"{t:>11.1f}" if isinstance(t, float) else f"{'-':>11}"
+        print(f"    {dt:%Y-%m-%d %H:%M} {u:>10.1f} {n:>10.1f} "
+              f"{u+n:>10.1f} {f(a)} {t_s}")
+
+    # cuadre contra el agregado
+    con_agg = [dt for dt in comunes if dt in agg]
+    if con_agg:
+        difs = [abs(ugh[dt] + no_ugh[dt] - agg[dt]) for dt in con_agg]
+        media = sum(difs) / len(difs)
+        print(f"\n  Cuadre 1150+1151 frente a 10035: diferencia media {media:.2f} MW "
+              f"sobre {len(con_agg)} horas")
+        if media < 1:
+            print("  -> El desglose es EXHAUSTIVO: la suma reproduce el agregado.")
+        else:
+            print("  -> Hay diferencia: el 10035 incluye algo mas que UGH + no UGH.")
+
+    # comparacion con el T.Real
+    con_treal = [dt for dt in comunes if dt in treal]
+    if con_treal:
+        difs = [abs(ugh[dt] + no_ugh[dt] - treal[dt]) for dt in con_treal]
+        media = sum(difs) / len(difs)
+        negativos = sum(1 for dt in con_treal if treal[dt] < 0)
+        print(f"\n  Frente al 546 (T.Real): diferencia media {media:.1f} MW; "
+              f"el 546 sale negativo en {negativos} de {len(con_treal)} horas")
+        print("""  La hidraulica medida (1150/1151) no deberia ser negativa. Si el
+  546 si lo es, confirma que netea el consumo de bombeo y que por eso no es
+  sumable con cons_bombeo_mw.""")
+    return series
+
+
+# ── 3. Veredicto ──────────────────────────────────────────────────────────────
+
+def veredicto(geos, series):
+    print("\n" + "=" * 90)
+    print("3. CONCLUSION PARA esios_gen")
+    print("=" * 90)
+
+    tiene_peninsula = all(GEO_PENINSULA in geos.get(i, {}) for i in (1150, 1151))
+    hay_datos = bool(series.get(1150)) and bool(series.get(1151))
+
+    if tiene_peninsula and hay_datos:
+        print("""
+  >>> SE PUEDEN USAR. Los dos indicadores ofrecen geo_id=8741 (Peninsula) y
+  devuelven datos. Añadir a esios_gen:
+
+      ree_gen_hidro_ugh_mw       1150   UGH: embalse, marca precio, con bombeo mixto
+      ree_gen_hidro_no_ugh_mw    1151   no UGH: fluyente, no gestionable
+
+  Se mantiene la terminologia de ESIOS en vez de traducirla a reservoir /
+  run_river, porque no coinciden: la UGH lleva bombeo dentro y el embalse de
+  ENTSO-E no. Y ya se usa esa nomenclatura en esios_pbf_bilateral
+  (bil_hydro_ugh_mw / bil_hydro_no_ugh_mw), asi que hay coherencia interna.
+
+  AVISO PARA EL PIPELINE: publicacion M+1, asi que la revision diaria no puede
+  limitarse a D-1. Hace falta repasar los ultimos ~60 dias en cada pasada, y
+  meter ambas columnas en ESPORADICOS para que el mes en curso no bloquee el
+  dia ni genere reintentos indefinidos.""")
+    elif not tiene_peninsula:
+        disponibles = set()
+        for i in (1150, 1151):
+            disponibles |= set(geos.get(i, {}))
+        print(f"""
+  >>> NO hay geo_id={GEO_PENINSULA} en estos indicadores.
+  Geos vistas: {sorted(disponibles)[:10]}
+
+  Dos opciones: sumar las provincias peninsulares (laborioso y con riesgo de
+  dejarse alguna), o renunciar al desglose de ESIOS y usar el de ENTSO-E, que
+  publica embalse (B12) y fluyente (B11) a diario y ya esta cargado en
+  entsoe_gen_data con historico 2020-2026 verificado.
+
+  La segunda es mas limpia: cada tabla aporta lo que la otra no tiene, y eso es
+  defendible en la memoria.""")
+    else:
+        print("""
+  Los indicadores ofrecen geo_id=8741 pero no devuelven datos en el periodo
+  probado. Es coherente con el retraso M+1: repetir con --mes apuntando a un
+  mes cerrado hace tiempo, por ejemplo --mes 2026-05.""")
+    print("=" * 90)
+
+
+def main():
+    p = argparse.ArgumentParser(description="geo_id de 1150 / 1151")
+    p.add_argument("--mes", default="2026-06",
+                   help="mes a probar en formato YYYY-MM; por defecto 2026-06, "
+                        "ya cerrado y fuera del retraso M+1")
+    args = p.parse_args()
+
+    y, m = map(int, args.mes.split("-"))
+    desde = f"{y}-{m:02d}-01"
+    hasta = f"{y}-{m:02d}-03"          # tres dias bastan para el diagnostico
+
+    headers = get_headers()
+    print("\n" + "=" * 90)
+    print("  TEST 502 — ¿SE PUEDE USAR EL DESGLOSE UGH / NO UGH?")
+    print(f"  {datetime.now():%Y-%m-%d %H:%M}")
+    print("=" * 90 + "\n")
+
+    geos   = geos_disponibles(headers, desde, hasta)
+    series = serie_peninsular(headers, desde, hasta)
+    veredicto(geos, series)
+
+
+if __name__ == "__main__":
+    main()
