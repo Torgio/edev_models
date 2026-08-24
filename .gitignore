@@ -20,3 +20,6 @@ ingesta/logs/
 *.bak[0-9]
 *.log
 fallidos_*.txt
+modelos/dataset_maestro.csv
+modelos/espina_horaria.csv
+modelos/artefactos/
