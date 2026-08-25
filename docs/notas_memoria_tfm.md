@@ -751,3 +751,61 @@ revisarlo y contar qué es antes de darle peso en la memoria.
   `.gitignore` tenía marcadores de conflicto de Git (`<<<<<<<`, `=======`, `>>>>>>>`) guardados
   literalmente como texto desde un merge anterior mal resuelto — ya corregido.
 
+---
+
+## 24. Tres acciones de limpieza concretas (no "limpiar a ciegas") y decisión de prioridad: BESS antes que Seq2Seq/CNN-LSTM
+
+Sobre los tres problemas de calidad de datos identificados anteriormente (batería con nulos
+masivos, columnas redundantes, NTC Marruecos), se acordó actuar de forma deliberada en vez de
+aplicar una limpieza genérica — cada problema es distinto y merece un tratamiento distinto.
+
+**1. Indicador de disponibilidad para las columnas de batería** (`ree_gbattery_mw`,
+`ree_cbattery_mw`, 99,3% de nulos en train): en vez de solo rellenar con la mediana, se añadió una
+columna binaria (`_disponible`) que dice si esa hora tenía dato real o va a ser imputada — así el
+modelo puede aprender a no tratar el valor imputado como si fuera una lectura real. **Hallazgo
+importante al implementarlo**: el porcentaje de disponibilidad no es un ruido aleatorio, es un
+salto de régimen limpio — 0,7% disponible en train (hasta 2024), 98-100% disponible en validation
+y test (2025 en adelante). Las baterías de red entraron en operación real hace muy poco. Esto
+significa que el indicador es correcto y necesario, pero **no hay que esperar mucho de la señal
+de batería en sí** todavía: el modelo apenas tiene ejemplos de entrenamiento donde la batería
+tenga un valor real distinto de "no existe", así que no puede aprender bien cómo afecta al precio
+cuando sí existe. Es una limitación real de los datos, no del método de imputación.
+
+**2. Experimento controlado de redundancia**: se recalculó la matriz de correlación sobre el
+dataset horario actual (creció bastante desde el análisis original: ahora salen 76 parejas por
+encima de 0,93, no 4 — la mayoría son parejas físicamente esperables, como países vecinos
+acoplados entre sí por el mercado europeo). Se seleccionaron las 4 parejas más claramente
+redundantes en el sentido correcto (dos fuentes midiendo la misma magnitud: ESIOS vs ENTSO-E) y se
+entrenó el mismo LightGBM quitando una columna de cada pareja, comparando el MAE de validation con
+el error estándar de la diferencia (bootstrap), igual estándar de rigor que usó el compañero en su
+propia ablación (nota 23).
+
+**Resultado, y no es el esperado**: de las 4, solo una (`entsoe_solar_forecast_mw`, frente a
+`gen_solar_pv_prev_mw`) resultó realmente redundante — quitarla no cambia el MAE de forma
+significativa. Las otras tres SÍ importan, aunque el efecto es pequeño en términos absolutos
+(entre 0,02 y 0,12 €/MWh sobre un MAE de ~12,8): quitar `entsoe_load_forecast_mw` empeora el
+modelo, y quitar `entsoe_load` o `entsoe_wind_forecast_mw` lo mejora ligeramente. **Conclusión
+práctica**: una correlación alta entre dos columnas no implica que sean intercambiables para el
+modelo — antes de quitar una "por redundante" hay que probarlo, tal como se hizo aquí, no asumirlo
+por la correlación. **Hallazgo colateral que hay que resolver aparte**: estas 3 columnas de
+ENTSO-E están excluidas por defecto del dataset DIARIO (decisión del equipo, ver
+`docs/columnas_pendientes_equipo.md` punto 1) pero se incluyen SIEMPRE en el dataset HORARIO, sin
+el mismo filtro — una inconsistencia entre los dos scripts que conviene resolver como equipo,
+sobre todo porque este experimento sugiere que al menos una de ellas sí aporta valor real en la
+versión horaria.
+
+**3. NTC Marruecos**: no se aplicó ninguna limpieza. Se documentó el problema con números exactos
+en `docs/columnas_pendientes_equipo.md` (punto 7) para que el equipo confirme primero el origen y
+la fiabilidad del dato — es la única columna del dataset que combina nulos altos (16,8%) y
+atípicos altos (9-13%) sin que se haya confirmado todavía si es una particularidad legítima de esa
+interconexión (la más pequeña y nueva de las tres) o un problema de la fuente.
+
+**Decisión de prioridad para la siguiente capa de la arquitectura**: se prioriza **BESS
+(dimensionamiento y operación de una batería) sobre CNN-LSTM/Transformer**, manteniendo la lógica
+ya explicada (el problema identificado es exposición a eventos extremos, no falta de estructura
+temporal). **Matiz nuevo para más adelante, no para ahora**: podría tener sentido en el futuro una
+señal explícita de "esto se está pareciendo a un régimen atípico" (por ejemplo, una aceleración
+inusual del precio del gas) que alimente tanto al modelo puntual como a la capa de incertidumbre —
+no una red nueva, una feature más. Queda anotado para cuando se retome esa discusión, no es una
+tarea activa todavía.
+

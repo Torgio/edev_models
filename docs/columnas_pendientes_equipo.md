@@ -102,11 +102,34 @@ dos fechas fijas conocidas), y el indicador de tope al gas en particular podría
 específicamente con el problema de eventos extremos/2022 que ya estamos investigando en la capa de
 incertidumbre — sería razonable probarlo primero ahí.
 
+## 7. NTC Marruecos (`ree_ntc_impma`, `ree_ntc_expma`, `ntc_ma_imp_prev_mw`, `ntc_ma_exp_prev_mw`) — duda de origen sin resolver
+
+**El problema, con números:** estas cuatro columnas combinan dos síntomas a la vez, algo que no
+pasa con ninguna otra columna del dataset horario: `ntc_ma_imp_prev_mw`/`ntc_ma_exp_prev_mw`
+tienen 16,76% de nulos (7.351 horas) **y**, sobre lo que sí tiene dato, 9,4-9,7% de valores atípicos
+(IQR×3); `ree_ntc_impma` no tiene nulos pero sí 13,29% de atípicos — la tasa de atípicos más alta
+de todo el dataset después de `coal_antracita_mw` (que ya se investigó y se confirmó que es un
+cambio de régimen real, no suciedad — ver nota correspondiente).
+
+**Por qué no se limpia todavía:** limpiar (imputar, capar atípicos) sin saber si la fuente es
+fiable sería resolver el síntoma sin saber si hay una enfermedad debajo. La interconexión con
+Marruecos es la más pequeña y la más nueva de las tres (Francia, Portugal, Marruecos), y es
+razonable que tenga un historial de datos distinto — pero **no está confirmado con el equipo** si
+esos nulos/atípicos combinados son una particularidad legítima de esa interconexión o un problema
+de la fuente de datos.
+
+**Qué hace falta antes de escribir ninguna línea de código de limpieza:** que el equipo confirme
+el origen y la fiabilidad de estas cuatro columnas — igual que se hizo con `coal_antracita_mw`,
+antes de decidir cómo tratarlas hay que saber qué son.
+
 ---
 
 ## En una frase para la reunión
 
-De las cinco, las números **3 (capacidad disponible)** y **4 (precio de Portugal/Francia)** son
-las que con más evidencia previa apuntaban a tener peso real en el modelo — vale la pena que sean
-las primeras en discutirse. Los puntos 1 y 2 son de impacto esperado bajo-moderado. El punto 5 no
-es una pérdida, es una fuga evitada.
+De las primeras cinco, las números **3 (capacidad disponible)** y **4 (precio de
+Portugal/Francia)** eran las que con más evidencia previa apuntaban a tener peso real en el
+modelo — ya incorporadas al dataset horario. Los puntos 1 y 2 son de impacto esperado
+bajo-moderado. El punto 5 no es una pérdida, es una fuga evitada. El punto **6** son tres columnas
+de calendario baratas de añadir. El punto **7 (NTC Marruecos) es el que más urge resolver con el
+equipo**: es la única combinación de nulos altos + atípicos altos del dataset cuyo origen no está
+confirmado.

@@ -1,0 +1,7 @@
+variante,columnas_quitadas,n_features,MAE,diff_vs_baseline,SE_bootstrap_diff
+baseline (todas las features),-,158,12.782,0.0,0.0
+sin_entsoe_load (vs ree_load),"entsoe_load_lag24h, entsoe_load_lag168h",156,12.666,-0.116,0.027
+sin_entsoe_load_forecast_mw (vs demanda_prev_mw),entsoe_load_forecast_mw,157,12.896,0.114,0.028
+sin_entsoe_wind_forecast_mw (vs gen_wind_prev_mw),entsoe_wind_forecast_mw,157,12.707,-0.075,0.028
+sin_entsoe_solar_forecast_mw (vs gen_solar_pv_prev_mw),entsoe_solar_forecast_mw,157,12.758,-0.024,0.027
+combinado (sin las 4 duplicadas de ENTSO-E),"entsoe_load_lag24h, entsoe_load_lag168h, entsoe_load_forecast_mw, entsoe_wind_forecast_mw, entsoe_solar_forecast_mw",153,12.709,-0.073,0.03

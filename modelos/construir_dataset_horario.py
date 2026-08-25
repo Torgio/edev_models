@@ -205,6 +205,19 @@ def construir_dataset_horario(solo_filas_validas: bool = True, pdbc: str | None 
     lag_24h = reales.shift(LAG_1D_HORAS).add_suffix("_lag24h")
     lag_168h = reales.shift(LAG_7D_HORAS).add_suffix("_lag168h")
 
+    # Indicador de disponibilidad para columnas con nulos masivos y ESTRUCTURALES (no aleatorios):
+    # ree_gbattery_mw / ree_cbattery_mw solo tienen dato real desde que hay baterias de red
+    # operativas -- 99,3% de nulos en train (ver docs/notas_memoria_tfm.md). En vez de imputar la
+    # mediana y que el modelo trate ese valor como si fuera una lectura real, se añade una columna
+    # binaria (1 = habia dato real esa hora, 0 = se va a imputar) para que el modelo pueda aprender
+    # a distinguir ambos casos. La imputacion de la mediana sigue haciendose aparte, en el script
+    # de entrenamiento (fillna(medianas)) -- este indicador solo la acompaña.
+    COLS_INDICADOR_DISPONIBILIDAD = ["ree_gbattery_mw", "ree_cbattery_mw"]
+    for col in COLS_INDICADOR_DISPONIBILIDAD:
+        if col in reales.columns:
+            lag_24h[f"{col}_lag24h_disponible"] = lag_24h[f"{col}_lag24h"].notna().astype(int)
+            lag_168h[f"{col}_lag168h_disponible"] = lag_168h[f"{col}_lag168h"].notna().astype(int)
+
     pdbc_mismodia = None
     if pdbc == "mismodia_diagnostico":
         pdbc_mismodia = df_pdbc.add_prefix("PELIGRO_mismodia_")
