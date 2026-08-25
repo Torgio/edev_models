@@ -851,3 +851,42 @@ pero con efectos grandes, muy por encima del ruido visto arriba):
   la salvedad ya conocida de que esto es sobre validation, no sobre el test donde se miden los
   resultados del compañero — referencia interna sólida mientras se decide cuándo comparar en test.
 
+---
+
+## 26. Primer simulador de BESS (batería de red) — traduciendo el % de arbitraje a euros
+
+Arranca el capítulo de baterías. Las métricas de la nota 25 dicen qué porcentaje del arbitraje
+teórico captura el modelo, pero no cuántos euros representa eso para una batería real — este
+simulador (`modelos/simulador_bess_horario.py`) da ese paso.
+
+**Batería de referencia usada (versión 1, ajustable)**: como todavía no hay un tamaño de proyecto
+definido por el equipo, se usan tres duraciones típicas de las licitaciones de baterías de red en
+España (1h, 2h y 4h de autonomía), sobre 1 MW de potencia (el resultado se reporta "por MW
+instalado", así que escalar a un proyecto real de tamaño concreto es multiplicar), con 90% de
+eficiencia ida y vuelta (típico de baterías de ion-litio). Estrategia simple: un ciclo de
+carga/descarga al día — carga en las horas más baratas predichas, descarga en las más caras
+predichas, un MWh de energía por cada hora de autonomía.
+
+**Resultado** (ingreso anualizado, validation 2025, tres estrategias — decidir con el modelo,
+decidir con persistencia, y el límite teórico de decidir con el precio real que nunca se conoce de
+antemano):
+
+| Duración | Con el modelo | Con persistencia | Límite teórico (oráculo) | % del límite capturado (modelo) |
+|---|---|---|---|---|
+| 1h | 28.807 €/año | 25.961 €/año | 31.433 €/año | **91,6%** |
+| 2h | 55.757 €/año | 50.537 €/año | 59.383 €/año | **93,9%** |
+| 4h | 100.809 €/año | 92.035 €/año | 105.601 €/año | **95,5%** |
+
+**Lectura para la memoria**: el modelo captura de forma consistente 91-96% del valor económico
+máximo posible, y le saca entre 8 y 10 puntos porcentuales de ventaja a la persistencia en las
+tres duraciones — una diferencia de varios miles de euros al año por MW instalado. La ventaja
+relativa del modelo crece ligeramente con la duración (91,6% → 95,5%), señal de que el modelo
+acierta mejor identificando el *conjunto* de horas buenas/malas del día que el momento exacto de
+una sola hora.
+
+**Limitaciones explícitas de esta primera versión, para no sobrevender el resultado**: un solo
+ciclo por día (no ciclado múltiple), sin degradación de la batería, sin restricciones de red ni
+costes de operación/mantenimiento, y sin un tamaño de proyecto real todavía confirmado por el
+equipo — es una herramienta para comparar estrategias (modelo vs. persistencia vs. límite teórico),
+no para dimensionar una inversión real.
+
