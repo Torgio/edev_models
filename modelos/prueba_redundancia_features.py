@@ -12,6 +12,14 @@ pequeño) -- el dataset crecio bastante desde entonces (10 paises vecinos, PDBC,
 mayoria de esas 76 son fisicamente esperables y no candidatas a poda (paises vecinos acoplados
 entre si por el mercado europeo, viento a 10m/100m/racha, lags 24h vs 168h de la misma columna).
 
+AVISO (25-ago-2026): los numeros de ESTE script (una sola semilla, random_state=42) resultaron NO
+ser fiables -- al repetir con 5 semillas distintas en `prueba_redundancia_robustez.py`, las 4
+parejas de aqui abajo mostraron un efecto que CAMBIA DE SIGNO entre semillas (es ruido de muestreo
+de columnas de LightGBM, no una señal real). La conclusion que vale es la de ese segundo script,
+no la de este: ninguna de las 4 parejas tiene un efecto robusto sobre el MAE, lo cual en realidad
+SI confirma la hipotesis original (son seguras de quitar sin coste real) -- solo que hay que
+demostrarlo con varias semillas, nunca con una sola corrida.
+
 Las 4 que sí se prueban aqui son las mas claras candidatas a redundancia real -- DOS FUENTES
 midiendo/previendo la MISMA magnitud fisica, no dos magnitudes distintas que resultan parecidas:
 
@@ -156,6 +164,32 @@ def main():
               f"error estandar de la diferencia: ±{se:.3f})")
         resultados.append({"variante": "combinado (sin las 4 duplicadas de ENTSO-E)",
                             "columnas_quitadas": ", ".join(columnas_a_quitar_todas),
+                            "n_features": len(X_train_v.columns), "MAE": round(mae_v, 3),
+                            "diff_vs_baseline": round(diff, 3), "SE_bootstrap_diff": round(se, 3)})
+
+    # --- Variante "inteligente": de las 4 pruebas individuales de arriba, solo 3 columnas
+    # mostraron una diferencia real (fuera del ruido) al quitarlas -- de esas, dos MEJORARON el
+    # MAE al quitarlas (entsoe_load, entsoe_wind_forecast_mw) y una lo EMPEORO (entsoe_load_
+    # forecast_mw, que por tanto se mantiene). En vez de solo probar "todas las 4 juntas" (que
+    # mezcla una buena decision con una mala), se prueba la combinacion que junta unicamente las
+    # que individualmente ayudaron o fueron neutras -- es la combinacion que de verdad busca una
+    # mejora real, no solo simplificar por simplificar.
+    cols_inteligente = [c for c in ["entsoe_load_lag24h", "entsoe_load_lag168h",
+                                     "entsoe_wind_forecast_mw", "entsoe_solar_forecast_mw"]
+                         if c in X_train_full.columns]
+    if cols_inteligente:
+        X_train_v = X_train_full.drop(columns=cols_inteligente)
+        X_val_v = X_val_full.drop(columns=cols_inteligente)
+        mae_v, err_v = _entrenar_evaluar(X_train_v, y_train, X_val_v, y_val, params)
+        diff = mae_v - mae_base
+        se = _bootstrap_se_diferencia(err_base, err_v)
+        print(f"\n=== combinacion 'inteligente': quita solo lo que ayudo o fue neutro, "
+              f"mantiene entsoe_load_forecast_mw ===")
+        print(f"  columnas quitadas: {cols_inteligente}")
+        print(f"  MAE: {mae_v:.3f}  (diferencia vs baseline: {diff:+.3f}, "
+              f"error estandar de la diferencia: ±{se:.3f})")
+        resultados.append({"variante": "inteligente (quita solo lo que ayudo/fue neutro)",
+                            "columnas_quitadas": ", ".join(cols_inteligente),
                             "n_features": len(X_train_v.columns), "MAE": round(mae_v, 3),
                             "diff_vs_baseline": round(diff, 3), "SE_bootstrap_diff": round(se, 3)})
 

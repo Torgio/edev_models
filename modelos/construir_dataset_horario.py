@@ -232,11 +232,24 @@ def construir_dataset_horario(solo_filas_validas: bool = True, pdbc: str | None 
 
     # --- Calendario: describe la propia hora objetivo (ya se sabe con certeza de antemano) ---
     idx_madrid = idx.tz_convert("Europe/Madrid")
+    # Mecanismo iberico de tope al gas ("excepcion iberica", RDL 10/2022): vigente 15-jun-2022 a
+    # 31-dic-2023, verificado de forma independiente (MITECO / prensa especializada, 25-ago-2026),
+    # no solo tomado del script de un compañero. Es un cambio de regla del mercado que el modelo
+    # no puede inferir de otras columnas -- fecha conocida con certeza de antemano, no hay fuga.
+    # Caveat: el mecanismo estuvo legalmente vigente todo ese rango pero no siempre "activo" en la
+    # practica (hubo tramos en que el precio del gas cayo por debajo del umbral y no llego a topar)
+    # -- este flag marca la ventana LEGAL, un primer indicador estructural, no una medida exacta de
+    # cuando el tope realmente influyo en el precio.
+    TOPE_GAS_INICIO = pd.Timestamp("2022-06-15").date()
+    TOPE_GAS_FIN = pd.Timestamp("2023-12-31").date()
+    fecha_local = idx_madrid.date
+    regimen_tope_gas = ((fecha_local >= TOPE_GAS_INICIO) & (fecha_local <= TOPE_GAS_FIN)).astype(int)
     calendario = pd.DataFrame({
         "hora": idx_madrid.hour,
         "dow": idx_madrid.dayofweek,
         "month": idx_madrid.month,
         "is_weekend": (idx_madrid.dayofweek >= 5).astype(int),
+        "regimen_tope_gas": regimen_tope_gas,
     }, index=idx)
 
     piezas = [precio.rename("precio"), df_fcst, df_autoconsumo, df_ntc, df_fcst_entsoe, df_clima,

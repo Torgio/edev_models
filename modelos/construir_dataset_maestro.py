@@ -1,6 +1,15 @@
 """
 TFM Energia UCM — Estructura de tiempo oficial del equipo (espina horaria + dataset de modelado)
 
+DECISION DE EQUIPO (25-ago-2026, ver docs/notas_memoria_tfm.md): el `construir_dataset_diario()`
+de este archivo YA NO SE USA PARA MODELAR -- cuatro compañeros comprobaron independientemente que
+la estructura horaria (`construir_dataset_horario.py`) da resultados claramente mejores para el
+problema de negocio. De aqui en adelante, cualquier prueba/correccion/feature nueva se hace sobre
+el dataset HORARIO. Este archivo se mantiene porque `construir_dataset_horario.py` importa de aqui
+el catalogo de columnas (nombres de tabla, listas de columnas seguras/reales/NTC/etc.) para
+garantizar que las dos estructuras sigan siendo comparables -- no se borra, simplemente ya no se
+invoca `construir_dataset_diario()` en el flujo de trabajo real.
+
 Este script construye las DOS estructuras de tiempo que todo el equipo debe compartir de cara a
 la presentacion del miercoles, para que cada quien pueda hacer su propio EDA/modelado sobre
 exactamente la misma base:

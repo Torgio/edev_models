@@ -809,3 +809,45 @@ inusual del precio del gas) que alimente tanto al modelo puntual como a la capa 
 no una red nueva, una feature más. Queda anotado para cuando se retome esa discusión, no es una
 tarea activa todavía.
 
+---
+
+## 25. Corrección de método: una sola semilla no basta para medir un efecto pequeño (y dos resultados nuevos que sí se sostienen)
+
+**Corrección importante, con transparencia**: al repetir la prueba de redundancia del punto 2 de
+la nota 24 tras añadir una columna nueva sin relación (`regimen_tope_gas`), el resultado se
+invirtió — quitar `entsoe_load` pasó de mejorar el MAE en 0,12 a solo 0,02. La causa: LightGBM
+muestrea aleatoriamente qué columnas mira en cada árbol (`colsample_bytree≈0,77`), y aunque la
+semilla sea la misma, cambiar el número total de columnas del dataset cambia qué columnas caen en
+ese muestreo. Con diferencias tan pequeñas (bajo el 1% del MAE), ese ruido basta para invertir el
+signo del resultado.
+
+**La prueba correcta**: repetir cada comparación con varias semillas del modelo (mismos datos,
+solo cambia el azar interno de LightGBM) y quedarse solo con los efectos que mantienen el mismo
+signo en todas. Se hizo con 5 semillas sobre las mismas 4 parejas ESIOS/ENTSO-E — **ninguna de las
+4 mostró un efecto consistente**: el signo cambió entre semillas en los 4 casos. Conclusión final,
+que sí es fiable: **las 4 columnas son seguras de quitar del dataset horario sin coste real de
+precisión** — confirma la hipótesis original de la nota 24, pero demostrada correctamente esta
+vez. La afirmación anterior (que `entsoe_load_forecast_mw` "sí aportaba valor real") queda
+retirada — era ruido de una sola corrida, no un hallazgo real.
+
+**Lección de método para el resto del proyecto, incluido lo ya hecho**: cualquier diferencia de
+MAE por debajo de aproximadamente el 1-2% no debe reportarse a partir de una sola corrida —
+conviene repetir con varias semillas antes de anotarla como una mejora o un empeoramiento real,
+tal como ya se hace con el error estándar de muestra del compañero de equipo (nota 23).
+
+**Dos resultados que sí se sostienen, con evidencia más sólida** (medidos con un solo entrenamiento
+pero con efectos grandes, muy por encima del ruido visto arriba):
+
+- **`regimen_tope_gas`** (indicador del mecanismo ibérico de tope al gas, 15-jun-2022 a
+  31-dic-2023, verificado de forma independiente) mejora la calibración de la capa de
+  incertidumbre: cobertura global 70,3% → 74,4%, y **cobertura en evento extremo 54,2% → 63,2%**
+  (+9 puntos), a costa de un intervalo solo 1,6 €/MWh más ancho. El evento extremo medido es el
+  apagón de 2025 — la mejora no viene de que la variable esté "activa" en esas horas (el tope al
+  gas ya no estaba vigente en 2025), sino de que el modelo aprendió mejor las relaciones de precio
+  durante el entrenamiento al poder separar el régimen del tope de los años normales. **Se
+  recomienda adoptarla como feature por defecto.**
+- **Métricas económicas** sobre el LightGBM horario ganador (validation 2025): captura de
+  arbitraje 91,0% (persistencia: 81,4%), acierto de hora pico ±1h 79,4% (persistencia: 67,6%). Con
+  la salvedad ya conocida de que esto es sobre validation, no sobre el test donde se miden los
+  resultados del compañero — referencia interna sólida mientras se decide cuándo comparar en test.
+
