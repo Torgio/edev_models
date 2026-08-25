@@ -5,9 +5,11 @@ Este script construye las DOS estructuras de tiempo que todo el equipo debe comp
 la presentacion del miercoles, para que cada quien pueda hacer su propio EDA/modelado sobre
 exactamente la misma base:
 
-  A) ESPINA HORARIA (`construir_espina_horaria`) -- union por timestamp exacto de las 5 tablas
-     nucleo (entsoe_gen_data, esios_gen, esios_load_inter, esios_forecast_da) + variables diarias
-     (commodities, capacidad) difundidas sobre las 24h. Para EDA, correlaciones, graficos.
+  A) ESPINA HORARIA (`construir_espina_horaria`) -- union por timestamp exacto de las tablas
+     nucleo (entsoe_gen_data, entsoe_load_inter, esios_gen, load_inter, esios_forecast_da) +
+     variables diarias (commodities, capacidad) difundidas sobre las 24h. Para EDA, correlaciones,
+     graficos. NOTA (19-ago-2026): esios_load_inter se elimino, sustituida por `load_inter`
+     (demanda + interconexiones consolidadas, ESIOS+ENTSO-E unificado).
 
   B) DATASET DIARIO (`construir_dataset_diario`) -- una fila por dia D, target = las 24 horas de
      precio de D+1 (nunca del propio D), solo features sin fuga de informacion, lags de datos
@@ -55,20 +57,81 @@ TRAIN_END = pd.Timestamp("2024-12-31").date()   # train: DATASET_START -> TRAIN_
 VAL_END = pd.Timestamp("2025-12-31").date()      # validation: TRAIN_END+1 -> VAL_END
 # test: VAL_END+1 -> fecha mas reciente disponible
 
-# Features seguras de esios_forecast_da (catalogo verificado, ver Banco de Evidencias punto #1-2).
-# gen_renovables_prev_mw se EXCLUYE a proposito: es gen_wind_prev_mw + gen_solar_pv_prev_mw exacto
-# (verificado 18-ago-2026, identidad exacta en las 58.127 filas donde las tres tienen dato) --
-# colinealidad perfecta si entran los tres a la vez. Se quedan los dos componentes, no el agregado.
-COLS_SEGURAS_FORECAST = ["demanda_prev_mw", "gen_wind_prev_mw", "gen_solar_pv_prev_mw"]
-# EXCLUIDAS a propósito: demanda_residual_prev_mw (revision 10-14 dias), potencia_indisp_pbf_mw (llega 8 dias tarde)
+# Features seguras de esios_forecast_da -- ampliado 20-ago-2026 segun la seleccion del equipo
+# (matriz FORECAST). demanda_prev_mw (1775) SE MANTIENE junto a demanda_mercado_prev_mw (2563)
+# a peticion del equipo, aunque el 1775 tiene un sesgo creciente documentado (hasta +2.386 MW en
+# 2026, el doble de error todos los años frente al 2563) -- no es fuga, es redundancia con una
+# version peor, se deja que el modelo decida. gen_renovables_prev_mw tambien se mantiene pese a
+# ser colineal exacto con gen_wind_prev_mw + gen_solar_pv_prev_mw (verificado 18-ago-2026, 58.127
+# filas identicas) -- mismo criterio, redundancia aceptada a proposito, no invalida el dataset.
+COLS_SEGURAS_FORECAST = [
+    "demanda_prev_mw", "demanda_mercado_prev_mw", "gen_wind_prev_mw", "gen_solar_pv_prev_mw",
+    "gen_renovables_prev_mw", "gen_solartermica_prev_mw", "cap_baleares_prev_mw",
+    "ntc_fr_imp_prev_mw", "ntc_fr_exp_prev_mw", "ntc_pt_imp_prev_mw", "ntc_pt_exp_prev_mw",
+    "ntc_ma_imp_prev_mw", "ntc_ma_exp_prev_mw",
+]
+# EXCLUIDA -- OJO, NO es una omision, es una fuga real: demanda_residual_prev_mw se revisa
+# 10-14 dias despues de publicarse (verificado con check_tables/verificar_revision_indicadores.py).
+# El valor guardado hoy en la BD para una fecha historica es el YA REVISADO, no el que existia en
+# el momento de predecir -- misma familia de bug que el del target D+1 que se corrigio el
+# 17-ago-2026. Pendiente de confirmacion explicita antes de añadirla (ver conversacion 20-ago).
+# potencia_indisp_pbf_mw ya NO EXISTE en esios_forecast_da (el equipo la elimino el 19-ago-2026 --
+# era un duplicado exacto de esios_pbf_gen.unavailable_power_mw, y estar en la tabla de forecasts
+# inducia a creerla leak-safe pre-cierre cuando en realidad es dato de PBF, post-cierre).
 
-# Ganadores del punto #3 (duplicados de fuente resueltos)
-TABLA_DEMANDA_REAL = "esios_load_inter"
-COLS_DEMANDA_REAL = ["ree_load"]
-TABLA_EOLICA_BOMBEO_REAL = "entsoe_gen_data"
-COLS_EOLICA_BOMBEO_REAL = ["wind_mw", "pumping_gen_mw", "pumping_cons_mw"]
-TABLA_SOLAR_REAL = "esios_gen"
-COLS_SOLAR_REAL = ["ree_gsolar_mw", "ree_gsolter_mw"]
+# Matriz de generacion/demanda del equipo, cerrada 19-ago-2026 (ver docs/notas_memoria_tfm.md y
+# la vista materializada `generation` en la BD) -- reemplaza la seleccion anterior del 19-ago.
+#
+# Demanda real -> ree_load (load_inter), a peticion expresa del equipo (20-ago-2026), pese a que
+# la version anterior de este script usaba entsoe_load por la contaminacion de autoconsumo
+# documentada en D-03 (brecha +435 a +2.495 MW dic-2025/jul-2026). El equipo decidio usar ree_load
+# de todas formas -- si se quiere volver a entsoe_load, es cambiar esta lista.
+#
+# entsoe_load añadida el 20-ago-2026 (adicion de ultimo momento del equipo, no un reemplazo de
+# ree_load -- las dos entran juntas). OJO para quien la use: las dos miden lo mismo salvo por el
+# autoconsumo (D-03), asi que en 2020-2024 son practicamente identicas y desde dic-2025 se separan
+# cada vez mas -- entran ambas tal como se indico, sin resolver esa redundancia aqui.
+#
+# load_inter tambien aporta netflow/total_net_flow/gen_peninsular: son dato REAL ya ocurrido
+# (no una capacidad publicada de antemano como el NTC), asi que van aqui con el resto de reales
+# con lag D-1/D-7, no en COLS_NTC (que sigue el criterio "seguro, D+1" de _features_ntc).
+TABLA_DEMANDA_REAL = "load_inter"
+COLS_DEMANDA_REAL = ["ree_load", "entsoe_load", "ree_netflow_fr", "ree_netflow_pt", "ree_netflow_ma",
+                      "total_net_flow_mw", "gen_peninsular_mw"]
+
+# ENTSO-E gana eolica, hidraulica fluyente, consumo de bombeo, biomasa, residuos, otras
+# renovables y fuel-oil. hydro_reservoir_mw y pumping_gen_mw YA NO van sueltas -- ver
+# _features_lag_reales: se fusionan en hydro_dispatch_mw (equivalente a c_ghydrodispatch de la
+# matriz) porque ENTSO-E no separaba la turbinacion de bombeo (B10) del embalse (B12) antes de
+# dic-2022 -- pumping_gen_mw es NULL el 100% de 2020-2021 y 91% de 2022 (verificado 20-ago-2026),
+# y hydro_reservoir_mw sola tiene un escalon de nivel en esa misma frontera (media 2.756 en 2021,
+# 1.720 en 2022, 1.940 en 2023) -- exactamente el tipo de discontinuidad a mitad de train que ya
+# encontramos antes con el autoconsumo, solo que aqui la fuente misma cambia de definicion.
+TABLA_ENTSOE_REAL = "entsoe_gen_data"
+COLS_ENTSOE_REAL = ["wind_mw", "pumping_cons_mw", "hydro_run_river_mw",
+                     "biomass_mw", "waste_mw", "other_renewable_mw", "oil_mw"]
+
+# ESIOS gana termosolar, CCGT puro, cogeneracion y resto (SIN dividir -- ver nota de
+# _features_lag_reales), nuclear, carbon, y bateria (descarga/carga). ree_gnuclear_mw y
+# ree_gcoal_mw van por ESIOS, no ENTSO-E, aunque coinciden al ±0,4% -- es la fuente que eligio el
+# equipo (corregido 20-ago-2026: una version anterior de este patch los tenia por ENTSO-E).
+TABLA_ESIOS_REAL = "esios_gen"
+COLS_ESIOS_REAL = ["ree_gsolter_mw", "ree_gccgas_mw", "ree_gbattery_mw", "ree_cbattery_mw",
+                    "ree_gnuclear_mw", "ree_gotherthermal_mw", "ree_gcoal_mw"]
+# ree_gsolar_mw (FV) se EXCLUYE de COLS_ESIOS_REAL a proposito: incorpora autoconsumo desde
+# dic-2025, mismo problema que ree_load (verificado: brecha de -546 a +1.387 MW entre sep-2025 y
+# ago-2026). Se reconstruye una FV limpia por resta en vez de leerla directo -- ver
+# _features_lag_reales: GREATEST(0, entsoe_gen_data.solar_mw - esios_gen.ree_gsolter_mw). ENTSO-E
+# solar_mw es B16 = FV+termosolar sin el problema de autoconsumo (es de ENTSO-E, no de ESIOS);
+# restarle la termosolar limpia de ESIOS deja una FV limpia.
+#
+# ree_gotherthermal_mw (cogeneracion y resto, indicador 1297) entra COMPLETA, sin dividir en
+# cogeneracion_gas_mw/resto_no_convencional_mw como se planteo en una version anterior
+# (gas_lags.patch): el equipo evaluo esa division a fondo y la descarto -- la resta sigue las
+# rampas del CCGT (57 MW a las 9h, 332 MW a las 19h) porque en realidad mide el desfase entre una
+# CONSIGNA en tiempo real (entsoe.gas_mw, B04) y una TELEMEDIDA real (ree_gccgas_mw), no una
+# tecnologia; resto_no_convencional_mw llegaba a ser negativa 10 veces su propia magnitud en el
+# 11% de las horas de 2025. Ver docs/decisiones_datos.md D-02 y la matriz FINAL del 19-ago.
 
 
 def _conectar():
@@ -110,8 +173,8 @@ def construir_espina_horaria(start: str = DATASET_START, end: str = DATASET_END)
             conn, "SELECT * FROM esios_gen WHERE datetime BETWEEN %(start)s AND %(end)s ORDER BY datetime",
             "datetime", params,
         )
-        df_esios_load = _leer_horaria(
-            conn, "SELECT * FROM esios_load_inter WHERE datetime BETWEEN %(start)s AND %(end)s ORDER BY datetime",
+        df_load_inter = _leer_horaria(
+            conn, "SELECT * FROM load_inter WHERE datetime BETWEEN %(start)s AND %(end)s ORDER BY datetime",
             "datetime", params,
         )
         df_forecast = _leer_horaria(
@@ -136,7 +199,7 @@ def construir_espina_horaria(start: str = DATASET_START, end: str = DATASET_END)
     espina = df_gen.rename(columns={"datetime": "ts"})
     espina = espina.merge(df_load.rename(columns={"datetime": "ts"}), on="ts", how="left", suffixes=("", "_load"))
     espina = espina.merge(df_esios_gen.rename(columns={"datetime": "ts"}), on="ts", how="left", suffixes=("", "_esiosgen"))
-    espina = espina.merge(df_esios_load.rename(columns={"datetime": "ts"}), on="ts", how="left", suffixes=("", "_esiosload"))
+    espina = espina.merge(df_load_inter.rename(columns={"datetime": "ts"}), on="ts", how="left", suffixes=("", "_loadinter"))
     espina = espina.merge(df_forecast.rename(columns={"datetime": "ts"}), on="ts", how="left", suffixes=("", "_fcst"))
     assert espina["ts"].is_unique, "la espina no deberia tener timestamps duplicados -- revisar duplicados de fuente"
 
@@ -208,10 +271,39 @@ def _features_forecast(conn) -> pd.DataFrame:
     return feats
 
 
+# Autoconsumo previsto -- de la nueva vista materializada `forecast` (22-ago-2026), NO de
+# esios_forecast_da. c_autoconsumo_prev es la estimacion numerica (puede ser negativa -- pendiente
+# de confirmar con el equipo que representa exactamente); autoconsumo_estimado es un booleano,
+# se convierte a 0/1. Añadida como evaluacion, no reemplaza nada del catalogo ya verificado.
+COLS_AUTOCONSUMO_PREV = ["c_autoconsumo_prev", "autoconsumo_estimado"]
+
+
+def _features_autoconsumo_prev(conn) -> pd.DataFrame:
+    """Autoconsumo previsto de D+1, de la vista `forecast` -- mismo criterio de alineacion que
+    _features_forecast (se asume publicada antes del cierre, igual que el resto de esa vista)."""
+    df = pd.read_sql(
+        f"SELECT datetime, {', '.join(COLS_AUTOCONSUMO_PREV)} FROM forecast "
+        f"WHERE datetime BETWEEN %(start)s AND %(end)s",
+        conn, params={"start": DATASET_START, "end": DATASET_END},
+    )
+    df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
+    df["autoconsumo_estimado"] = df["autoconsumo_estimado"].astype("Int64")
+    df["fecha_objetivo"] = df["datetime"].dt.tz_convert("Europe/Madrid").dt.date
+
+    feats = df.groupby("fecha_objetivo")[COLS_AUTOCONSUMO_PREV].agg(["mean", "min", "max"])
+    feats.columns = [f"{c}_{stat}" for c, stat in feats.columns]
+    feats.index = (pd.to_datetime(feats.index) - pd.Timedelta(days=1)).date
+    feats.index.name = "fecha"
+    return feats
+
+
 # NTC (capacidad de interconexion) -- ganador del punto #3, publicada antes del cierre igual que
-# las previsiones. Solo Francia y Portugal (Marruecos existe en la tabla pero no se resolvio en
-# el punto #3 -- ver ree_ntc_impma/ree_ntc_expma si se decide incluirlo mas adelante).
-COLS_NTC = ["ree_ntc_impfr", "ree_ntc_expfr", "ree_ntc_imppt", "ree_ntc_exppt"]
+# las previsiones. Ahora en `load_inter` (antes esios_load_inter, eliminada 19-ago-2026). Marruecos
+# (ree_ntc_impma/expma) se incluye desde el 20-ago-2026 a peticion del equipo -- antes se dejaba
+# fuera porque no se habia resuelto en el punto #3. NOTA: es capacidad publicada, no flujo real
+# (eso va en COLS_DEMANDA_REAL, ver arriba) -- por eso se alinea D+1 como las previsiones.
+COLS_NTC = ["ree_ntc_impfr", "ree_ntc_expfr", "ree_ntc_imppt", "ree_ntc_exppt",
+            "ree_ntc_impma", "ree_ntc_expma"]
 
 # entsoe_forecast_da: revivida el 17-ago-2026 (antes 192 filas, ahora historico completo).
 # renewables_forecast_mw se EXCLUYE por el mismo motivo que gen_renovables_prev_mw: es
@@ -220,10 +312,10 @@ COLS_FORECAST_ENTSOE = ["load_forecast_mw", "wind_forecast_mw", "solar_forecast_
 
 
 def _features_ntc(conn) -> pd.DataFrame:
-    """NTC Francia/Portugal de esios_load_inter -- mismo criterio de alineacion que
+    """NTC Francia/Portugal de load_inter -- mismo criterio de alineacion que
     _features_forecast (publicada antes del cierre, describe D+1, se coloca en la fila D)."""
     df = pd.read_sql(
-        f"SELECT datetime, {', '.join(COLS_NTC)} FROM esios_load_inter WHERE datetime BETWEEN %(start)s AND %(end)s",
+        f"SELECT datetime, {', '.join(COLS_NTC)} FROM load_inter WHERE datetime BETWEEN %(start)s AND %(end)s",
         conn, params={"start": DATASET_START, "end": DATASET_END},
     )
     df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
@@ -237,7 +329,9 @@ def _features_ntc(conn) -> pd.DataFrame:
 
 
 def _features_forecast_entsoe(conn) -> pd.DataFrame:
-    """Segunda prevision oficial (ENTSO-E, independiente de ESIOS) -- misma alineacion D+1."""
+    """Segunda prevision oficial (ENTSO-E, independiente de ESIOS) -- misma alineacion D+1.
+    FUERA del dataset por defecto desde 20-ago-2026 -- decision de reunion del equipo, ver
+    docs/columnas_pendientes_equipo.md. Solo se activa con `incluir_columnas_pendientes=True`."""
     df = pd.read_sql(
         f"SELECT datetime, {', '.join(COLS_FORECAST_ENTSOE)} FROM entsoe_forecast_da "
         f"WHERE datetime BETWEEN %(start)s AND %(end)s",
@@ -257,7 +351,9 @@ def _features_diferencia_previsiones(conn) -> pd.DataFrame:
     """Diferencia horaria entre las DOS previsiones independientes (ESIOS vs ENTSO-E) para
     demanda/eolica/solar, agregada por dia -- proxy de incertidumbre del dia. Las dos se
     publican antes del cierre, asi que la diferencia en si tambien es segura como feature
-    (no hay fuga: ninguna de las dos "sabe" mas que la otra sobre el resultado real)."""
+    (no hay fuga: ninguna de las dos "sabe" mas que la otra sobre el resultado real).
+    FUERA del dataset por defecto desde 20-ago-2026 -- decision de reunion del equipo, ver
+    docs/columnas_pendientes_equipo.md. Depende de _features_forecast_entsoe, mismo interruptor."""
     df_esios = pd.read_sql(
         "SELECT datetime, demanda_prev_mw, gen_wind_prev_mw, gen_solar_pv_prev_mw FROM esios_forecast_da "
         "WHERE datetime BETWEEN %(start)s AND %(end)s",
@@ -285,23 +381,48 @@ def _features_diferencia_previsiones(conn) -> pd.DataFrame:
     return feats
 
 
+# co2_ets, gas_ttf y carbon_api2 se retiraron el 22-ago-2026 a peticion del equipo (ver
+# conversacion) -- OJO: la importancia de features del LightGBM ganador (nota 14 de la memoria)
+# tenia a gas_ttf en la posicion #6 y carbon_api2 en la #8 de 237 variables, asi que este cambio
+# se aplica siguiendo la instruccion explicita del equipo, no porque la evidencia propia lo
+# respalde. Vale la pena revisar el impacto una vez reentrenados los modelos.
+COLS_COMMODITIES = ["gas_mibgas", "co2_eua_dec", "gas_ttf_m1"]
+
+
 def _features_dia_d(conn) -> pd.DataFrame:
-    """Commodities y capacidad disponible del propio dia D (lag natural: ya ocurrieron)."""
+    """Commodities del propio dia D (lag natural: ya ocurrieron). Las 6 columnas de commodities --
+    ampliado 20-ago-2026, antes solo se usaban 3 de las 6."""
     df_comm = pd.read_sql(
-        "SELECT fecha, gas_mibgas, gas_ttf, co2_ets FROM commodities WHERE fecha BETWEEN %(start)s AND %(end)s",
+        f"SELECT fecha, {', '.join(COLS_COMMODITIES)} FROM commodities WHERE fecha BETWEEN %(start)s AND %(end)s",
         conn, params={"start": DATASET_START, "end": DATASET_END},
     )
     df_comm["fecha"] = pd.to_datetime(df_comm["fecha"]).dt.date
     df_comm = df_comm.sort_values("fecha").set_index("fecha").ffill()  # fin de semana -> ultimo cierre
+    return df_comm
 
-    df_capd = pd.read_sql(
-        "SELECT date, total_mw FROM esios_capacity_available WHERE date BETWEEN %(start)s AND %(end)s",
+
+COLS_CAPACIDAD_DISPONIBLE = ["hydro_mw", "pump_mw", "nuclear_mw", "coal_antracita_mw", "ccgt_mw", "fuel_mw"]
+
+
+def _features_capacidad_disponible(conn) -> pd.DataFrame:
+    """Capacidad disponible del propio dia D (lag natural). CORREGIDO 22-ago-2026: el equipo
+    cambio `esios_capacity_available` de diaria+agregada (columnas `date`,`total_mw`, ya no
+    existen) a HORARIA y por tecnologia (`datetime` + 6 columnas) -- exactamente el desglose que
+    la decision D-01 dejaba pendiente. Se agrega por dia (mean/min/max) igual que el resto de
+    reales horarias del dataset. Sigue FUERA del dataset por defecto -- decision de reunion del
+    equipo, ver docs/columnas_pendientes_equipo.md. Solo se activa con
+    `incluir_columnas_pendientes=True` en `construir_dataset_diario`."""
+    df = pd.read_sql(
+        f"SELECT datetime, {', '.join(COLS_CAPACIDAD_DISPONIBLE)} FROM esios_capacity_available "
+        f"WHERE datetime BETWEEN %(start)s AND %(end)s",
         conn, params={"start": DATASET_START, "end": DATASET_END},
     )
-    df_capd["date"] = pd.to_datetime(df_capd["date"]).dt.date
-    df_capd = df_capd.rename(columns={"total_mw": "capacidad_disp_total_mw"}).set_index("date")
-
-    return df_comm.join(df_capd, how="outer")
+    df["datetime"] = pd.to_datetime(df["datetime"], utc=True)  # normalizacion UTC manual, NUNCA parse_dates
+    df["fecha"] = df["datetime"].dt.tz_convert("Europe/Madrid").dt.date
+    feats = df.groupby("fecha")[COLS_CAPACIDAD_DISPONIBLE].agg(["mean", "min", "max"])
+    feats.columns = [f"capacidad_disp_{c}_{stat}" for c, stat in feats.columns]
+    feats.index.name = "fecha"
+    return feats
 
 
 def _calendario(index_fechas) -> pd.DataFrame:
@@ -315,37 +436,64 @@ def _calendario(index_fechas) -> pd.DataFrame:
 
 
 def _features_lag_reales(conn) -> pd.DataFrame:
-    """Demanda, eolica/bombeo y solar reales (ganadores del punto #3), agregadas por dia
-    y desplazadas a D-1 y D-7 -- nunca el propio dia D (que aun no ha terminado al predecir)."""
+    """Demanda, eolica/bombeo/hidraulica, termosolar+CCGT, y FV limpia (reconstruida), todas
+    reales -- agregadas por dia y desplazadas a D-1 y D-7. Nunca el propio dia D (que aun no ha
+    terminado al predecir)."""
     df_load = pd.read_sql(
         f"SELECT datetime, {', '.join(COLS_DEMANDA_REAL)} FROM {TABLA_DEMANDA_REAL} "
         f"WHERE datetime BETWEEN %(start)s AND %(end)s",
         conn, params={"start": DATASET_START, "end": DATASET_END},
     )
-    df_eolica = pd.read_sql(
-        f"SELECT datetime, {', '.join(COLS_EOLICA_BOMBEO_REAL)} FROM {TABLA_EOLICA_BOMBEO_REAL} "
+    # entsoe_load en 0 exacto es fisicamente imposible para demanda peninsular (verificado
+    # 21-ago-2026: 9 horas de 58.151, 8 seguidas el 1-jul-2026 madrugada + 1 aislada el
+    # 17-mar-2026 -- corte de ingesta puntual, no un problema sistemico. Caen en el tramo de
+    # test, asi que sin este fix corromperian los lags D-1/D-7 de esos dias especificos con un
+    # cero irreal. Se pasan a NaN para que la agregacion diaria (mean/min/max) las ignore, en vez
+    # de tratarlas como demanda real de 0 MW).
+    if "entsoe_load" in df_load.columns:
+        df_load.loc[df_load["entsoe_load"] == 0, "entsoe_load"] = pd.NA
+    df_entsoe = pd.read_sql(
+        f"SELECT datetime, {', '.join(COLS_ENTSOE_REAL)} FROM {TABLA_ENTSOE_REAL} "
         f"WHERE datetime BETWEEN %(start)s AND %(end)s",
         conn, params={"start": DATASET_START, "end": DATASET_END},
     )
-    df_solar = pd.read_sql(
-        f"SELECT datetime, {', '.join(COLS_SOLAR_REAL)} FROM {TABLA_SOLAR_REAL} "
+    df_esios = pd.read_sql(
+        f"SELECT datetime, {', '.join(COLS_ESIOS_REAL)} FROM {TABLA_ESIOS_REAL} "
         f"WHERE datetime BETWEEN %(start)s AND %(end)s",
         conn, params={"start": DATASET_START, "end": DATASET_END},
     )
+    # FV limpia: NUNCA se lee ree_gsolar_mw directo (contaminada de autoconsumo desde dic-2025).
+    # Se reconstruye por resta: GREATEST(0, entsoe.solar_mw - esios.ree_gsolter_mw). El GREATEST
+    # corrige los casos (~1% de las horas) donde la resta da un valor negativo por ruido de
+    # redondeo entre las dos fuentes.
+    df_solar_fv = pd.read_sql(
+        "SELECT e.datetime, GREATEST(0, e.solar_mw - s.ree_gsolter_mw) AS solar_fv_mw "
+        "FROM entsoe_gen_data e JOIN esios_gen s ON e.datetime = s.datetime "
+        "WHERE e.datetime BETWEEN %(start)s AND %(end)s AND e.solar_mw IS NOT NULL AND s.ree_gsolter_mw IS NOT NULL",
+        conn, params={"start": DATASET_START, "end": DATASET_END},
+    )
+    # Hidraulica despachable, fusionada (equivalente a c_ghydrodispatch de la matriz del equipo):
+    # embalse (B12) + turbinacion de bombeo (B10), con COALESCE a 0 SOLO en el bombeo -- si el
+    # embalse mismo es NULL, el resultado se queda NULL (no se inventa un cero). Necesario porque
+    # ENTSO-E no separaba B10 de B12 antes de dic-2022 -- ver nota en COLS_ENTSOE_REAL.
+    df_hydro_dispatch = pd.read_sql(
+        "SELECT datetime, hydro_reservoir_mw + COALESCE(pumping_gen_mw, 0) AS hydro_dispatch_mw "
+        "FROM entsoe_gen_data WHERE datetime BETWEEN %(start)s AND %(end)s",
+        conn, params={"start": DATASET_START, "end": DATASET_END},
+    )
 
-    df_load["datetime"] = pd.to_datetime(df_load["datetime"], utc=True)
-    df_eolica["datetime"] = pd.to_datetime(df_eolica["datetime"], utc=True)
-    df_solar["datetime"] = pd.to_datetime(df_solar["datetime"], utc=True)
+    piezas_horarias = [
+        (df_load, COLS_DEMANDA_REAL), (df_entsoe, COLS_ENTSOE_REAL),
+        (df_esios, COLS_ESIOS_REAL), (df_solar_fv, ["solar_fv_mw"]),
+        (df_hydro_dispatch, ["hydro_dispatch_mw"]),
+    ]
+    aggs = []
+    for df, cols in piezas_horarias:
+        df["datetime"] = pd.to_datetime(df["datetime"], utc=True)  # normalizacion UTC manual, NUNCA parse_dates
+        df["fecha"] = df["datetime"].dt.tz_convert("Europe/Madrid").dt.date
+        aggs.append(df.groupby("fecha")[cols].agg(["mean", "min", "max"]))
 
-    df_load["fecha"] = df_load["datetime"].dt.tz_convert("Europe/Madrid").dt.date
-    df_eolica["fecha"] = df_eolica["datetime"].dt.tz_convert("Europe/Madrid").dt.date
-    df_solar["fecha"] = df_solar["datetime"].dt.tz_convert("Europe/Madrid").dt.date
-
-    agg_load = df_load.groupby("fecha")[COLS_DEMANDA_REAL].agg(["mean", "min", "max"])
-    agg_eolica = df_eolica.groupby("fecha")[COLS_EOLICA_BOMBEO_REAL].agg(["mean", "min", "max"])
-    agg_solar = df_solar.groupby("fecha")[COLS_SOLAR_REAL].agg(["mean", "min", "max"])
-
-    real_diario = agg_load.join([agg_eolica, agg_solar], how="outer")
+    real_diario = aggs[0].join(aggs[1:], how="outer")
     real_diario.columns = [f"{c}_{stat}" for c, stat in real_diario.columns]
 
     lag1 = _construir_lag(real_diario, 1, "lag1d")
@@ -362,19 +510,25 @@ def _features_lag_precio(target_wide_sin_shift: pd.DataFrame) -> pd.DataFrame:
     return lag1.join(lag7, how="outer")
 
 
-# Portugal y Francia son los UNICOS paises de spot_price con interconexion fisica a España.
-# El resto (Alemania, Italia, Suiza, Belgica, Holanda, Austria, Polonia, Chequia) no tiene cable
-# a España -- su correlacion con el precio español (0.5-0.68) probablemente ya la capturan
-# gas_ttf/co2_ets, y meterlos sin un canal causal real arriesga redundancia sin justificacion.
-COLS_PRECIO_VECINOS = ["pt_entsoe", "fr_entsoe"]
+# Ampliado 22-ago-2026 a peticion del equipo, "para probar": TODOS los paises de spot_price,
+# no solo Portugal/Francia (los unicos con interconexion fisica). Antes se excluia el resto
+# (Alemania, Italia, Suiza, Belgica, Holanda, Austria, Polonia, Chequia) razonando que su
+# correlacion con España (0.5-0.68) ya la capturaban gas_ttf/co2_ets -- esto es exactamente lo
+# que esta prueba busca confirmar o refutar con evidencia. es_entsoe/es_omie/pt_omie se EXCLUYEN
+# a proposito: son fuentes alternativas del propio precio español/portugues (no un pais "vecino"
+# distinto), no aportan una señal nueva sobre otro mercado.
+COLS_PRECIO_VECINOS = ["pt_entsoe", "fr_entsoe", "de_lu_entsoe", "it_nord_entsoe", "ch_entsoe",
+                        "be_entsoe", "nl_entsoe", "at_entsoe", "pl_entsoe", "cz_entsoe"]
 
 
 def _features_lag_precio_vecinos(conn) -> pd.DataFrame:
-    """Precio real de Portugal y Francia, D-1 y D-7 -- NUNCA el propio D+1. El precio de esos
-    paises para D+1 se fija en la MISMA subasta simultanea que el español (acoplamiento
-    SDAC/MIBEL) -- no se conoce con antelacion, usarlo sin lag seria casi tan circular como usar
-    el propio precio de España. Portugal correlaciona 0.997 con España (practicamente el mismo
-    mercado, coincide en el 94.9% de las horas); Francia 0.70 (conexion real, con capacidad
+    """Precio real de los paises de spot_price, D-1 y D-7 -- NUNCA el propio D+1. FUERA del
+    dataset por defecto desde 20-ago-2026 -- decision de reunion del equipo, ver
+    docs/columnas_pendientes_equipo.md. Solo se activa con `incluir_columnas_pendientes=True`.
+    El precio de esos paises para D+1 se fija en la MISMA subasta simultanea que el español
+    (acoplamiento SDAC/MIBEL) -- no se conoce con antelacion, usarlo sin lag seria casi tan
+    circular como usar el propio precio de España. Portugal correlaciona 0.997 con España
+    (practicamente el mismo mercado, coincide en el 94.9% de las horas); Francia 0.70 (conexion real, con capacidad
     limitada frente al tamaño de ambos mercados)."""
     df = pd.read_sql(
         f"SELECT datetime, {', '.join(COLS_PRECIO_VECINOS)} FROM spot_price WHERE datetime BETWEEN %(start)s AND %(end)s",
@@ -391,26 +545,34 @@ def _features_lag_precio_vecinos(conn) -> pd.DataFrame:
     return lag1.join(lag7, how="outer")
 
 
-COLS_CLIMA = ["t2m_mean", "wind10_mean", "wind100_mean", "ssrd_mean", "tcc_mean", "tp_mean"]
+# Las 9 columnas de medicion de era5_weather_agg -- ampliado 20-ago-2026 a peticion del equipo,
+# antes solo se usaban 6. Quedan fuera tensor_path/tensor_index: son metadatos internos del
+# pipeline de descarga (ruta del tensor NetCDF, indice), no variables fisicas.
+COLS_CLIMA = ["t2m_mean", "d2m_mean", "wind10_mean", "wind100_mean", "wind_gust10_mean",
+              "ssrd_mean", "tcc_mean", "tp_mean", "msl_mean"]
 
 
 def _features_clima(conn) -> pd.DataFrame:
     """Clima (ERA5) agregado por dia, alineado a D+1 -- MISMO criterio de shift que
     `_features_forecast` (describe D+1, se coloca en la fila D que lo usaria).
 
-    OJO -- esto NO es equivalente en seguridad al resto de features "seguras": ERA5 es
+    Incluida por defecto desde el 20-ago-2026, con visto bueno del equipo. OJO -- la salvedad de
+    seguridad sigue siendo real y vale la pena tenerla presente pese a la aprobacion: ERA5 es
     reanalisis (clima REAL ya ocurrido), no una prevision. Usar el clima de D+1 asume que en
     produccion se tendria una prevision ECMWF igual de buena para D+1, lo cual todavia no esta
-    validado (`ecmwf_forecast_agg` solo tiene unos dias de historico). Por eso esta funcion NO
-    se incluye por defecto en `construir_dataset_diario` -- solo con `incluir_clima=True`,
-    a proposito, para dejar clara la diferencia con el resto del catalogo.
+    validado (`ecmwf_forecast_agg` solo tiene unos dias de historico) -- pendiente de conversacion
+    del equipo, ver conversacion 20-ago-2026. El equipo decidio aceptar esa asuncion por ahora
+    -- para desactivarla, `incluir_clima=False`.
     """
     df = pd.read_sql(
         f"SELECT ts, {', '.join(COLS_CLIMA)} FROM era5_weather_agg WHERE ts BETWEEN %(start)s AND %(end)s ORDER BY ts",
         conn, params={"start": DATASET_START, "end": DATASET_END},
     )
     df["ts"] = pd.to_datetime(df["ts"], utc=True)   # normalizacion UTC manual, NUNCA parse_dates
-    df["t2m_mean"] = df["t2m_mean"] - 273.15   # Kelvin -> Celsius
+    # Kelvin -> Celsius: t2m (temperatura) y d2m (punto de rocio) son las dos unicas en Kelvin
+    # (verificado 20-ago-2026: d2m_mean ronda 276-277, mismo rango que t2m_mean sin convertir).
+    df["t2m_mean"] = df["t2m_mean"] - 273.15
+    df["d2m_mean"] = df["d2m_mean"] - 273.15
     df["fecha_objetivo"] = df["ts"].dt.tz_convert("Europe/Madrid").dt.date  # dia D+1 que describe
 
     feats = df.groupby("fecha_objetivo")[COLS_CLIMA].agg(["mean", "min", "max"])
@@ -420,14 +582,21 @@ def _features_clima(conn) -> pd.DataFrame:
     return feats
 
 
-def construir_dataset_diario(solo_filas_validas: bool = True, incluir_clima: bool = False) -> pd.DataFrame:
+def construir_dataset_diario(solo_filas_validas: bool = True, incluir_clima: bool = True,
+                              incluir_columnas_pendientes: bool = False) -> pd.DataFrame:
     """Construye el dataset maestro completo: target D+1 + features seguras + lags reales.
 
     Parametros:
         solo_filas_validas: si True (por defecto), excluye filas con el target D+1 incompleto
             (cambio de hora en marzo, borde final de la ventana de datos).
-        incluir_clima: si True, añade las features de ERA5 (ver `_features_clima` -- proxy de
-            una futura previsión ECMWF de D+1, no producción-segura tal cual). Por defecto False.
+        incluir_clima: si True (por defecto desde 20-ago-2026, con visto bueno del equipo), añade
+            las features de ERA5 (ver `_features_clima` -- proxy de una futura previsión ECMWF de
+            D+1, no producción-segura tal cual, salvedad aceptada por el equipo). `False` para
+            desactivarlo.
+        incluir_columnas_pendientes: si True, añade las 4 familias de columnas que la reunion del
+            equipo del 20-ago-2026 dejo FUERA del dataset por ahora (previsión ENTSO-E, diferencia
+            entre previsiones, capacidad disponible, precio de paises vecinos) -- ver
+            docs/columnas_pendientes_equipo.md para el detalle y el porque. Por defecto False.
 
     Devuelve un DataFrame indexado por "fecha" (el dia D, dia en que se hace la prediccion).
     """
@@ -447,27 +616,38 @@ def construir_dataset_diario(solo_filas_validas: bool = True, incluir_clima: boo
 
         target = _target_d1(conn)                       # con shift -1: target real de D+1
         feats_fcst = _features_forecast(conn)
+        feats_autoconsumo = _features_autoconsumo_prev(conn)
         feats_ntc = _features_ntc(conn)
-        feats_fcst_entsoe = _features_forecast_entsoe(conn)
-        feats_diff_previsiones = _features_diferencia_previsiones(conn)
         feats_dia_d = _features_dia_d(conn)
         cal = _calendario(target.index)
         feats_lag_real = _features_lag_reales(conn)
         feats_lag_precio = _features_lag_precio(target_wide)
-        feats_lag_precio_vecinos = _features_lag_precio_vecinos(conn)
         feats_clima = _features_clima(conn) if incluir_clima else None
+
+        if incluir_columnas_pendientes:
+            feats_fcst_entsoe = _features_forecast_entsoe(conn)
+            feats_diff_previsiones = _features_diferencia_previsiones(conn)
+            feats_capacidad = _features_capacidad_disponible(conn)
+            feats_lag_precio_vecinos = _features_lag_precio_vecinos(conn)
+        else:
+            feats_fcst_entsoe = feats_diff_previsiones = feats_capacidad = feats_lag_precio_vecinos = None
     finally:
         conn.close()
 
-    piezas = [feats_fcst, feats_ntc, feats_fcst_entsoe, feats_diff_previsiones,
-              feats_dia_d, cal, feats_lag_real, feats_lag_precio, feats_lag_precio_vecinos]
-    if feats_clima is not None:
-        piezas.append(feats_clima)
+    piezas = [feats_fcst, feats_autoconsumo, feats_ntc, feats_dia_d, cal, feats_lag_real, feats_lag_precio]
+    for pieza in (feats_fcst_entsoe, feats_diff_previsiones, feats_capacidad, feats_lag_precio_vecinos, feats_clima):
+        if pieza is not None:
+            piezas.append(pieza)
     dataset = target.join(piezas, how="left")
 
     if solo_filas_validas:
         target_cols = [c for c in dataset.columns if c.startswith("price_h")]
         dataset = dataset[dataset[target_cols].notna().all(axis=1)].copy()
+
+    # Redondeo a 2 decimales -- a peticion del equipo, 21-ago-2026. round() solo toca columnas
+    # numericas de coma flotante; el calendario (d1_dow/d1_month/d1_is_weekend, enteros) no se ve
+    # afectado. No cambia ninguna decision de modelado, solo la presentacion de los valores.
+    dataset = dataset.round(2)
 
     return dataset
 
