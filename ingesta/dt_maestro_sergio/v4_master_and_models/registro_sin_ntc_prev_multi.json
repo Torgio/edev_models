@@ -1,0 +1,13 @@
+{
+  "variante": "sin_ntc_prev",
+  "encoder_multicanal": true,
+  "canales": 22,
+  "estaticos": 30,
+  "dias_train": 1765,
+  "dias_val": 339,
+  "MAE_val": {
+    "MLP residuo": 19.68,
+    "Seq2Seq residuo": 15.43,
+    "naive D": 20.28
+  }
+}
