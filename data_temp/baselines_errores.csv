@@ -1,0 +1,16 @@
+baseline,tramo,dias,MAE,RMSE,sesgo
+persistencia_d1,train,1821.0,17.61,28.68,-0.08
+persistencia_d1,val,364.0,19.94,28.87,0.1
+persistencia_d1,test,237.0,17.21,26.42,-0.07
+persistencia_semanal,train,1815.0,25.63,41.01,-0.38
+persistencia_semanal,val,364.0,28.99,40.57,0.81
+persistencia_semanal,test,237.0,26.23,38.13,-0.81
+perfil_4_semanas,train,1794.0,24.7,37.65,-0.76
+perfil_4_semanas,val,364.0,26.24,34.63,1.4
+perfil_4_semanas,test,237.0,27.9,36.76,-3.03
+media_movil_7d,train,1818.0,20.04,30.84,-0.27
+media_movil_7d,val,364.0,23.26,30.75,0.4
+media_movil_7d,test,237.0,20.5,28.69,-0.34
+plano_d1,train,1821.0,20.89,31.45,-0.08
+plano_d1,val,364.0,30.2,38.79,0.1
+plano_d1,test,237.0,37.15,46.89,-0.07
