@@ -1,0 +1,13 @@
+{
+  "variante": "sin_2020",
+  "encoder_multicanal": true,
+  "canales": 31,
+  "estaticos": 40,
+  "dias_train": 1460,
+  "dias_val": 339,
+  "MAE_val": {
+    "MLP residuo": 17.13,
+    "Seq2Seq residuo": 14.86,
+    "naive D": 20.28
+  }
+}

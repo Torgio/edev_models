@@ -1,0 +1,14 @@
+import json, requests
+from pathlib import Path
+h = json.load(open("ingesta/credentials.json"))
+hd = {"Host": h["Host"], "x-api-key": h["x-api-key"], "Accept": "application/json"}
+for i, n in [(421,"hydro_ugh"),(424,"nuclear"),(432,"wind"),(434,"solar_pv"),
+             (437,"cogen"),(10234,"other_renew"),(10235,"TOTAL_SALES"),
+             (454,"retail_sales")]:
+    u = (f"https://api.esios.ree.es/indicators/{i}"
+         f"?start_date=2026-08-04T00:00:00&end_date=2026-08-04T23:59:59"
+         f"&time_trunc=hour&time_agg=sum")
+    v = requests.get(u, headers=hd, timeout=60).json()["indicator"]["values"]
+    vals = [x["value"] for x in v if x.get("value") is not None]
+    print(f"{i:>6} {n:<14} {len(vals):>3}h  media={sum(vals)/len(vals) if vals else 0:>10,.1f}")
+EOF

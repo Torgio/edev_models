@@ -1,0 +1,12 @@
+,MAE,RMSE,sMAPE,vs_naive_%
+Ensemble,13.357,18.967,65.239,-22.0
+LightGBM residuo,15.027,19.972,67.845,-12.3
+MLP residuo,15.044,20.891,71.479,-12.2
+Seq2Seq residuo + FT,15.581,21.531,68.174,-9.1
+Seq2Seq residuo,16.003,22.11,71.596,-6.6
+Seq2Seq residuo + pesos,16.622,22.04,71.895,-3.0
+naive D (precio de hoy),17.133,25.98,72.225,0.0
+MLP,18.71,24.012,71.702,9.2
+Seq2Seq,24.973,29.854,78.76,45.8
+naive D-6 (misma semana),26.4,38.389,88.282,54.1
+LSTM apilada,27.354,34.993,80.555,59.7

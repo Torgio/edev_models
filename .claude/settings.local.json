@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python \"C:/Users/torgi/AppData/Local/Temp/claude/C--Users-torgi-proyectos-tfm-energia/3685998f-10ac-4591-80db-07396b778117/scratchpad/explore_schema.py\")",
+      "Bash(python \"C:/Users/torgi/AppData/Local/Temp/claude/C--Users-torgi-proyectos-tfm-energia/3685998f-10ac-4591-80db-07396b778117/scratchpad/metrics.py\")",
+      "Bash(git fetch *)",
+      "Bash(git ls-tree *)",
+      "Bash(grep -E \"\\\\.py$\")",
+      "Bash(python -c ' *)",
+      "Bash(python \"C:/Users/torgi/AppData/Local/Temp/claude/C--Users-torgi-proyectos-tfm-energia/3685998f-10ac-4591-80db-07396b778117/scratchpad/missing.py\")",
+      "Bash(echo \"exit=$?\")",
+      "Read(//tmp/**)",
+      "Bash(python \"C:/Users/torgi/AppData/Local/Temp/claude/C--Users-torgi-proyectos-tfm-energia/3685998f-10ac-4591-80db-07396b778117/scratchpad/compare.py\")",
+      "Bash(python \"C:/Users/torgi/AppData/Local/Temp/claude/C--Users-torgi-proyectos-tfm-energia/3685998f-10ac-4591-80db-07396b778117/scratchpad/inspect2.py\")",
+      "Bash(grep -nE \"[0-9]{3,5}|ree_g|indicador|INDICAD|P48|T\\\\.?Real|telemetr|real|MAP|COLUMN\" ingesta/esios_gen_daily_pipeline.py)",
+      "Bash(grep -nE \"[0-9]{3,6}|ree_|indicador|P48|T\\\\.?Real|telemetr|INDICAD|CRITICO\" ingesta/esios_load_inter_pipeline.py)",
+      "Bash(python \"C:/Users/torgi/AppData/Local/Temp/claude/C--Users-torgi-proyectos-tfm-energia/3685998f-10ac-4591-80db-07396b778117/scratchpad/full_audit.py\")",
+      "Skill(schedule)",
+      "Skill(schedule:*)",
+      "Bash(python ingesta/monitor_tfm_energia.py)",
+      "Bash(echo \"---exit=$?---\")",
+      "Bash(python -c \"import sys;print\\(sys.executable\\)\")"
+    ]
+  }
+}

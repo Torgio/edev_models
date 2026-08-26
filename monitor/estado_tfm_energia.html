@@ -1,0 +1,40 @@
+<title>Estado tfm_energia — 2026-08-24</title>
+<style>
+:root{--bg:#fbfbfc;--pnl:#fff;--ink:#191c21;--mut:#6b7480;--faint:#9aa2ae;--line:#e4e7ec;
+--accent:#2f5da3;--ok:#4f8a63;--warn:#b07a26;--crit:#a8493b;
+--mono:ui-monospace,'Cascadia Code','SF Mono',Menlo,Consolas,monospace;
+--sans:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;--serif:'Iowan Old Style',Palatino,Georgia,serif;}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1216;--pnl:#161a20;--ink:#e9ecf1;--mut:#8b94a1;
+--faint:#69727f;--line:#252b33;--accent:#7aa5e0;--ok:#79b98d;--warn:#d4a654;--crit:#d98a7c;}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px}
+.wrap{max-width:820px;margin:0 auto;padding:56px 24px 80px}
+.eye{font-family:var(--mono);font-size:12px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;margin-bottom:18px;display:flex;align-items:center;gap:9px}
+.dot{width:9px;height:9px;border-radius:50%;flex:none}
+h1{font-family:var(--serif);font-size:30px;font-weight:600;margin:0 0 8px}
+.sub{color:var(--mut);margin:0 0 28px;font-family:var(--mono);font-size:12.5px}
+.banner{border-radius:9px;padding:16px 18px;margin:0 0 30px;border:1px solid}
+.banner.ok{background:color-mix(in srgb,var(--ok) 12%,transparent);border-color:color-mix(in srgb,var(--ok) 35%,transparent)}
+.banner.bad{background:color-mix(in srgb,var(--crit) 12%,transparent);border-color:color-mix(in srgb,var(--crit) 40%,transparent)}
+.banner h2{font-family:var(--serif);font-size:19px;margin:0 0 8px}
+.banner ul{margin:6px 0 0;padding-left:20px}.banner li{margin:3px 0;font-size:14px}
+.banner .note{color:var(--mut);font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--faint);border-bottom:1px solid var(--line);padding:8px 10px}
+td{padding:7px 10px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+td.t{font-family:var(--mono);font-size:12px}
+.pill{font-family:var(--mono);font-size:11px;padding:1px 7px;border-radius:10px}
+.pill.ok{color:var(--ok);background:color-mix(in srgb,var(--ok) 14%,transparent)}
+.pill.warn{color:var(--warn);background:color-mix(in srgb,var(--warn) 16%,transparent)}
+.pill.crit{color:var(--crit);background:color-mix(in srgb,var(--crit) 16%,transparent)}
+.num{text-align:right;font-family:var(--mono)}
+footer{margin-top:32px;font-family:var(--mono);font-size:11px;color:var(--faint)}
+</style>
+<div class="wrap">
+  <div class="eye"><span class="dot" style="background:var(--crit)"></span> monitor diario · 2026-08-24 10:00:02</div>
+  <h1>Estado de la base — tfm_energia</h1>
+  <p class="sub">host 91.134.143.153:5432 · 21 tablas de datos · 0 vacía(s) · autogenerado</p>
+  <div class="banner bad"><h2>⚠ 1 problema(s) detectado(s)</h2><ul><li>ATASCO: 'trayport_daily' llega a 2026-08-16 00:00 — 8 días de retraso (no avanza desde la última pasada).</li></ul></div>
+  <table><thead><tr><th>tabla</th><th class="num">filas</th><th class="num">cols</th><th>último dato</th><th>frescura</th></tr></thead>
+  <tbody><tr><td class="t">commodities</td><td class="num">2,427</td><td class="num">7</td><td class="t">2026-08-23 00:00</td><td><span class="pill ok">al día</span></td></tr><tr><td class="t">ecmwf_forecast_agg</td><td class="num">144</td><td class="num">13</td><td class="t">2026-08-25 21:00</td><td><span class="pill ok">al día</span></td></tr><tr><td class="t">entsoe_forecast_da</td><td class="num">58,271</td><td class="num">5</td><td class="t">2026-08-24 23:00</td><td><span class="pill ok">al día</span></td></tr><tr><td class="t">entsoe_gen_data</td><td class="num">58,223</td><td class="num">21</td><td class="t">2026-08-22 23:00</td><td><span class="pill warn">2d</span></td></tr><tr><td class="t">entsoe_load_inter</td><td class="num">58,223</td><td class="num">15</td><td class="t">2026-08-22 23:00</td><td><span class="pill warn">2d</span></td></tr><tr><td class="t">era5_weather_agg</td><td class="num">19,279</td><td class="num">12</td><td class="t">2026-08-06 18:00</td><td><span class="pill warn">18d</span></td></tr><tr><td class="t">esios_capacity_available</td><td class="num">58,289</td><td class="num">7</td><td class="t">2026-08-25 23:00</td><td><span class="pill ok">al día</span></td></tr><tr><td class="t">esios_capacity_installed</td><td class="num">2,427</td><td class="num">24</td><td class="t">2026-08-23 00:00</td><td><span class="pill ok">al día</span></td></tr><tr><td class="t">esios_forecast_da</td><td class="num">58,271</td><td class="num">15</td><td class="t">2026-08-24 23:00</td><td><span class="pill ok">al día</span></td></tr><tr><td class="t">esios_gen</td><td class="num">58,223</td><td class="num">21</td><td class="t">2026-08-22 23:00</td><td><span class="pill warn">2d</span></td></tr><tr><td class="t">esios_pbf_bilateral</td><td class="num">58,235</td><td class="num">22</td><td class="t">2026-08-24 23:00</td><td><span class="pill ok">al día</span></td></tr><tr><td class="t">esios_pbf_gen</td><td class="num">58,271</td><td class="num">22</td><td class="t">2026-08-24 23:00</td><td><span class="pill ok">al día</span></td></tr><tr><td class="t">esios_pbf_load_inter</td><td class="num">58,271</td><td class="num">13</td><td class="t">2026-08-24 23:00</td><td><span class="pill ok">al día</span></td></tr><tr><td class="t">esios_pdbc_gen</td><td class="num">58,271</td><td class="num">18</td><td class="t">2026-08-24 23:00</td><td><span class="pill ok">al día</span></td></tr><tr><td class="t">forecast</td><td class="num">58,271</td><td class="num">13</td><td class="t">2026-08-24 23:00</td><td><span class="pill ok">al día</span></td></tr><tr><td class="t">generation</td><td class="num">58,223</td><td class="num">17</td><td class="t">2026-08-22 23:00</td><td><span class="pill warn">2d</span></td></tr><tr><td class="t">load_inter</td><td class="num">58,223</td><td class="num">14</td><td class="t">2026-08-22 23:00</td><td><span class="pill warn">2d</span></td></tr><tr><td class="t">spot_price</td><td class="num">58,265</td><td class="num">15</td><td class="t">2026-08-24 23:00</td><td><span class="pill ok">al día</span></td></tr><tr><td class="t">trayport_daily</td><td class="num">41</td><td class="num">9</td><td class="t">2026-08-16 00:00</td><td><span class="pill crit">8d atrás</span></td></tr><tr><td class="t">trayport_daily_ohlc</td><td class="num">12,015</td><td class="num">12</td><td class="t">2026-08-21 00:00</td><td><span class="pill warn">3d</span></td></tr><tr><td class="t">trayport_trades</td><td class="num">1,742,941</td><td class="num">9</td><td class="t">2026-08-21 17:59</td><td><span class="pill warn">3d</span></td></tr></tbody></table>
+  <footer>monitor_tfm_energia.py · comparación contra la foto anterior · PROBLEMS.txt tiene el detalle</footer>
+</div>
