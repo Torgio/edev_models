@@ -54,7 +54,7 @@ from config import load_config
 # comparables (mismas fuentes, mismo criterio de leak-safety), solo cambia la estructura de filas.
 from construir_dataset_maestro import (
     DATASET_START, DATASET_END, TRAIN_END, VAL_END,
-    COLS_SEGURAS_FORECAST, COLS_NTC, COLS_FORECAST_ENTSOE,
+    COLS_SEGURAS_FORECAST, COLS_NTC,
     TABLA_DEMANDA_REAL, COLS_DEMANDA_REAL, TABLA_ENTSOE_REAL, COLS_ENTSOE_REAL,
     TABLA_ESIOS_REAL, COLS_ESIOS_REAL, COLS_PRECIO_VECINOS, COLS_CLIMA, COLS_COMMODITIES,
     COLS_AUTOCONSUMO_PREV, COLS_CAPACIDAD_DISPONIBLE,
@@ -126,8 +126,17 @@ def construir_dataset_horario(solo_filas_validas: bool = True, pdbc: str | None 
         # del mercado (mismo catalogo verificado que el dataset diario). ---
         df_fcst = _serie_horaria(conn, "esios_forecast_da", COLS_SEGURAS_FORECAST, idx)
         df_ntc = _serie_horaria(conn, "load_inter", COLS_NTC, idx)
-        df_fcst_entsoe = _serie_horaria(conn, "entsoe_forecast_da", COLS_FORECAST_ENTSOE, idx)
-        df_fcst_entsoe.columns = [f"entsoe_{c}" for c in df_fcst_entsoe.columns]
+        # entsoe_forecast_da RETIRADA (26-ago-2026): un compañero de equipo confirmo que la tabla
+        # `forecast` es la tabla FINAL para previsiones -- verificado en la BD: ree_gwind_prev y
+        # ree_gsolar_prev de `forecast` son IDENTICAS (corr=1,0) a gen_wind_prev_mw/gen_solar_pv_
+        # prev_mw de esios_forecast_da (que ya usamos via COLS_SEGURAS_FORECAST), y ree_demanda_prev
+        # de `forecast` es identica (corr=1,0) a demanda_mercado_prev_mw (que tambien ya usamos) --
+        # asi que entsoe_wind_forecast_mw/entsoe_solar_forecast_mw/entsoe_load_forecast_mw de
+        # entsoe_forecast_da nunca aportaron una fuente realmente distinta, solo una copia. Ademas
+        # confirmado con 5 semillas (prueba_redundancia_robustez.py, docs/notas_memoria_tfm.md
+        # nota 25): quitarlas no cambia el MAE de forma real. `entsoe_load` (demanda REAL, no
+        # prevision) se mantiene -- viene de `load_inter`, que ya es la tabla final consolidada
+        # para demanda real, y ahi si conviven dos lecturas legitimas (REE y ENTSO-E).
 
         # Autoconsumo previsto, de la nueva vista `forecast` (22-ago-2026) -- union por timestamp
         # exacto, mismo criterio que el resto de features seguras de esta seccion.
@@ -252,7 +261,7 @@ def construir_dataset_horario(solo_filas_validas: bool = True, pdbc: str | None 
         "regimen_tope_gas": regimen_tope_gas,
     }, index=idx)
 
-    piezas = [precio.rename("precio"), df_fcst, df_autoconsumo, df_ntc, df_fcst_entsoe, df_clima,
+    piezas = [precio.rename("precio"), df_fcst, df_autoconsumo, df_ntc, df_clima,
               lag_24h, lag_168h, comm_por_fila, calendario]
     if pdbc_mismodia is not None:
         piezas.append(pdbc_mismodia)
