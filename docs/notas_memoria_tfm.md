@@ -609,6 +609,20 @@ lo suficiente** — está sobreconfiado justo donde más importa no estarlo. Es 
 no un fracaso: confirma que vale la pena seguir por este camino, pero que la calibración cruda de
 cuantiles no basta.
 
+**Esto mismo se puede ver, no solo en números, en las ventanas de tiempo de
+`notebooks/04_incertidumbre_calibracion.ipynb`** (gráficas 1 y 2, panel "sin calibrar" — esas
+gráficas usan una corrida posterior del mismo experimento, por eso las cifras exactas varían un
+poco frente a las de arriba: 70,3%/70,5%/56,3% en vez de 70,8%/71,0%/59,7%, pero cuentan
+exactamente la misma historia). En la ventana de un mes normal (junio 2025), la banda sin calibrar
+sigue de cerca al precio real casi todo el tiempo — el intervalo parece funcionar bien. La
+diferencia se ve al hacer zoom sobre el apagón del 28-29 de abril de 2025: ahí la misma banda sin
+calibrar se queda claramente corta cuando el precio real se dispara — de las 63 horas alrededor
+del apagón marcadas como evento extremo, el intervalo crudo solo contuvo el precio real el **59%**
+de las veces. Es la forma más directa de mostrarle a alguien qué significa "sobreconfiado justo
+donde más importa no estarlo": un mes cualquiera parece estar bien resuelto, y es precisamente el
+caso más difícil — el que de verdad importa para una batería o para gestionar riesgo — donde el
+intervalo falla más.
+
 **Siguiente paso natural**: calibración conforme (*conformal prediction*), que ajusta el ancho del
 intervalo contra un conjunto de calibración para garantizar la cobertura objetivo de forma
 empírica, en vez de confiar en que el cuantil entrenado ya esté bien calibrado.
