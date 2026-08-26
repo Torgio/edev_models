@@ -63,7 +63,13 @@ def normalize_time_axis(df: pd.DataFrame, time_col: str, prefix: str, grain: str
 
     if grain == "daily":
         df = df.rename(columns={time_col: "date_local"})
-        df["date_local"] = pd.to_datetime(df["date_local"]).dt.date
+        # La columna puede venir como timestamp with time zone (no una fecha pura) --
+        # con offsets mixtos por el cambio de horario (+01 invierno / +02 verano) a lo
+        # largo del año. Sin utc=True, pd.to_datetime no puede resolver esa mezcla.
+        # Se resuelve como instante UTC real y luego se toma la fecha en hora local de
+        # Madrid, coherente con el date_local del calendario.
+        ts_temp = pd.to_datetime(df["date_local"], utc=True)
+        df["date_local"] = ts_temp.dt.tz_convert("Europe/Madrid").dt.date
         key_col = "date_local"
     else:
         df = df.rename(columns={time_col: "ts_utc"})
