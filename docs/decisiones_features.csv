@@ -1,0 +1,23 @@
+columna,veredicto,tratamiento,motivo
+spot_es_esios,TARGET,objetivo,"Las tres fuentes ES son idénticas (r=1,0000). Se elige por tener menos nulos."
+spot_es_omie / spot_es_entsoe,descartada,—,Idénticas a la elegida: aportarían copias.
+spot_* (11 zonas europeas),CON FUGA,sólo el precio de D,Casación SDAC simultánea a las 12:00.
+lags del precio D-1 y D-7,SIN FUGA,uso directo,"r=0,911 y 0,818: las features más fuertes disponibles."
+forecast_demanda_mercado_prev_mw,SIN FUGA,uso directo,"MAE 257 MW, prácticamente insesgada."
+forecast_gen_wind_prev_mw,SIN FUGA,corregir sesgo,MAE 772 MW y sesgo +128 MW: sobreestima.
+forecast_gen_solar_pv_prev_mw,SIN FUGA,corregir sesgo,MAE 547 MW y sesgo +198 MW. Mejor separador de horas caras.
+calc_demanda_residual_prev_mw,SIN FUGA,derivar,Demanda prevista menos renovable prevista: sin fuga por construcción.
+commodities_gas_ttf_m1,DESFASE D-2,lag de 2 días,"Cierra ~17:30, tras el cierre eléctrico."
+commodities_co2_eua_dec,DESFASE D-2,lag de 2 días,Ídem.
+era5_*,CON FUGA,sólo con lag o ablación,"Reanálisis. Sin ECMWF histórico, la meteo da cota superior optimista."
+era5_wind_gust10_mean / tp_mean,CON FUGA,no interpolar linealmente,Variables de pico: interpolar subestima los extremos.
+generation / load_inter,CON FUGA,lag D-1 y D-7,"Consecuencia del precio, no predictor."
+entsoe_pumping_gen_mw,CON FUGA,fillna(0) antes de agregar,"NaN significa 'no hubo turbinación', no 'se desconoce'."
+load_inter_entsoe_load,CON FUGA,reparar 9 ceros espurios,Fallo de ingesta documentado en pipeline_log.
+esios_gen_ree_gsolar_mw,descartada,usar calc_solar_fv_mw,Autoconsumo incorporado desde dic-2025 (D-03).
+load_inter_ree_load,descartada,usar entsoe_load,Mismo motivo (D-03).
+esios_gen_ree_ghidro_mw,descartada,usar las de ENTSO-E,Mezcla generación y bombeo: 8.831 horas negativas.
+entsoe_gas_mw,descartada,usar ESIOS separado,Mezcla CCGT y cogeneración; offset no estable (D-02).
+cap_inst_* constantes (6),descartada,—,Varianza cero en seis años (D-04).
+cap_disp_*,CONDICIONAL,no usar hasta tener _fc,D-01: el valor guardado ya conoce el día.
+esios_pdbc_gen,CON FUGA,"sólo con lag, si aporta",Contemporáneo es circular.

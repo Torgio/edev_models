@@ -66,6 +66,24 @@ TABLES = {
             "ree_gwind_mw", "ree_ghidro_mw",
         ],
     },
+    "spot_price": {
+        "time_col": "datetime",
+        "prefix": "spot",
+        "grain": "hourly",
+        # 14 columnas de precio. España por tres fuentes: sus medias coinciden
+        # (85,84 / 85,84 / 85,85), así que son intercambiables -- se traen las tres para
+        # poder cerrar esa comprobación con evidencia y documentar la elección de una vez.
+        # Las once zonas europeas tienen FUGA para D+1, porque todas las zonas SDAC se casan
+        # a la vez a las 12:00: el precio francés de D+1 no existe cuando hay que predecir
+        # el español de D+1. Se traen igualmente porque el precio de D sí es feature legítima
+        # y porque el análisis de congestión ES-PT y ES-FR sale de aquí, sin datos externos.
+        "columns": [
+            "es_esios", "es_entsoe", "es_omie",
+            "pt_entsoe", "pt_omie",
+            "fr_entsoe", "de_lu_entsoe", "it_nord_entsoe", "ch_entsoe",
+            "be_entsoe", "nl_entsoe", "at_entsoe", "pl_entsoe", "cz_entsoe",
+        ],
+    },
     "esios_capacity_available": {
         "time_col": "datetime",
         "prefix": "cap_disp",
