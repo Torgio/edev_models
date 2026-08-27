@@ -87,7 +87,7 @@ TABLES = {
     "esios_capacity_available": {
         "time_col": "datetime",
         "prefix": "cap_disp",
-        "grain": "daily",
+        "grain": "hourly",
         # Esquema real confirmado 26-ago vía information_schema/pgAdmin -- distinto al
         # catálogo original: sin gas_turbine_mw (no existe en esta tabla), y coal_mw
         # se llama coal_antracita_mw. 6 tecnologías, no 7.
