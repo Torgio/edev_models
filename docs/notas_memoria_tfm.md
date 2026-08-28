@@ -904,3 +904,55 @@ costes de operación/mantenimiento, y sin un tamaño de proyecto real todavía c
 equipo — es una herramienta para comparar estrategias (modelo vs. persistencia vs. límite teórico),
 no para dimensionar una inversión real.
 
+---
+
+## 27. La captura de arbitraje no es una sola métrica — encontrado al comparar con el resto del equipo
+
+Una compañera detectó, revisando el trabajo de todos, algo que ya estaba pasando dentro de nuestro
+propio proyecto sin que lo hubiéramos notado: el mismo baseline (`persistencia_d1`) tiene una
+"captura de arbitraje" de 86,5% en `notebooks/F11_baselines.ipynb` y de 81% en nuestra propia
+radiografía del modelo. Se investigó la causa exacta comparando el código de ambos, en vez de
+suponerla.
+
+**La causa, verificada**: "captura de arbitraje" no es una fórmula única, son varias decisiones de
+diseño distintas que cada notebook tomó por su cuenta:
+
+| | `F11_baselines.ipynb` | Capítulo 6 de la radiografía (`metricas_economicas_horario.py`) | Capítulo 7 de la radiografía (`simulador_bess_horario.py`) |
+|---|---|---|---|
+| Horas de carga/descarga por día | 4 (batería de 4h fija) | 1 (una sola hora) | 1, 2 o 4 (varias duraciones) |
+| Eficiencia ida-vuelta | 85% | sin modelar (0% de pérdida) | 90% |
+
+**Hallazgo incómodo pero importante: la inconsistencia no era solo entre notebooks de distintas
+personas, estaba también DENTRO de nuestro propio informe** — el capítulo 6 (métrica de una sola
+hora, sin pérdidas) y el capítulo 7 (el simulador BESS de verdad, con eficiencia) miden cosas
+distintas y no son comparables entre sí, aunque los dos aparezcan en el mismo documento. Queda
+documentado aquí con la misma honestidad que el resto del proyecto: fue un descuido, no una
+decisión.
+
+**La solución que propone el equipo, y con la que estamos de acuerdo**: una sola función de
+arbitraje compartida, dentro de `evaluar_modelos.py`, con los supuestos que ya definimos en
+`simulador_bess_horario.py` (1 MW, 90% de eficiencia, un ciclo al día) como estándar del equipo —
+la propuesta del equipo fija además una sola duración de referencia para el ranking (2h) y deja 1h
+y 4h como análisis de sensibilidad. En cuanto esa función exista, el capítulo 6 de nuestra propia
+radiografía debería recalcularse con ella y dejar de usar su fórmula de una sola hora.
+
+## 28. Entregable para el leaderboard del equipo — `pred_val_2025.csv` + `metadata.json`
+
+Por el calendario que propuso el equipo (modelos cerrados el domingo 30-ago, un evaluador común
+calcula todas las métricas para los doce a la vez), se generó el entregable pedido en
+`modelos/lgbm_horario_afinado_cqr/` — sin calcular nuestro propio MAE ni captura de arbitraje para
+reportar, tal como pide el plan del equipo.
+
+**Al construirlo, dos hallazgos que valía la pena registrar:**
+
+1. **Los artefactos guardados habían quedado desactualizados**: la retirada de las 3 columnas
+   duplicadas de ENTSO-E (nota 24) se aplicó al script del dataset pero nunca se reentrenó el
+   modelo final con el dataset ya limpio. Se reentrenaron los tres modelos (puntual, incertidumbre,
+   calibración conforme) sobre el dataset actual antes de generar el entregable. El MAE se movió de
+   12,55 a 12,63 €/MWh — un cambio pequeño (0,08, dentro del ruido de semilla ya documentado en la
+   nota 25), no una regresión real.
+2. **Falta exactamente 1 hora de las 8.760 esperadas de 2025**: `2025-10-26 00:00 UTC`, justo el
+   cambio de hora de octubre. Se verificó directamente en `spot_price`: esa hora no tiene ningún
+   valor, ni siquiera nulo — un hueco real de la tabla fuente, no un error de nuestro código (que
+   ya trabaja en UTC desde el principio, precisamente para evitar este tipo de problema). Se
+   entregaron 8.759 filas con la ausencia documentada, en vez de inventar un valor.
