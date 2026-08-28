@@ -28,3 +28,10 @@ modelos/dataset_maestro.csv
 modelos/dataset_horario.csv
 modelos/espina_horaria.csv
 modelos/artefactos/
+
+monitor/PROBLEMS.txt
+monitor/monitor_log.txt
+monitor/monitor_state.json
+monitor/estado_tfm_energia.html
+
+data/bronze/*.parquet

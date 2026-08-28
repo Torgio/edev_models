@@ -60,6 +60,56 @@ TABLES = {
             # solo para reproducir la evidencia de D-03 (contaminación de autoconsumo
             # desde dic-2025) contra entsoe_solar_mw. No usar para modelar.
             "ree_gsolar_mw",
+            # ree_gwind_mw / ree_ghidro_mw: descartadas por la matriz de generación
+            # (coincide con ENTSO-E / mezcla hidráulica+bombeo respectivamente). Se
+            # traen solo para el bloque E (consistencia cruzada), no para modelar.
+            "ree_gwind_mw", "ree_ghidro_mw",
+        ],
+    },
+    "spot_price": {
+        "time_col": "datetime",
+        "prefix": "spot",
+        "grain": "hourly",
+        # 14 columnas de precio. España por tres fuentes: sus medias coinciden
+        # (85,84 / 85,84 / 85,85), así que son intercambiables -- se traen las tres para
+        # poder cerrar esa comprobación con evidencia y documentar la elección de una vez.
+        # Las once zonas europeas tienen FUGA para D+1, porque todas las zonas SDAC se casan
+        # a la vez a las 12:00: el precio francés de D+1 no existe cuando hay que predecir
+        # el español de D+1. Se traen igualmente porque el precio de D sí es feature legítima
+        # y porque el análisis de congestión ES-PT y ES-FR sale de aquí, sin datos externos.
+        "columns": [
+            "es_esios", "es_entsoe", "es_omie",
+            "pt_entsoe", "pt_omie",
+            "fr_entsoe", "de_lu_entsoe", "it_nord_entsoe", "ch_entsoe",
+            "be_entsoe", "nl_entsoe", "at_entsoe", "pl_entsoe", "cz_entsoe",
+        ],
+    },
+    "esios_capacity_available": {
+        "time_col": "datetime",
+        "prefix": "cap_disp",
+        "grain": "hourly",
+        # Esquema real confirmado 26-ago vía information_schema/pgAdmin -- distinto al
+        # catálogo original: sin gas_turbine_mw (no existe en esta tabla), y coal_mw
+        # se llama coal_antracita_mw. 6 tecnologías, no 7.
+        "columns": ["hydro_mw", "pump_mw", "nuclear_mw", "coal_antracita_mw", "ccgt_mw", "fuel_mw"],
+    },
+    "esios_capacity_installed": {
+        "time_col": "date",
+        "prefix": "cap_inst",
+        "grain": "daily",
+        # 18 tecnologías individuales (información_schema real, confirmado 21-ago).
+        # Excluidos los 5 total_* (total_mw, total_renewable_mw, total_nonrenewable_mw,
+        # total_hybrid_mw, total_autoconsume_mw): colinealidad exacta con la suma de sus
+        # componentes, mismo criterio que en la matriz de generación.
+        # ccgt_mw/nuclear_mw/pump_mw/fuel_mw: constantes según D-04 (evidencia, no
+        # features). autoconsume_battery_mw: indicador 2366, congelado en origen (D-04).
+        # autoconsume_solar_pv_mw: validación cruzada de D-03 (sí varía).
+        "columns": [
+            "hydro_mw", "pump_mw", "wind_mw", "wind_hybrid_mw",
+            "solar_pv_mw", "solar_thermal_mw", "solar_pv_hybrid_mw",
+            "other_renewable_mw", "waste_nonrenewable_mw", "waste_renewable_mw",
+            "battery_hybrid_mw", "autoconsume_solar_pv_mw", "autoconsume_battery_mw",
+            "nuclear_mw", "coal_mw", "fuel_mw", "ccgt_mw", "cogeneration_mw",
         ],
     },
     "load_inter": {
@@ -80,7 +130,15 @@ TABLES = {
         "grain": "hourly",
         # Mismas 3 columnas que COLS_SEGURAS_FORECAST en construir_dataset_maestro.py --
         # importadas de ahí en el notebook de unión, no reescritas a mano acá.
-        "columns": ["demanda_mercado_prev_mw", "gen_wind_prev_mw", "gen_solar_pv_prev_mw"],
+        "columns": [
+            "demanda_mercado_prev_mw", "gen_wind_prev_mw", "gen_solar_pv_prev_mw",
+            # demanda_residual_prev_mw: EXCLUIDA del maestro por revisión 10-14 días
+            # (la previsión se sigue actualizando después de publicada). Se trae solo
+            # para chequear si ADEMÁS arrastra contaminación de autoconsumo, comparando
+            # contra demanda_mercado_prev_mw (documentada "sin autoconsumo"). No usar
+            # para modelar.
+            "demanda_residual_prev_mw",
+        ],
     },
     "commodities": {
         "time_col": "fecha",
