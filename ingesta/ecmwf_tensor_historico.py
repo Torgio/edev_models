@@ -49,9 +49,15 @@ dia, asi que no cabe en una sesion: son unos 12 dias naturales. El script esta h
 eso -- cada corrida gasta su `--cupo` y para sola, y la siguiente detecta los `.npy` que
 ya estan en disco y sigue donde lo dejo. No hay que pasarle fechas.
 
-    30 0 * * * /home/ubuntu/tfm-env/bin/python /home/ubuntu/scripts/ingesta/ecmwf_tensor_historico.py --a-postgres --cupo 9000 >> /home/ubuntu/scripts/logs/cron_ecmwf_tensor.log 2>&1
+    30 2 * * * /home/ubuntu/tfm-env/bin/python -u /home/ubuntu/scripts/ingesta/ecmwf_tensor_historico.py --a-postgres --cupo 9000 >> /home/ubuntu/scripts/logs/cron_ecmwf_tensor.log 2>&1
 
-A las 00:30 UTC para pillar el cupo diario recien reseteado. `--cupo 9000` deja un margen
+El `-u` es imprescindible: sin el, Python acumula la salida al redirigir a fichero y el
+log parece vacio durante horas aunque el proceso este trabajando.
+
+A las 02:30 y no a las 00:30 porque el crontab del servidor lleva `CRON_TZ=Europe/Madrid`:
+las 00:30 de Madrid son las 22:30 o 23:30 UTC, o sea el dia ANTERIOR, con el cupo diario
+de Open-Meteo probablemente ya gastado. Las 02:30 de Madrid caen ya en el dia UTC nuevo
+en cualquier epoca del año. `--cupo 9000` deja un margen
 de 1.000 unidades por si algo mas tira de la misma API. Cuando el log diga "Tramos
 descargados: 0" varios dias seguidos, el historico esta completo y el cron se puede
 retirar (o dejarlo: no hace nada y no cuesta).
