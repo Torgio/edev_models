@@ -30,7 +30,7 @@ import pandas as pd
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error
 
-from ... import ajustes as config, artifacts, evaluation, preparacion
+from .. import ajustes as config, artifacts, evaluation, preparacion
 
 log = logging.getLogger(__name__)
 
