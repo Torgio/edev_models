@@ -25,8 +25,8 @@ ree_gsolar_prev,forecast,prevision D+1
 ree_grenov_prev,forecast,prevision D+1
 pt_entsoe_D,"spot_price (Europa, dia D)",precio
 fr_entsoe_D,"spot_price (Europa, dia D)",precio
+de_lu_entsoe_D,"spot_price (Europa, dia D)",precio
 it_nord_entsoe_D,"spot_price (Europa, dia D)",precio
-be_entsoe_D,"spot_price (Europa, dia D)",precio
 pl_entsoe_D,"spot_price (Europa, dia D)",precio
 spread_es_pt_D,spot_price (lag),precio
 spread_es_fr_D,spot_price (lag),precio
@@ -71,6 +71,7 @@ ree_gcoal_mw_Dm6,generation (real D-1/D-6),real desfasado
 solar_fv_mw_Dm6,generation (real D-1/D-6),real desfasado
 hydro_dispatch_mw_Dm6,generation (real D-1/D-6),real desfasado
 tp_acum_30d_met_Dm1,era5_weather_agg,meteorologia
+t2m_mean_met_Dm2,era5_weather_agg,meteorologia
 d2m_mean_met_Dm2,era5_weather_agg,meteorologia
 msl_mean_met_Dm2,era5_weather_agg,meteorologia
 wind100_mean_met_Dm2,era5_weather_agg,meteorologia
@@ -84,11 +85,6 @@ capinst_total_autoconsume_mw,esios_capacity_installed,capacidad
 capinst_wind_mw,esios_capacity_installed,capacidad
 capinst_waste_nonrenewable_mw,esios_capacity_installed,capacidad
 capinst_coal_mw,esios_capacity_installed,capacidad
-capdisp_hydro_mw,esios_capacity_available,capacidad
-capdisp_pump_mw,esios_capacity_available,capacidad
-capdisp_nuclear_mw,esios_capacity_available,capacidad
-capdisp_coal_antracita_mw,esios_capacity_available,capacidad
-capdisp_ccgt_mw,esios_capacity_available,capacidad
 d1_dow_sin,CALENDARIO (calculado),calendario
 d1_dow_cos,CALENDARIO (calculado),calendario
 d1_month_cos,CALENDARIO (calculado),calendario
@@ -117,7 +113,6 @@ pbfli_demand_aux_mw_D,esios_pbf_load_inter,programa PBF
 pbfli_total_demand_mw_D,esios_pbf_load_inter,programa PBF
 pbfli_net_flow_fr_mw_D,esios_pbf_load_inter,programa PBF
 pbfli_net_flow_pt_mw_D,esios_pbf_load_inter,programa PBF
-pbfli_net_flow_ma_mw_D,esios_pbf_load_inter,programa PBF
 pbfli_net_flow_ad_mw_D,esios_pbf_load_inter,programa PBF
 pbfli_total_net_flow_mw_D,esios_pbf_load_inter,programa PBF
 bil_retail_free_sales_mw_D,esios_pbf_bilateral,programa PBF
@@ -126,8 +121,14 @@ bil_retail_last_resort_mw_D,esios_pbf_bilateral,programa PBF
 bil_direct_consumer_mw_D,esios_pbf_bilateral,programa PBF
 bil_generic_sales_mw_D,esios_pbf_bilateral,programa PBF
 bil_generic_buy_mw_D,esios_pbf_bilateral,programa PBF
+capdisp_hydro_mw,esios_capacity_available,capacidad
+capdisp_pump_mw,esios_capacity_available,capacidad
+capdisp_nuclear_mw,esios_capacity_available,capacidad
+capdisp_coal_antracita_mw,esios_capacity_available,capacidad
+capdisp_ccgt_mw,esios_capacity_available,capacidad
 t2m_meteo,era5_weather_agg,meteorologia
 d2m_meteo,era5_weather_agg,meteorologia
-wind10_meteo,era5_weather_agg,meteorologia
+wind100_meteo,era5_weather_agg,meteorologia
+ssrd_meteo,era5_weather_agg,meteorologia
 tcc_meteo,era5_weather_agg,meteorologia
 msl_meteo,era5_weather_agg,meteorologia
