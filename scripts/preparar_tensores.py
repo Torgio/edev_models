@@ -59,7 +59,26 @@ class Tensores:
     cols_est: list
     i_pD: int
     naive: np.ndarray          # precio del dia D en ESCALA ORIGINAL, sin escalar
+    # Los escaladores NO se tiran. Un modelo guardado espera entradas estandarizadas, y sin
+    # la media y la desviacion de train recibe numeros en otra escala y devuelve basura SIN
+    # AVISAR. Son parte del modelo tanto como los pesos.
+    esc: dict = field(default_factory=dict)
     meta: dict = field(default_factory=dict)
+
+    def preprocesado(self):
+        """Todo lo que hace falta para servir el modelo fuera de aqui.
+
+        Incluye el orden de las columnas a proposito: el modelo aprendio que el canal 17 es
+        la eolica programada, y si la matriz se regenera con otro orden seguira prediciendo
+        -- con numeros plausibles y equivocados. Al cargar hay que comprobarlo.
+        """
+        return {"hash_matriz": self.meta.get("hash"), "matriz": self.meta.get("nombre"),
+                "ventana_dias": int(self.X_enc.shape[1] // 24),
+                "canales": self.canales, "cols_dec": self.cols_dec,
+                "cols_est": self.cols_est, "i_pD": int(self.i_pD),
+                "escaladores": {k: {"mu": v.mu.ravel().tolist(),
+                                    "sd": v.sd.ravel().tolist()}
+                                for k, v in self.esc.items()}}
 
     def ent(self, m):
         return {"hist": self.X_enc[m], "fut": self.X_dec[m], "est": self.X_est[m]}
@@ -191,9 +210,9 @@ def preparar(matriz="nucleo", ventana=VENTANA_DIAS, multicanal=True, verbose=Tru
     # Tomarlo de `Xd` daria el precio estandarizado y el residuo no tendria sentido fisico.
     naive = X_dec[:, :, i_pD].copy()
 
-    Xe = Escalador().fit(X_enc[tr])(X_enc)
-    Xd = Escalador().fit(X_dec[tr])(X_dec)
-    Xs = Escalador().fit(X_est[tr])(X_est)
+    s_enc, s_dec, s_est = (Escalador().fit(X_enc[tr]), Escalador().fit(X_dec[tr]),
+                           Escalador().fit(X_est[tr]))
+    Xe, Xd, Xs = s_enc(X_enc), s_dec(X_dec), s_est(X_est)
 
     if verbose:
         print(f"{matriz:9s} hash {meta.get('hash','?')} · {len(fechas):,} dias · "
@@ -201,7 +220,7 @@ def preparar(matriz="nucleo", ventana=VENTANA_DIAS, multicanal=True, verbose=Tru
               f"estaticos {Xs.shape[-1]} · train {int(tr.sum())} val {int(va.sum())} "
               f"test {int(te.sum())}")
     return Tensores(Xe, Xd, Xs, y, fechas, tr, va, te, canales, cols_dec, cols_est,
-                    i_pD, naive, meta)
+                    i_pD, naive, {"enc": s_enc, "dec": s_dec, "est": s_est}, meta)
 
 
 def residuo(T: Tensores):

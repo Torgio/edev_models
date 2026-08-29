@@ -1,0 +1,2 @@
+familia,semilla,parametros,MAE_val,MAE_test,captura_val_%,captura_test_%,pico_1h_test_%,vs_naive_val_%
+simplernn,42,34689,15.177,14.193,86.95,89.91,72.99,-23.9
