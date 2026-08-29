@@ -1,0 +1,17 @@
+{
+  "matriz": "nucleo",
+  "hash_matriz": "4a8f328e",
+  "generada": "2026-08-29 13:47",
+  "encoder_multicanal": true,
+  "aisla": "columnas (\u00bfsobran variables?)",
+  "canales": 51,
+  "estaticos": 29,
+  "n_inputs": 113,
+  "dias_train": 1812,
+  "dias_val": 365,
+  "MAE_val": {
+    "MLP residuo": 17.21,
+    "Seq2Seq residuo": 13.68,
+    "naive D": 19.95
+  }
+}
