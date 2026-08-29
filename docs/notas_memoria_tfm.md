@@ -991,3 +991,42 @@ fecha que *parece* razonable — el error está en la hora exacta de publicació
 original, no en la estructura del dataset. Vale la pena que quede documentado como ejemplo
 concreto de por qué la frontera de fuga hay que verificarla contra la hora de cierre real de cada
 fuente, no solo contra su fecha.
+
+---
+
+## 30. El equipo converge en una matriz única ("núcleo") — y ya incorpora nuestras correcciones
+
+Un compañero de equipo construyó una herramienta de auditoría de fuga (`scripts/auditoria_frontera.py`)
+que mide, contra la tabla fuente real, qué día describe cada columna — sin fiarse de los nombres.
+Aplicada sobre `data/gold/matriz_nucleo.parquet` (la matriz que un análisis multi-modelo con
+varias semillas identificó como la más consistente entre cuatro candidatas), el veredicto es
+limpio: **"ninguna columna describe el día objetivo. Frontera respetada."**
+
+Dos hallazgos notables al revisarla:
+- **Confirma de forma independiente nuestra corrección de la nota 29**: la auditoría mide que
+  commodities describe D-2 respecto al día objetivo (con un margen de 54,7 puntos sobre la
+  siguiente opción) — exactamente la corrección que acabábamos de aplicar por nuestra cuenta.
+- **Ya incluye dos features que propusimos nosotros**: `d1_es_puente` y `d1_regimen_tope_gas`
+  están en su catálogo de columnas.
+
+**Decisión**: adoptar `nucleo` como la matriz compartida del proyecto, en vez de mantener
+`construir_dataset_horario.py` como una construcción paralela. Se reentrenó nuestro LightGBM
+sobre ella (`modelos/modelo_lightgbm_nucleo.py`), reutilizando los hiperparámetros ganadores de
+Optuna (sin re-afinar todavía, por tiempo — sería el siguiente paso si el modelo sigue siendo
+candidato serio):
+
+| | MAE (validation) |
+|---|---|
+| LightGBM sobre `nucleo` | **12,92 €/MWh** |
+| LightGBM sobre nuestra propia matriz horaria (nota 29) | 12,86 €/MWh |
+
+Prácticamente el mismo resultado (diferencia de 0,06, muy dentro del ruido de semilla ya
+documentado) — confirma que ambas matrices capturan una señal equivalente, y respalda converger
+en una sola sin perder nada.
+
+**Pendiente de aclarar con el equipo, no resuelto aquí**: la tabla comparativa que circuló junto
+con el análisis de matrices reporta "211 días de test" — coincide con el conjunto 2026 que el
+plan de productivización del equipo acordó abrir una sola vez, con los modelos ya congelados, el
+31 de agosto. Si esa tabla ya comparó y ordenó varias variantes de modelo usando esos datos, es el
+riesgo de "quemar el test" que el propio plan advertía por escrito. Queda como pregunta abierta
+para el equipo, no una decisión que se tome unilateralmente aquí.
