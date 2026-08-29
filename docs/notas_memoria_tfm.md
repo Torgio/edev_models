@@ -1030,3 +1030,42 @@ plan de productivización del equipo acordó abrir una sola vez, con los modelos
 31 de agosto. Si esa tabla ya comparó y ordenó varias variantes de modelo usando esos datos, es el
 riesgo de "quemar el test" que el propio plan advertía por escrito. Queda como pregunta abierta
 para el equipo, no una decisión que se tome unilateralmente aquí.
+
+---
+
+## 31. Primera versión mínima de Transformer — confirma el patrón exacto que ya habíamos visto
+
+**Objetivo, fijado antes de ver el resultado (no reinterpretado después)**: no se esperaba superar
+a LightGBM en precisión — la evidencia acumulada (notas 14, 18, 19, 22, 23) apunta en contra de esa
+expectativa, y con ~1.800 días de entrenamiento este es un dataset modesto para un Transformer. El
+objetivo real era doble: (1) comprobar si un modelo que ve la secuencia cruda de 168 horas de
+precio real (sin la ingeniería manual de lags) encuentra algo que nuestras features no capturan, y
+(2) ver si predecir las 24 horas del día a la vez produce una forma más coherente, útil para el
+valor económico aunque no para el MAE puro — el mismo patrón que ya mostró el Seq2Seq del
+compañero (nota 23).
+
+**Arquitectura**: encoder-decoder pequeño con atención (46.785 parámetros, `d_model=32`, 2 capas).
+El encoder ve las 168 horas reales de precio de la semana anterior al día objetivo (sin fuga); el
+decoder, para cada una de las 24 horas, consume las mismas 122 features "seguras" que usa
+LightGBM (previsiones, calendario, NTC, capacidad) y hace atención cruzada sobre el encoder.
+Entrenado sobre la matriz `nucleo`, 33 épocas hasta la parada temprana.
+
+**Resultado — se cumplió la predicción hecha de antemano, con números concretos**:
+
+| | LightGBM (nucleo) | Transformer mínimo |
+|---|---|---|
+| MAE | **12,92 €/MWh** | 14,14 €/MWh |
+| Captura de arbitraje | 91,0% | **93,3%** |
+| Acierto hora pico ±1h | 79,4% | **83,0%** |
+
+Exactamente el patrón anticipado y el mismo que encontró el compañero con su Seq2Seq: peor
+precisión puntual, mejor valor económico. No es una casualidad aislada — es la segunda vez que
+aparece este mismo patrón en el proyecto, con dos arquitecturas secuenciales distintas construidas
+por dos personas distintas. Eso lo hace un hallazgo más sólido para la memoria que si solo
+hubiera pasado una vez.
+
+**Lectura para la memoria**: el Transformer no reemplaza a LightGBM como modelo puntual, pero es
+un candidato serio para la capa de decisión de la batería (capítulo BESS) precisamente porque
+optimiza mejor el *orden relativo* de las horas del día, que es lo que de verdad importa para
+cargar y descargar — no el precio exacto. Queda documentado como comparación honesta, no como
+"ganador" ni "descartado".
