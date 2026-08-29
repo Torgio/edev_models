@@ -184,6 +184,47 @@ def main():
     print("las demas. Si `moderna` empata, esta ganando: consigue lo mismo con el 40 % de")
     print("los datos. Y si una arquitectura cambia de posicion entre columnas, ahi esta la")
     print("interaccion entre tamano de matriz y tamano de modelo que motiva este barrido.")
+
+    # ── comparacion PAREADA por semilla ───────────────────────────────────────
+    # Comparar medias sueltas desperdicia el diseno: las cuatro matrices se entrenan con
+    # LAS MISMAS semillas, asi que restando cada matriz contra otra en la MISMA semilla y
+    # arquitectura desaparece la varianza de inicializacion, que es la que ensucia todo.
+    #
+    # Con medias sueltas hacen falta diferencias de ~0,5 para distinguir algo; pareado
+    # basta con ~0,15. Y el criterio se lee sin estadistica: si las diferencias tienen
+    # todas el mismo signo y superan su propia dispersion, hay ganador; si cambian de
+    # signo, lo que se esta midiendo es ruido.
+    print()
+    print("=" * 74)
+    print("COMPARACION PAREADA (cada matriz contra `nucleo`, misma semilla y arquitectura)")
+    ref = "nucleo"
+    if ref in set(d.matriz):
+        base = d[d.matriz == ref].set_index(["arquitectura", "semilla"])["MAE_val"]
+        filas = []
+        for m in [x for x in d.matriz.unique() if x != ref]:
+            otra = d[d.matriz == m].set_index(["arquitectura", "semilla"])["MAE_val"]
+            dif = (otra - base).dropna()
+            if not len(dif):
+                continue
+            mismo = bool((dif > 0).all() or (dif < 0).all())
+            filas.append({
+                "matriz": m, "n_pares": len(dif),
+                "dif_media": round(float(dif.mean()), 3),
+                "dif_sd": round(float(dif.std(ddof=1)), 3) if len(dif) > 1 else None,
+                "mismo_signo": mismo,
+                "veredicto": (f"gana {ref}" if dif.mean() > 0 else f"gana {m}")
+                             if mismo and abs(dif.mean()) > 0.15 else "empate",
+            })
+        if filas:
+            print(pd.DataFrame(filas).to_string(index=False))
+            print()
+            print(f"`dif_media` positiva significa PEOR que {ref}.")
+            print("`mismo_signo` es la clave: si el signo cambia entre semillas, se esta")
+            print("midiendo ruido y no la matriz.")
+            print()
+            print("Si empata con `completa`, gana `nucleo`: mismo resultado con 113 inputs")
+            print("en vez de 141. Si el empate es con `moderna`, es un hallazgo -- consigue")
+            print("lo mismo con el 40 % de los dias, o sea que 2020-2022 no aportan.")
     print(f"\nGuardado en {SALIDA}")
 
 
