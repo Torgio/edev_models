@@ -215,18 +215,38 @@ def guardar_por_run_date(horas, tensor, paso: float, lead: int,
     return filas
 
 
-def escribir_rutas(con, filas):
-    """Solo actualiza `tensor_path` de filas que YA existen y no lo tienen.
+def escribir_rutas(con, filas, sustituir=False, pasos_dia=24):
+    """Actualiza `tensor_path` de filas que YA existen. No inserta: los agregados los crea
+    `ecmwf_forecast_historico.py`.
 
-    No inserta: las filas de agregados las crea `ecmwf_forecast_historico.py`. Y usa
-    `tensor_path IS NULL` para no pisar nunca las del cron, que apuntan a su propio GRIB.
+    SUSTITUIR. Por defecto respeta lo que ya haya -- que es el tensor del cron, un GRIB
+    trihorario -- y solo rellena huecos. Con `sustituir=True` el horario PISA al trihorario,
+    que es lo que se quiere cuando la fuente del tensor pasa a ser Open-Meteo tambien en
+    produccion.
+
+    Y solo pisa DIAS COMPLETOS. Si un dia bajara 14 de las 24 horas, sustituir a medias
+    dejaria unas horas apuntando al .npy de Open-Meteo y otras al GRIB del cron: dos
+    productos distintos dentro del mismo dia, con el viento de uno un 8-12 % por encima del
+    otro. Un dia incompleto se deja como estaba y se reintenta en la siguiente corrida.
     """
+    from collections import Counter
+    from psycopg2.extras import execute_values
+
+    if sustituir:
+        por_dia = Counter(f[1] for f in filas)          # f[1] = run_date
+        completos = {d for d, n in por_dia.items() if n >= pasos_dia}
+        descartados = len(por_dia) - len(completos)
+        filas = [f for f in filas if f[1] in completos]
+        if descartados:
+            print(f"      {descartados} dias incompletos, no se sustituyen todavia")
+
+    cond = "" if sustituir else " AND t.tensor_path IS NULL"
     from psycopg2.extras import execute_values
     with con.cursor() as cur:
         execute_values(cur, f"""
             UPDATE {TABLA} t SET tensor_path = d.path, tensor_index = d.idx
             FROM (VALUES %s) AS d(ts, run_date, path, idx)
-            WHERE t.ts = d.ts AND t.run_date = d.run_date AND t.tensor_path IS NULL
+            WHERE t.ts = d.ts AND t.run_date = d.run_date{cond}
         """, filas, template="(%s::timestamp, %s::date, %s, %s::int)", page_size=2000)
         n = cur.rowcount
     con.commit()
@@ -249,6 +269,10 @@ if __name__ == "__main__":
     # Horario POR DEFECTO. Se guarda al maximo que da la fuente y se submuestrea al
     # entrenar: `tensor[::3]` da los 8 pasos que reproducira produccion, y al reves no
     # hay vuelta. Mismo criterio que con la rejilla (0.25 grados, no 1).
+    ap.add_argument("--sustituir", action="store_true",
+                    help="el tensor horario PISA al trihorario del cron. Solo en dias "
+                         "completos: un dia a medias mezclaria dos productos. Implica que "
+                         "Open-Meteo pasa a ser la fuente del tensor tambien en produccion")
     ap.add_argument("--trihorario", action="store_true",
                     help="guardar solo los 8 pasos de produccion en vez de las 24 horas")
     ap.add_argument("--cupo", type=int, default=9000,
@@ -295,7 +319,8 @@ if __name__ == "__main__":
             gastado += len(puntos)
             hechos += 1
             if con is not None:
-                rutas += escribir_rutas(con, filas)
+                rutas += escribir_rutas(con, filas, sustituir=a.sustituir,
+                                        pasos_dia=pasos)
             print(f"  tramo {ti}/{len(tramos)} ({ini}->{fin}) OK · "
                   f"{len(set(f[1] for f in filas))} dias · {gastado:,} unidades · "
                   f"{time.time() - t0:.0f}s")
