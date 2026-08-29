@@ -1,0 +1,50 @@
+{
+  "nombre": "completa",
+  "aisla": "referencia",
+  "origen": "Postgres vía construir_matriz.construir()",
+  "bloque_generacion": "PDBC horario leído de esios_pdbc_gen; el bombeo de esios_pbf_gen, donde los ceros están intactos",
+  "filas": 57521,
+  "columnas": 161,
+  "n_inputs": 141,
+  "reparto": {
+    "train": 43699,
+    "validation": 8759,
+    "test": 5063
+  },
+  "train_end": "2024-12-31",
+  "val_end": "2025-12-31",
+  "ventana": "2020-01-08 -> 2026-07-31",
+  "apagon": "ventana 28-abr 12:00 -> 1-may 23:00 sustituida en bloque desde D-7, todas las columnas incluido el precio; resaca 2-may -> 7-may sólo rellenando huecos. Marcado en imputado_apagon y ventana_pisa_apagon",
+  "meteorologia": "canal empalmado *_meteo: previsión ECMWF desde 2024-04, ERA5 desfasado antes. meteo_es_forecast indica cuál",
+  "nulos": 0,
+  "imputacion": "por lo que significa cada hueco: NULL=0 donde la fuente no escribe ceros, escalón donde la tecnología no existía, ffill en capacidad y commodities, interpolación <=3h, análogo D-7 en huecos largos. Ninguna celda por media ni mediana",
+  "excluidas_por_arranque_tardio": [
+    "capinst_battery_hybrid_mw",
+    "capinst_solar_pv_hybrid_mw",
+    "capinst_wind_hybrid_mw",
+    "ree_cbattery_mw_Dm1",
+    "ree_cbattery_mw_Dm6",
+    "ree_gbattery_mw_Dm1",
+    "ree_gbattery_mw_Dm6"
+  ],
+  "catalogo_columnas": "matriz_completa_columnas.csv",
+  "origenes": {
+    "CALENDARIO (calculado)": 14,
+    "esios_capacity_installed": 14,
+    "esios_capacity_available": 5,
+    "esios_pdbc_gen": 14,
+    "esios_pbf_gen": 4,
+    "commodities": 3,
+    "CLAVE": 5,
+    "era5_weather_agg": 18,
+    "spot_price (TARGET)": 1,
+    "DERIVADA (depuracion)": 3,
+    "DERIVADA (testigo de publicacion)": 2,
+    "spot_price (Europa, dia D)": 10,
+    "spot_price (lag)": 6,
+    "forecast": 4,
+    "esios_pbf_load_inter": 10,
+    "esios_pbf_bilateral": 8,
+    "generation (real D-1/D-6)": 40
+  }
+}
