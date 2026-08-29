@@ -1,0 +1,15 @@
+{
+  "matriz": "minima",
+  "encoder_multicanal": true,
+  "aisla": "columnas (\u00bfbastan 25?)",
+  "canales": 10,
+  "estaticos": 14,
+  "n_inputs": 25,
+  "dias_train": 1812,
+  "dias_val": 365,
+  "MAE_val": {
+    "MLP residuo": 17.36,
+    "Seq2Seq residuo": 16.74,
+    "naive D": 19.95
+  }
+}

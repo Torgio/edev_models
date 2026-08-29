@@ -1,0 +1,46 @@
+variable,tabla_origen,bloque,regla,motivo,fuera_de
+at_entsoe_D,"spot_price (Europa, dia D)",precio,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+be_entsoe_D,"spot_price (Europa, dia D)",precio,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+bil_total_purchases_mw_D,esios_pbf_bilateral,programa PBF,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+bil_total_sales_mw_D,esios_pbf_bilateral,programa PBF,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+capinst_autoconsume_solar_pv_mw,esios_capacity_installed,capacidad,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+capinst_battery_hybrid_mw,esios_capacity_installed,capacidad,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+capinst_cogeneration_mw,esios_capacity_installed,capacidad,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+capinst_other_renewable_mw,esios_capacity_installed,capacidad,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+capinst_solar_pv_mw,esios_capacity_installed,capacidad,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+capinst_solar_thermal_mw,esios_capacity_installed,capacidad,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+capinst_total_mw,esios_capacity_installed,capacidad,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+capinst_total_nonrenewable_mw,esios_capacity_installed,capacidad,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+capinst_total_renewable_mw,esios_capacity_installed,capacidad,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+ch_entsoe_D,"spot_price (Europa, dia D)",precio,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+cz_entsoe_D,"spot_price (Europa, dia D)",precio,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+d1_doy_cos,CALENDARIO (calculado),calendario,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+d1_month_sin,CALENDARIO (calculado),calendario,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+nl_entsoe_D,"spot_price (Europa, dia D)",precio,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+pbfli_demand_free_market_mw_D,esios_pbf_load_inter,programa PBF,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+pdbc_solar_pv_mw_D,esios_pdbc_gen,casacion PDBC,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+solar_fv_mw_Dm1,generation (real D-1/D-6),real desfasado,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+tp_acum_30d_met_Dm2,era5_weather_agg,meteorologia,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+tp_acum_7d_met_Dm1,era5_weather_agg,meteorologia,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+wind10_mean_met_Dm2,era5_weather_agg,meteorologia,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+wind10_meteo,era5_weather_agg,meteorologia,redundante (r > 0.95),"otra columna dice lo mismo; sobrevive la de mayor V de Cramer, salvo PREFERIDAS","nucleo, minima, moderna"
+capinst_autoconsume_solar_pv_mw,esios_capacity_installed,capacidad,deriva train->val > 3.0 sigma,la distribucion se mueve tanto entre train y validacion que el modelo no puede fiarse,"nucleo, minima, moderna"
+capinst_battery_hybrid_mw,esios_capacity_installed,capacidad,deriva train->val > 3.0 sigma,la distribucion se mueve tanto entre train y validacion que el modelo no puede fiarse,"nucleo, minima, moderna"
+capinst_cogeneration_mw,esios_capacity_installed,capacidad,deriva train->val > 3.0 sigma,la distribucion se mueve tanto entre train y validacion que el modelo no puede fiarse,"nucleo, minima, moderna"
+capinst_hydro_mw,esios_capacity_installed,capacidad,deriva train->val > 3.0 sigma,la distribucion se mueve tanto entre train y validacion que el modelo no puede fiarse,"nucleo, minima, moderna"
+capinst_other_renewable_mw,esios_capacity_installed,capacidad,deriva train->val > 3.0 sigma,la distribucion se mueve tanto entre train y validacion que el modelo no puede fiarse,"nucleo, minima, moderna"
+capinst_solar_pv_hybrid_mw,esios_capacity_installed,capacidad,deriva train->val > 3.0 sigma,la distribucion se mueve tanto entre train y validacion que el modelo no puede fiarse,"nucleo, minima, moderna"
+capinst_total_hybrid_mw,esios_capacity_installed,capacidad,deriva train->val > 3.0 sigma,la distribucion se mueve tanto entre train y validacion que el modelo no puede fiarse,"nucleo, minima, moderna"
+pdbc_hybrid_mw_D,esios_pdbc_gen,casacion PDBC,deriva train->val > 3.0 sigma,la distribucion se mueve tanto entre train y validacion que el modelo no puede fiarse,"nucleo, minima, moderna"
+ree_cbattery_mw_Dm1,generation (real D-1/D-6),real desfasado,deriva train->val > 3.0 sigma,la distribucion se mueve tanto entre train y validacion que el modelo no puede fiarse,"nucleo, minima, moderna"
+ree_cbattery_mw_Dm6,generation (real D-1/D-6),real desfasado,deriva train->val > 3.0 sigma,la distribucion se mueve tanto entre train y validacion que el modelo no puede fiarse,"nucleo, minima, moderna"
+ree_gbattery_mw_Dm1,generation (real D-1/D-6),real desfasado,deriva train->val > 3.0 sigma,la distribucion se mueve tanto entre train y validacion que el modelo no puede fiarse,"nucleo, minima, moderna"
+ree_gbattery_mw_Dm6,generation (real D-1/D-6),real desfasado,deriva train->val > 3.0 sigma,la distribucion se mueve tanto entre train y validacion que el modelo no puede fiarse,"nucleo, minima, moderna"
+capinst_battery_hybrid_mw,esios_capacity_installed,capacidad,arranque tardio de la serie,mas del 40 % de la ventana sin dato: el 0 seria un indicador temporal,todas
+capinst_solar_pv_hybrid_mw,esios_capacity_installed,capacidad,arranque tardio de la serie,mas del 40 % de la ventana sin dato: el 0 seria un indicador temporal,todas
+capinst_wind_hybrid_mw,esios_capacity_installed,capacidad,arranque tardio de la serie,mas del 40 % de la ventana sin dato: el 0 seria un indicador temporal,todas
+ree_cbattery_mw_Dm1,generation (real D-1/D-6),real desfasado,arranque tardio de la serie,mas del 40 % de la ventana sin dato: el 0 seria un indicador temporal,todas
+ree_cbattery_mw_Dm6,generation (real D-1/D-6),real desfasado,arranque tardio de la serie,mas del 40 % de la ventana sin dato: el 0 seria un indicador temporal,todas
+ree_gbattery_mw_Dm1,generation (real D-1/D-6),real desfasado,arranque tardio de la serie,mas del 40 % de la ventana sin dato: el 0 seria un indicador temporal,todas
+ree_gbattery_mw_Dm6,generation (real D-1/D-6),real desfasado,arranque tardio de la serie,mas del 40 % de la ventana sin dato: el 0 seria un indicador temporal,todas
+pbfli_net_flow_ma_mw_D,esios_pbf_load_inter,programa PBF,reloj declarado,su fraccion de ceros sigue el calendario; en train esta a cero mucho mas que en test,"nucleo, minima, moderna"

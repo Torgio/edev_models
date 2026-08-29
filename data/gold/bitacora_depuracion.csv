@@ -1,0 +1,32 @@
+seccion,variable,tabla_origen,bloque,motivo,detalle
+5.2,pdbc_fuel_gas_mw_D,esios_pdbc_gen,casacion PDBC,constante en train,un solo valor distinto
+5.2,capinst_waste_renewable_mw,esios_capacity_installed,capacidad,cuasi-constante en train,dos valores distintos
+5.2,d1_vispera_festivo,CALENDARIO (calculado),calendario,cuasi-constante en train,dos valores distintos
+5.4,wind_gust10_mean_met_Dm1,era5_weather_agg,meteorologia,sin equivalente en produccion,no archivada en la prevision; R2=0.94 frente al viento medio
+5.4,wind_gust10_mean_met_Dm2,era5_weather_agg,meteorologia,sin equivalente en produccion,no archivada en la prevision; R2=0.94 frente al viento medio
+8,ree_gbattery_mw_Dm6,generation (real D-1/D-6),real desfasado,NULL = 0 por convención de la fuente,718 celdas
+8,ree_cbattery_mw_Dm6,generation (real D-1/D-6),real desfasado,NULL = 0 por convención de la fuente,718 celdas
+8,ree_gbattery_mw_Dm1,generation (real D-1/D-6),real desfasado,NULL = 0 por convención de la fuente,718 celdas
+8,ree_cbattery_mw_Dm1,generation (real D-1/D-6),real desfasado,NULL = 0 por convención de la fuente,718 celdas
+8,pbfli_net_flow_ma_mw_D,esios_pbf_load_inter,programa PBF,NULL = 0 por convención de la fuente,"21,462 celdas"
+8,bil_direct_consumer_mw_D,esios_pbf_bilateral,programa PBF,NULL = 0 por convención de la fuente,"5,044 celdas"
+8,pbfli_net_flow_ad_mw_D,esios_pbf_load_inter,programa PBF,NULL = 0 por convención de la fuente,"7,070 celdas"
+8,bil_generic_buy_mw_D,esios_pbf_bilateral,programa PBF,NULL = 0 por convención de la fuente,41 celdas
+8,bil_generic_sales_mw_D,esios_pbf_bilateral,programa PBF,NULL = 0 por convención de la fuente,32 celdas
+8,bil_retail_free_sales_mw_D,esios_pbf_bilateral,programa PBF,NULL = 0 por convención de la fuente,8 celdas
+8,bil_retail_free_buy_mw_D,esios_pbf_bilateral,programa PBF,NULL = 0 por convención de la fuente,8 celdas
+8,bil_retail_last_resort_mw_D,esios_pbf_bilateral,programa PBF,NULL = 0 por convención de la fuente,8 celdas
+8,bil_total_purchases_mw_D,esios_pbf_bilateral,programa PBF,NULL = 0 por convención de la fuente,7 celdas
+8,bil_total_sales_mw_D,esios_pbf_bilateral,programa PBF,NULL = 0 por convención de la fuente,7 celdas
+9,capinst_battery_hybrid_mw,esios_capacity_installed,capacidad,arranque tardío de la serie,60.8% de la ventana sin dato; el 0 sería un indicador temporal
+9,capinst_solar_pv_hybrid_mw,esios_capacity_installed,capacidad,arranque tardío de la serie,51.9% de la ventana sin dato; el 0 sería un indicador temporal
+9,capinst_wind_hybrid_mw,esios_capacity_installed,capacidad,arranque tardío de la serie,48.0% de la ventana sin dato; el 0 sería un indicador temporal
+9,ree_cbattery_mw_Dm1,generation (real D-1/D-6),real desfasado,arranque tardío de la serie,74.3% de la ventana sin dato; el 0 sería un indicador temporal
+9,ree_cbattery_mw_Dm6,generation (real D-1/D-6),real desfasado,arranque tardío de la serie,74.5% de la ventana sin dato; el 0 sería un indicador temporal
+9,ree_gbattery_mw_Dm1,generation (real D-1/D-6),real desfasado,arranque tardío de la serie,74.3% de la ventana sin dato; el 0 sería un indicador temporal
+9,ree_gbattery_mw_Dm6,generation (real D-1/D-6),real desfasado,arranque tardío de la serie,74.5% de la ventana sin dato; el 0 sería un indicador temporal
+9.5,ree_gbattery_mw_Dm1,generation (real D-1/D-6),real desfasado,"muerta en train, viva en producción",señal real (r~0.35 en validación) pero <1% de filas no nulas en train
+9.5,ree_cbattery_mw_Dm1,generation (real D-1/D-6),real desfasado,"muerta en train, viva en producción",señal real (r~0.35 en validación) pero <1% de filas no nulas en train
+9.5,ree_gbattery_mw_Dm6,generation (real D-1/D-6),real desfasado,"muerta en train, viva en producción",señal real (r~0.35 en validación) pero <1% de filas no nulas en train
+9.5,ree_cbattery_mw_Dm6,generation (real D-1/D-6),real desfasado,"muerta en train, viva en producción",señal real (r~0.35 en validación) pero <1% de filas no nulas en train
+9.5,capinst_battery_hybrid_mw,esios_capacity_installed,capacidad,"muerta en train, viva en producción",señal real (r~0.35 en validación) pero <1% de filas no nulas en train

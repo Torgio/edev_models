@@ -35,3 +35,11 @@ monitor/monitor_state.json
 monitor/estado_tfm_energia.html
 
 data/bronze/*.parquet
+
+# Matrices y tensores generados: se reconstruyen con los notebooks y los loaders,
+# no tienen que viajar en el repo (46 MB de parquets y ~560 MB de .npy).
+data/matrices/
+data/ecmwf_forecast_tensors/
+
+# copias de seguridad de matrices anteriores: se quedan en local, no viajan
+data/gold/z_*/

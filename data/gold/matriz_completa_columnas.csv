@@ -1,0 +1,162 @@
+variable,tabla_origen,bloque
+fecha_pred,CLAVE,control
+fecha_objetivo,CLAVE,control
+ts,CLAVE,control
+split,CLAVE,control
+target_price,spot_price (TARGET),objetivo
+es_esios_D,spot_price (lag),precio
+es_esios_Dm1,spot_price (lag),precio
+es_esios_Dm6,spot_price (lag),precio
+hora,CLAVE,control
+d1_dow,CALENDARIO (calculado),calendario
+d1_month,CALENDARIO (calculado),calendario
+d1_is_weekend,CALENDARIO (calculado),calendario
+d1_is_festivo,CALENDARIO (calculado),calendario
+d1_es_puente,CALENDARIO (calculado),calendario
+d1_regimen_tope_gas,CALENDARIO (calculado),calendario
+meteo_es_forecast,DERIVADA (depuracion),otros
+imputado_apagon,DERIVADA (depuracion),otros
+ventana_pisa_apagon,DERIVADA (depuracion),otros
+pbf_publicado_D,DERIVADA (testigo de publicacion),otros
+pbf_completo_D,DERIVADA (testigo de publicacion),otros
+ree_demanda_prev,forecast,prevision D+1
+ree_gwind_prev,forecast,prevision D+1
+ree_gsolar_prev,forecast,prevision D+1
+ree_grenov_prev,forecast,prevision D+1
+pt_entsoe_D,"spot_price (Europa, dia D)",precio
+fr_entsoe_D,"spot_price (Europa, dia D)",precio
+de_lu_entsoe_D,"spot_price (Europa, dia D)",precio
+it_nord_entsoe_D,"spot_price (Europa, dia D)",precio
+ch_entsoe_D,"spot_price (Europa, dia D)",precio
+be_entsoe_D,"spot_price (Europa, dia D)",precio
+nl_entsoe_D,"spot_price (Europa, dia D)",precio
+at_entsoe_D,"spot_price (Europa, dia D)",precio
+pl_entsoe_D,"spot_price (Europa, dia D)",precio
+cz_entsoe_D,"spot_price (Europa, dia D)",precio
+spread_es_pt_D,spot_price (lag),precio
+spread_es_fr_D,spot_price (lag),precio
+spread_es_de_D,spot_price (lag),precio
+entsoe_load_Dm1,generation (real D-1/D-6),real desfasado
+ree_netflow_fr_Dm1,generation (real D-1/D-6),real desfasado
+ree_netflow_pt_Dm1,generation (real D-1/D-6),real desfasado
+ree_netflow_ma_Dm1,generation (real D-1/D-6),real desfasado
+total_net_flow_mw_Dm1,generation (real D-1/D-6),real desfasado
+gen_peninsular_mw_Dm1,generation (real D-1/D-6),real desfasado
+wind_mw_Dm1,generation (real D-1/D-6),real desfasado
+pumping_cons_mw_Dm1,generation (real D-1/D-6),real desfasado
+hydro_run_river_mw_Dm1,generation (real D-1/D-6),real desfasado
+biomass_mw_Dm1,generation (real D-1/D-6),real desfasado
+waste_mw_Dm1,generation (real D-1/D-6),real desfasado
+other_renewable_mw_Dm1,generation (real D-1/D-6),real desfasado
+oil_mw_Dm1,generation (real D-1/D-6),real desfasado
+ree_gsolter_mw_Dm1,generation (real D-1/D-6),real desfasado
+ree_gccgas_mw_Dm1,generation (real D-1/D-6),real desfasado
+ree_gnuclear_mw_Dm1,generation (real D-1/D-6),real desfasado
+ree_gotherthermal_mw_Dm1,generation (real D-1/D-6),real desfasado
+ree_gcoal_mw_Dm1,generation (real D-1/D-6),real desfasado
+solar_fv_mw_Dm1,generation (real D-1/D-6),real desfasado
+hydro_dispatch_mw_Dm1,generation (real D-1/D-6),real desfasado
+entsoe_load_Dm6,generation (real D-1/D-6),real desfasado
+ree_netflow_fr_Dm6,generation (real D-1/D-6),real desfasado
+ree_netflow_pt_Dm6,generation (real D-1/D-6),real desfasado
+ree_netflow_ma_Dm6,generation (real D-1/D-6),real desfasado
+total_net_flow_mw_Dm6,generation (real D-1/D-6),real desfasado
+gen_peninsular_mw_Dm6,generation (real D-1/D-6),real desfasado
+wind_mw_Dm6,generation (real D-1/D-6),real desfasado
+pumping_cons_mw_Dm6,generation (real D-1/D-6),real desfasado
+hydro_run_river_mw_Dm6,generation (real D-1/D-6),real desfasado
+biomass_mw_Dm6,generation (real D-1/D-6),real desfasado
+waste_mw_Dm6,generation (real D-1/D-6),real desfasado
+other_renewable_mw_Dm6,generation (real D-1/D-6),real desfasado
+oil_mw_Dm6,generation (real D-1/D-6),real desfasado
+ree_gsolter_mw_Dm6,generation (real D-1/D-6),real desfasado
+ree_gccgas_mw_Dm6,generation (real D-1/D-6),real desfasado
+ree_gnuclear_mw_Dm6,generation (real D-1/D-6),real desfasado
+ree_gotherthermal_mw_Dm6,generation (real D-1/D-6),real desfasado
+ree_gcoal_mw_Dm6,generation (real D-1/D-6),real desfasado
+solar_fv_mw_Dm6,generation (real D-1/D-6),real desfasado
+hydro_dispatch_mw_Dm6,generation (real D-1/D-6),real desfasado
+tp_acum_7d_met_Dm1,era5_weather_agg,meteorologia
+tp_acum_30d_met_Dm1,era5_weather_agg,meteorologia
+t2m_mean_met_Dm2,era5_weather_agg,meteorologia
+d2m_mean_met_Dm2,era5_weather_agg,meteorologia
+msl_mean_met_Dm2,era5_weather_agg,meteorologia
+wind10_mean_met_Dm2,era5_weather_agg,meteorologia
+wind100_mean_met_Dm2,era5_weather_agg,meteorologia
+tcc_mean_met_Dm2,era5_weather_agg,meteorologia
+ssrd_mean_met_Dm2,era5_weather_agg,meteorologia
+tp_acum_7d_met_Dm2,era5_weather_agg,meteorologia
+tp_acum_30d_met_Dm2,era5_weather_agg,meteorologia
+gas_mibgas,commodities,combustibles
+co2_eua_dec,commodities,combustibles
+gas_ttf_m1,commodities,combustibles
+capinst_total_mw,esios_capacity_installed,capacidad
+capinst_total_renewable_mw,esios_capacity_installed,capacidad
+capinst_total_nonrenewable_mw,esios_capacity_installed,capacidad
+capinst_total_hybrid_mw,esios_capacity_installed,capacidad
+capinst_total_autoconsume_mw,esios_capacity_installed,capacidad
+capinst_hydro_mw,esios_capacity_installed,capacidad
+capinst_wind_mw,esios_capacity_installed,capacidad
+capinst_solar_pv_mw,esios_capacity_installed,capacidad
+capinst_solar_thermal_mw,esios_capacity_installed,capacidad
+capinst_other_renewable_mw,esios_capacity_installed,capacidad
+capinst_waste_nonrenewable_mw,esios_capacity_installed,capacidad
+capinst_autoconsume_solar_pv_mw,esios_capacity_installed,capacidad
+capinst_coal_mw,esios_capacity_installed,capacidad
+capinst_cogeneration_mw,esios_capacity_installed,capacidad
+d1_dow_sin,CALENDARIO (calculado),calendario
+d1_dow_cos,CALENDARIO (calculado),calendario
+d1_month_sin,CALENDARIO (calculado),calendario
+d1_month_cos,CALENDARIO (calculado),calendario
+d1_doy_sin,CALENDARIO (calculado),calendario
+d1_doy_cos,CALENDARIO (calculado),calendario
+hora_sin,CALENDARIO (calculado),calendario
+hora_cos,CALENDARIO (calculado),calendario
+pdbc_wind_mw_D,esios_pdbc_gen,casacion PDBC
+pdbc_solar_pv_mw_D,esios_pdbc_gen,casacion PDBC
+pdbc_solar_thermal_mw_D,esios_pdbc_gen,casacion PDBC
+pdbc_hydro_ugh_mw_D,esios_pdbc_gen,casacion PDBC
+pdbc_hydro_no_ugh_mw_D,esios_pdbc_gen,casacion PDBC
+pdbc_nuclear_mw_D,esios_pdbc_gen,casacion PDBC
+pdbc_coal_mw_D,esios_pdbc_gen,casacion PDBC
+pdbc_cogen_mw_D,esios_pdbc_gen,casacion PDBC
+pdbc_biomass_mw_D,esios_pdbc_gen,casacion PDBC
+pdbc_biogas_mw_D,esios_pdbc_gen,casacion PDBC
+pdbc_hybrid_mw_D,esios_pdbc_gen,casacion PDBC
+pdbc_ccgt_mw_D,esios_pdbc_gen,casacion PDBC
+pdbc_waste_mw_D,esios_pdbc_gen,casacion PDBC
+pdbc_other_renew_mw_D,esios_pdbc_gen,casacion PDBC
+pdbc_pumping_gen_mw_D,esios_pbf_gen,casacion PDBC
+pdbc_pumping_cons_mw_D,esios_pbf_gen,casacion PDBC
+pdbc_total_gen_mw_D,esios_pbf_gen,casacion PDBC
+pdbc_unavailable_power_mw_D,esios_pbf_gen,casacion PDBC
+pbfli_demand_free_market_mw_D,esios_pbf_load_inter,programa PBF
+pbfli_demand_reference_mw_D,esios_pbf_load_inter,programa PBF
+pbfli_demand_direct_mw_D,esios_pbf_load_inter,programa PBF
+pbfli_demand_aux_mw_D,esios_pbf_load_inter,programa PBF
+pbfli_total_demand_mw_D,esios_pbf_load_inter,programa PBF
+pbfli_net_flow_fr_mw_D,esios_pbf_load_inter,programa PBF
+pbfli_net_flow_pt_mw_D,esios_pbf_load_inter,programa PBF
+pbfli_net_flow_ma_mw_D,esios_pbf_load_inter,programa PBF
+pbfli_net_flow_ad_mw_D,esios_pbf_load_inter,programa PBF
+pbfli_total_net_flow_mw_D,esios_pbf_load_inter,programa PBF
+bil_total_sales_mw_D,esios_pbf_bilateral,programa PBF
+bil_total_purchases_mw_D,esios_pbf_bilateral,programa PBF
+bil_retail_free_sales_mw_D,esios_pbf_bilateral,programa PBF
+bil_retail_free_buy_mw_D,esios_pbf_bilateral,programa PBF
+bil_retail_last_resort_mw_D,esios_pbf_bilateral,programa PBF
+bil_direct_consumer_mw_D,esios_pbf_bilateral,programa PBF
+bil_generic_sales_mw_D,esios_pbf_bilateral,programa PBF
+bil_generic_buy_mw_D,esios_pbf_bilateral,programa PBF
+capdisp_hydro_mw,esios_capacity_available,capacidad
+capdisp_pump_mw,esios_capacity_available,capacidad
+capdisp_nuclear_mw,esios_capacity_available,capacidad
+capdisp_coal_antracita_mw,esios_capacity_available,capacidad
+capdisp_ccgt_mw,esios_capacity_available,capacidad
+t2m_meteo,era5_weather_agg,meteorologia
+d2m_meteo,era5_weather_agg,meteorologia
+wind10_meteo,era5_weather_agg,meteorologia
+wind100_meteo,era5_weather_agg,meteorologia
+ssrd_meteo,era5_weather_agg,meteorologia
+tcc_meteo,era5_weather_agg,meteorologia
+msl_meteo,era5_weather_agg,meteorologia
