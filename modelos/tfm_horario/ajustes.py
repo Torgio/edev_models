@@ -110,10 +110,10 @@ SPEARMAN_MIN_OVERLAP = 30
 
 SFS_N_FEATURES = "auto"    # "auto" o un entero
 SFS_DIRECTION = "forward"
-SFS_N_SPLITS = 5
+SFS_N_SPLITS = 3
 SFS_SCORING = "neg_mean_absolute_error"
 SFS_MAX_FILAS = 24 * 365   # SFS sobre el ultimo año de train; None = todo train
-SFS_RF_PARAMS = dict(n_estimators=200, max_depth=8, random_state=42, n_jobs=-1)
+SFS_RF_PARAMS = dict(n_estimators=100, max_depth=8, random_state=42, n_jobs=-1)
 
 # ---------------------------------------------------------------------------
 # Tratamiento de datos
