@@ -21,12 +21,12 @@ pbf_publicado_D,DERIVADA (testigo de publicacion),otros
 pbf_completo_D,DERIVADA (testigo de publicacion),otros
 pt_entsoe_D,"spot_price (Europa, dia D)",precio
 capinst_coal_mw,esios_capacity_installed,capacidad
-fr_entsoe_D,"spot_price (Europa, dia D)",precio
 capdisp_coal_antracita_mw,esios_capacity_available,capacidad
+fr_entsoe_D,"spot_price (Europa, dia D)",precio
 gas_mibgas,commodities,combustibles
 it_nord_entsoe_D,"spot_price (Europa, dia D)",precio
-be_entsoe_D,"spot_price (Europa, dia D)",precio
 gas_ttf_m1,commodities,combustibles
+de_lu_entsoe_D,"spot_price (Europa, dia D)",precio
 pdbc_coal_mw_D,esios_pdbc_gen,casacion PDBC
 capinst_total_autoconsume_mw,esios_capacity_installed,capacidad
 capinst_wind_mw,esios_capacity_installed,capacidad
