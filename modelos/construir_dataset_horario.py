@@ -231,12 +231,20 @@ def construir_dataset_horario(solo_filas_validas: bool = True, pdbc: str | None 
     if pdbc == "mismodia_diagnostico":
         pdbc_mismodia = df_pdbc.add_prefix("PELIGRO_mismodia_")
 
-    # --- Commodities: dia D = fecha local Madrid de la fila, menos 1 dia (mismo criterio "ya
-    # ocurrio" que _features_dia_d del dataset diario) ---
+    # --- Commodities: 2 dias antes del dia OBJETIVO (X-2), no 1 (corregido 29-ago-2026) ---
+    # Un compañero de equipo audito la "frontera de fuga" (que dato existe realmente a las 12:00
+    # del dia de decision, cuando cierra la subasta del dia objetivo X) y encontro que gas/CO2
+    # (Trayport) cierran su sesion a las ~17:30 -- DESPUES del cierre electrico de las 12:00. Con
+    # el dia de decision = X-1: a las 12:00 de X-1, la sesion de commodities de X-1 TODAVIA NO HA
+    # CERRADO (cierra a las 17:30 de X-1) -- la ultima sesion ya cerrada y disponible es la de
+    # X-2. Antes de esta correccion se usaba la fecha X-1 (un dia demasiado reciente: fuga
+    # potencial). Coste verificado de la version segura: +0.11 EUR/MWh de MAE (12.63 -> 12.74),
+    # dentro del ruido de semilla ya documentado (nota 25) -- se prefiere pagar ese margen a
+    # arriesgar una fuga real.
     df_comm["fecha"] = pd.to_datetime(df_comm["fecha"]).dt.date
     df_comm = df_comm.sort_values("fecha").set_index("fecha").ffill()
-    dia_d = (idx.tz_convert("Europe/Madrid") - pd.Timedelta(days=1)).date
-    comm_por_fila = df_comm.reindex(dia_d)
+    fecha_segura_commodities = (idx.tz_convert("Europe/Madrid") - pd.Timedelta(days=2)).date
+    comm_por_fila = df_comm.reindex(fecha_segura_commodities)
     comm_por_fila.index = idx
 
     # --- Calendario: describe la propia hora objetivo (ya se sabe con certeza de antemano) ---

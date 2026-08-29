@@ -956,3 +956,38 @@ reportar, tal como pide el plan del equipo.
    valor, ni siquiera nulo — un hueco real de la tabla fuente, no un error de nuestro código (que
    ya trabaja en UTC desde el principio, precisamente para evitar este tipo de problema). Se
    entregaron 8.759 filas con la ausencia documentada, en vez de inventar un valor.
+
+---
+
+## 29. Fuga real encontrada y corregida: las columnas de commodities usaban un día demasiado reciente
+
+Un compañero de equipo hizo una auditoría específica de "frontera de fuga" (qué dato existe
+realmente a las 12:00 del día de decisión, que es cuando cierra la subasta del día objetivo) y
+encontró algo que nos afecta directamente: el gas y el CO2 (fuente Trayport) cierran su sesión de
+mercado a las ~17:30 — **después** del cierre eléctrico de las 12:00.
+
+**Lo que hacíamos mal**: para cada fila (una hora del día objetivo X), usábamos el valor de
+commodities fechado en X-1. Pero a las 12:00 de X-1 (el momento real en que se toma la decisión),
+la sesión de commodities de X-1 todavía no ha cerrado — cierra esa misma tarde, a las 17:30. La
+última sesión ya cerrada y disponible en ese momento es la de X-2, no la de X-1. Estábamos usando
+un dato un día más reciente de lo que existía en el momento real de la predicción.
+
+**Verificación antes de corregir, no solo confianza en la auditoría ajena**: se probó el coste de
+usar la versión segura (X-2 en vez de X-1) reentrenando el modelo — el MAE subió de 12,63 a
+12,74 en una prueba aislada (+0,11, dentro del ruido de semilla ya documentado en la nota 25). Al
+aplicarlo de forma definitiva y reentrenar los tres modelos (puntual, incertidumbre, calibración),
+el MAE quedó en 12,86 — un cambio pequeño, no una caída del rendimiento real del modelo, solo la
+corrección de una ventaja injusta que no debía estar ahí.
+
+**Ya corregido** en `construir_dataset_horario.py` y reentrenados los tres artefactos de
+producción (puntual, incertidumbre, calibración conforme) y el entregable del leaderboard del
+equipo (`modelos/lgbm_horario_afinado_cqr/`). Pendiente: aplicar el mismo criterio en
+`construir_dataset_maestro.py` si el dataset diario se retoma alguna vez (hoy no se usa para
+modelar, nota 24).
+
+**Lección para la memoria**: este tipo de fuga es más difícil de detectar que las evidentes (usar
+el precio real del propio día objetivo) porque el dato "ya existe" en la base de datos con una
+fecha que *parece* razonable — el error está en la hora exacta de publicación de la fuente
+original, no en la estructura del dataset. Vale la pena que quede documentado como ejemplo
+concreto de por qué la frontera de fuga hay que verificarla contra la hora de cierre real de cada
+fuente, no solo contra su fecha.
