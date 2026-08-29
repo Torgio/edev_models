@@ -4,8 +4,11 @@ El constructor v5 ya llevaba uno (`ORIGEN_COLUMNAS` / `_origen`, usado para colo
 el Excel documentado). Se copia aqui con sus mismas reglas -- no se reinventa -- y se
 extiende con lo que aquel no conocia:
 
-  - el bloque `pbf_*`, que sustituye al `pdbc_*` retirado, separando las columnas que
-    vienen de `esios_pbf_gen` de las de `esios_pbf_load_inter`;
+  - los bloques `pdbc_*`, `pbfli_*` y `bil_*`, que sustituyen al `pdbc_*` agregado a
+    media diaria que traia el constructor, cada uno con su tabla;
+  - dentro de `pdbc_*`, las cuatro columnas que NO salen de la tabla derivada sino de
+    `esios_pbf_gen` (el bombeo, por los ceros; el total y la potencia no disponible,
+    porque la derivada no las lleva);
   - las columnas que nacen en los notebooks de depuracion (banderas del apagon,
     testigos de imputacion), marcadas como DERIVADA para que nadie las busque en la BD.
 
@@ -20,20 +23,19 @@ no se las quede el bloque equivocado.
 Uso:
     from procedencia import origen, con_origen, resumen_origen
 
-    origen("pbf_coal_mw_D")            -> 'esios_pbf_gen'
+    origen("pdbc_coal_mw_D")           -> 'esios_pdbc_gen'
     con_origen(tabla, "variable")      -> la misma tabla con una columna `tabla_origen`
     resumen_origen(lista_de_columnas)  -> recuento por tabla de origen
 """
 import pandas as pd
 
-# Columnas de `esios_pbf_gen` frente a las de `esios_pbf_load_inter`. Ambas llegan con
-# prefijo `pbf_` y sufijo de alineamiento (`_D` / `_Dm1`), asi que el prefijo por si solo
-# no distingue: hay que mirar el nombre de la medida.
-_PBF_LOAD = (
-    "demand_free_market", "demand_reference", "demand_direct", "demand_aux",
-    "total_demand", "net_flow_fr", "net_flow_pt", "net_flow_ma", "net_flow_ad",
-    "total_net_flow", "baleares",
-)
+# Columnas con prefijo `pdbc_` que NO vienen de `esios_pdbc_gen`. El bombeo se lee de
+# `esios_pbf_gen` porque en la derivada los ceros llegan como NULL (34.643 horas en
+# `pumping_cons_mw`), y para el bombeo ambas tablas dan la misma cifra: no tiene bilateral
+# que restar. El total y la potencia no disponible sencillamente no estan en la derivada.
+# Ver la cabecera de `pdbc_horario.py`.
+_PDBC_DESDE_PBF = ("pumping_gen_mw", "pumping_cons_mw",
+                   "total_gen_mw", "unavailable_power_mw")
 
 # (claves, tabla de origen). Copiado de ORIGEN_COLUMNAS del constructor v5 y ampliado.
 ORIGEN_COLUMNAS = [
@@ -41,7 +43,7 @@ ORIGEN_COLUMNAS = [
 
     # --- nacidas en los notebooks de depuracion -------------------------------
     (("dia_apagon", "ventana_pisa_apagon", "target_contrafactual",
-      "prop_missings"), "DERIVADA (depuracion)"),
+      "prop_missings", "imputado_apagon", "meteo_es_forecast"), "DERIVADA (depuracion)"),
     (("_era_nulo",), "DERIVADA (testigo de imputacion)"),
     # Con `*` para que casen por prefijo: en la matriz llevan sufijo de alineamiento
     # (`pbf_publicado_D`) y una coincidencia exacta no los alcanzaria.
@@ -54,10 +56,19 @@ ORIGEN_COLUMNAS = [
       "be_entsoe_D", "nl_entsoe_D", "at_entsoe_D", "pl_entsoe_D", "cz_entsoe_D",
       "pt_omie_D"), "spot_price (Europa, dia D)"),
 
-    # --- PBF: sustituye al bloque pdbc_* --------------------------------------
-    # Se resuelve en `origen()` antes de llegar aqui, porque hay que mirar la medida
-    # y no solo el prefijo. La entrada queda como red de seguridad.
-    (("pbf_",), "esios_pbf_gen"),
+    # --- prevision meteorologica -----------------------------------------------
+    # Va ANTES del bloque de era5 porque comparten los nombres de medida: `t2m_fc`
+    # casaria con el prefijo "t2m_" y se atribuiria al reanalisis, que es justo la
+    # confusion que este catalogo existe para evitar. Son cosas distintas: ERA5 es el
+    # tiempo que ocurrio, `_fc` es la prevision que se emitio.
+    (("_fc",), "ecmwf_forecast_agg (prevision D+1)"),
+
+    # --- casacion PDBC y las dos tablas que la acompanan ----------------------
+    # `pdbc_` se resuelve en `origen()` antes de llegar aqui, porque cuatro de sus
+    # columnas salen de otra tabla. La entrada queda como red de seguridad.
+    (("pdbc_",), "esios_pdbc_gen"),
+    (("pbfli_",), "esios_pbf_load_inter"),
+    (("bil_",), "esios_pbf_bilateral"),
 
     # --- previsiones ----------------------------------------------------------
     (("ree_ntc_impfr_prev", "ree_ntc_expfr_prev", "ree_ntc_imppt_prev",
@@ -77,7 +88,6 @@ ORIGEN_COLUMNAS = [
 
     # --- resto ----------------------------------------------------------------
     (("gas_", "co2_"), "commodities"),
-    (("pdbc_",), "esios_pdbc_gen (RETIRADO)"),
     (("capinst_",), "esios_capacity_installed"),
     (("capdisp_",), "esios_capacity_available"),
     (("t2m_", "d2m_", "msl_", "wind10_", "wind100_", "wind_gust10_", "tcc_", "ssrd_",
@@ -93,8 +103,10 @@ BLOQUE = {
     "spot_price (TARGET)": "objetivo",
     "spot_price (lag)": "precio",
     "spot_price (Europa, dia D)": "precio",
-    "esios_pbf_gen": "programa PBF",
+    "esios_pdbc_gen": "casacion PDBC",
+    "esios_pbf_gen": "casacion PDBC",
     "esios_pbf_load_inter": "programa PBF",
+    "esios_pbf_bilateral": "programa PBF",
     "forecast": "prevision D+1",
     "forecast (NTC D+1)": "prevision D+1",
     "load_inter (NTC)": "prevision D+1",
@@ -103,6 +115,7 @@ BLOQUE = {
     "esios_capacity_installed": "capacidad",
     "esios_capacity_available": "capacidad",
     "era5_weather_agg": "meteorologia",
+    "ecmwf_forecast_agg (prevision D+1)": "meteorologia",
     "CALENDARIO (calculado)": "calendario",
     "CLAVE": "control",
 }
@@ -110,11 +123,11 @@ BLOQUE = {
 
 def origen(col: str) -> str:
     """Tabla de Postgres de la que procede una columna."""
-    # El bloque PBF se resuelve primero: `pbf_net_flow_pt_mw_D` y `pbf_coal_mw_D`
+    # El bloque PDBC se resuelve primero: `pdbc_coal_mw_D` y `pdbc_pumping_cons_mw_D`
     # comparten prefijo pero salen de tablas distintas.
-    if col.startswith("pbf_") and not col.startswith(("pbf_publicado", "pbf_completo")):
-        medida = col[len("pbf_"):]
-        return "esios_pbf_load_inter" if medida.startswith(_PBF_LOAD) else "esios_pbf_gen"
+    if col.startswith("pdbc_"):
+        return ("esios_pbf_gen" if col[len("pdbc_"):].startswith(_PDBC_DESDE_PBF)
+                else "esios_pdbc_gen")
 
     for claves, tabla in ORIGEN_COLUMNAS:
         for k in claves:

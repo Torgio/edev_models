@@ -1,0 +1,46 @@
+variable,tabla_origen,bloque
+fecha_pred,CLAVE,control
+fecha_objetivo,CLAVE,control
+ts,CLAVE,control
+split,CLAVE,control
+target_price,spot_price (TARGET),objetivo
+es_esios_D,spot_price (lag),precio
+es_esios_Dm1,spot_price (lag),precio
+es_esios_Dm6,spot_price (lag),precio
+hora,CLAVE,control
+d1_dow,CALENDARIO (calculado),calendario
+d1_month,CALENDARIO (calculado),calendario
+d1_is_weekend,CALENDARIO (calculado),calendario
+d1_is_festivo,CALENDARIO (calculado),calendario
+d1_es_puente,CALENDARIO (calculado),calendario
+d1_regimen_tope_gas,CALENDARIO (calculado),calendario
+meteo_es_forecast,DERIVADA (depuracion),otros
+imputado_apagon,DERIVADA (depuracion),otros
+ventana_pisa_apagon,DERIVADA (depuracion),otros
+pbf_publicado_D,DERIVADA (testigo de publicacion),otros
+pbf_completo_D,DERIVADA (testigo de publicacion),otros
+pt_entsoe_D,"spot_price (Europa, dia D)",precio
+capinst_coal_mw,esios_capacity_installed,capacidad
+fr_entsoe_D,"spot_price (Europa, dia D)",precio
+capdisp_coal_antracita_mw,esios_capacity_available,capacidad
+gas_mibgas,commodities,combustibles
+it_nord_entsoe_D,"spot_price (Europa, dia D)",precio
+be_entsoe_D,"spot_price (Europa, dia D)",precio
+gas_ttf_m1,commodities,combustibles
+pdbc_coal_mw_D,esios_pdbc_gen,casacion PDBC
+capinst_total_autoconsume_mw,esios_capacity_installed,capacidad
+capinst_wind_mw,esios_capacity_installed,capacidad
+capinst_waste_nonrenewable_mw,esios_capacity_installed,capacidad
+pl_entsoe_D,"spot_price (Europa, dia D)",precio
+co2_eua_dec,commodities,combustibles
+pdbc_pumping_cons_mw_D,esios_pbf_gen,casacion PDBC
+ree_gotherthermal_mw_Dm6,generation (real D-1/D-6),real desfasado
+pdbc_ccgt_mw_D,esios_pdbc_gen,casacion PDBC
+ree_gotherthermal_mw_Dm1,generation (real D-1/D-6),real desfasado
+bil_direct_consumer_mw_D,esios_pbf_bilateral,programa PBF
+ree_gcoal_mw_Dm1,generation (real D-1/D-6),real desfasado
+pdbc_other_renew_mw_D,esios_pdbc_gen,casacion PDBC
+ree_gcoal_mw_Dm6,generation (real D-1/D-6),real desfasado
+oil_mw_Dm6,generation (real D-1/D-6),real desfasado
+hydro_run_river_mw_Dm1,generation (real D-1/D-6),real desfasado
+oil_mw_Dm1,generation (real D-1/D-6),real desfasado
