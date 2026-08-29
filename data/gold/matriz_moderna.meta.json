@@ -1,7 +1,7 @@
 {
   "nombre": "moderna",
   "hash": "9640d867",
-  "generada": "2026-08-29 13:47",
+  "generada": "2026-08-29 19:35",
   "aisla": "ventana (¿estorba la crisis del gas?)",
   "origen": "Postgres vía construir_matriz.construir()",
   "bloque_generacion": "PDBC horario leído de esios_pdbc_gen; el bombeo de esios_pbf_gen, donde los ceros están intactos",
