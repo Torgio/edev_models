@@ -1037,8 +1037,19 @@ para el equipo, no una decisión que se tome unilateralmente aquí.
 
 **Objetivo, fijado antes de ver el resultado (no reinterpretado después)**: no se esperaba superar
 a LightGBM en precisión — la evidencia acumulada (notas 14, 18, 19, 22, 23) apunta en contra de esa
-expectativa, y con ~1.800 días de entrenamiento este es un dataset modesto para un Transformer. El
-objetivo real era doble: (1) comprobar si un modelo que ve la secuencia cruda de 168 horas de
+expectativa, y con ~1.800 días de entrenamiento este es un dataset modesto para un Transformer.
+Esto no es solo intuición del equipo: está documentado en la literatura de forecasting. Zeng,
+Chen, Zhang y Xu, *"Are Transformers Effective for Time Series Forecasting?"* (AAAI 2023,
+[arXiv:2205.13504](https://arxiv.org/abs/2205.13504)), muestran que modelos lineales de una sola
+capa (LTSF-Linear) igualan o superan a varios Transformers de forecasting de largo plazo, y
+argumentan que el mecanismo de auto-atención, al ser invariante a la permutación del orden de
+entrada, pierde precisamente la información temporal que el problema necesita — un mecanismo
+distinto pero compatible con lo que ya veníamos observando en este proyecto (que la ventaja de
+LightGBM no viene de falta de "atención", sino de que los lags manuales ya codifican el orden
+temporal de forma explícita). Vale la pena citarlo tal cual en la memoria al llegar al capítulo de
+Transformers, como respaldo académico del objetivo que se fijó de antemano.
+
+El objetivo real era doble: (1) comprobar si un modelo que ve la secuencia cruda de 168 horas de
 precio real (sin la ingeniería manual de lags) encuentra algo que nuestras features no capturan, y
 (2) ver si predecir las 24 horas del día a la vez produce una forma más coherente, útil para el
 valor económico aunque no para el MAE puro — el mismo patrón que ya mostró el Seq2Seq del
@@ -1069,3 +1080,41 @@ un candidato serio para la capa de decisión de la batería (capítulo BESS) pre
 optimiza mejor el *orden relativo* de las horas del día, que es lo que de verdad importa para
 cargar y descargar — no el precio exacto. Queda documentado como comparación honesta, no como
 "ganador" ni "descartado".
+
+---
+
+## 32. El "nuevo récord" de 11,95 no se adopta todavía — el propio autor avisó de una fuga sin corregir
+
+Un compañero reportó un ensemble sobre `nucleo + meteo ECMWF` con MAE 11,95 (mejor que cualquier
+resultado del proyecto hasta ahora) y, en el mismo mensaje, algo que hay que tomarse muy en serio:
+*"al volver a revisar las matrices estaba metiendo valores del día D (día de predicción) y en el
+momento de la predicción esos valores no son conocidos, así que toca tocar un poco los valores
+para que funcione con el mismo tipo de parámetros que en producción."*
+
+Es, en sus propias palabras, una fuga de información sin corregir todavía (verbo en futuro:
+"toca tocar" — no "ya corregí"). No se puede verificar por nuestra cuenta con la herramienta de
+auditoría (`scripts/auditoria_frontera.py`) porque esa variante concreta (con el canal ECMWF
+añadido) no está todavía en nuestro repositorio local.
+
+**Decisión, por prudencia**: **no se adopta el 11,95 como resultado del proyecto ni se usa en la
+memoria hasta que se confirme la corrección y se vuelva a correr.** El propio `nucleo` (sin ese
+canal, MAE 12,32 sobre el mismo test) sigue siendo el número verificado y auditado — ese es el que
+usamos si hoy hay que citar algo.
+
+**Complicación real que esto introduce**: el usuario confirmó que los 211 días de test de la
+tabla comparativa **ya cuentan como la apertura oficial del test compartido** que el plan de
+productivización reservaba para el 31 de agosto, con los modelos ya congelados. Si esa misma tabla
+incluye una entrada construida con una fuga todavía sin corregir, la apertura oficial del test se
+hizo sobre un conjunto de resultados parcialmente contaminado. No es motivo de alarma — es
+exactamente el tipo de cosa que conviene decir en voz alta cuanto antes, no descubrir en la
+defensa. Vale la pena plantear en el grupo, con la misma calma con la que se han resuelto las
+demás: una vez corregida la fuga de `nucleo + meteo ECMWF`, ¿se re-abre el test para esa variante
+en concreto, o se da por buena la apertura ya hecha y esa variante queda fuera de la comparación
+final por haber llegado tarde y con un defecto conocido?
+
+**Dato adicional útil para esa conversación**: la matriz `moderna` (ventana 2023-01-01 en
+adelante, 1.308 días, excluye por completo la crisis de 2021-2022) rindió peor que `nucleo`
+(13,76 vs 12,32 de MAE) en la comparación multi-modelo. Coincide con nuestro propio hallazgo de la
+nota 22 (un modelo sin exposición a la crisis pierde contra la persistencia) — es una segunda
+confirmación, con datos de otra fuente, de que recortar la ventana de entrenamiento para "evitar"
+la crisis sale caro, no barato.
