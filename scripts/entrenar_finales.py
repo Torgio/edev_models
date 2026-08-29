@@ -214,12 +214,15 @@ def main():
             pd.DataFrame(filas).to_csv(salida / "por_semilla.csv", index=False)
             print(f"   {fam:18s} s{s}  MAE val {mv['MAE']:6.3f} · test {mt['MAE']:6.3f} "
                   f"· captura {mt['captura_%']:5.1f}%   [{(time.time()-t0)/60:.0f} min]")
-            if a.guardar_modelos and modelo is not None and s == 0:
-                modelo.save(salida / f"{fam}.keras")
+            # TODAS las semillas: el representante se elige despues por MAE de
+            # validacion, y puede no ser la s0. Guardar solo la primera exportaria un
+            # modelo distinto del que el resumen declara mejor.
+            if a.guardar_modelos and modelo is not None:
+                modelo.save(salida / f"{fam}__s{s}.keras")
                 # El .keras solo no sirve: guarda pesos, no la estandarizacion ni el orden
                 # de columnas con el que se entreno. Sin esto, cargarlo en produccion
                 # devuelve numeros plausibles y equivocados, sin ningun aviso.
-                pre = T.preprocesado()
+                pre = T.preprocesado()   # identico para las 3 semillas
                 pre["familia"] = fam
                 pre["objetivo"] = "absoluto" if fam == "seq2seq_absoluto" else "residuo"
                 pre["destipificar"] = ({"mu": mu_y, "sd": sd_y,
