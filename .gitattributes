@@ -17,3 +17,12 @@ data/gold/**/h??.txt           -text
 # Los .keras y los .parquet son binarios de verdad; que git no intente adivinarlo.
 *.keras   binary
 *.parquet binary
+
+# Los arboles de los companeros, en el mismo formato de texto nativo y con el mismo
+# problema. Magdalena y Willy los exportaron con LF; un `git clone` en Windows los
+# devolveria con CRLF y el proceso moriria al cargarlos, sin traza util.
+modelos/**/*.txt               -text
+
+# XGBoost guarda en JSON, que git tambien trata como texto. El parser de xgboost si
+# tolera CRLF, pero no hay motivo para que git los reescriba.
+modelos/**/artefactos/*.json   -text
