@@ -137,6 +137,22 @@ def simular_autoconsumo_solar(potencia_solar_kwp: float, potencia_bateria_mw: fl
 
 
 @beta_tool
+def extrapolar_consumo_cliente(historico_mensual_mwh: list[float], anios_a_futuro: int = 2) -> str:
+    """Extrapola el consumo mensual futuro de un cliente a partir de SU PROPIO historico real de
+    consumo, con rangos p10/p50/p90 (nunca un solo numero). Usa esta herramienta cuando el
+    usuario aporte un historico de consumo y pida una proyeccion a futuro (1-2 años). SIEMPRE
+    incluye la lista `limitaciones` de la respuesta.
+
+    Args:
+        historico_mensual_mwh: Lista de consumo mensual en MWh, empezando en enero, sin huecos,
+            longitud multiplo de 12 (minimo 12 meses).
+        anios_a_futuro: Cuantos años extrapolar hacia adelante (por defecto 2).
+    """
+    return json.dumps(_h.extrapolar_consumo_cliente(historico_mensual_mwh, anios_a_futuro),
+                       ensure_ascii=False)
+
+
+@beta_tool
 def prediccion_d_mas_1() -> str:
     """La UNICA prediccion real del proyecto: el precio que el modelo entrenado predice para las
     24 horas del dia siguiente. No acepta parametros -- siempre es "mañana" respecto a la fecha
@@ -159,7 +175,7 @@ def buscar_documentacion(pregunta: str) -> str:
 
 
 TOOLS = [precio_historico_percentiles, precio_negativos, simular_bateria, simular_autoconsumo_solar,
-         prediccion_d_mas_1, buscar_documentacion]
+         extrapolar_consumo_cliente, prediccion_d_mas_1, buscar_documentacion]
 
 
 def preguntar(pregunta: str, modelo: str = "claude-opus-5") -> str:

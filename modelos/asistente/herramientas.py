@@ -353,6 +353,66 @@ def simular_autoconsumo_solar(potencia_solar_kwp: float, potencia_bateria_mw: fl
     }
 
 
+def extrapolar_consumo_cliente(historico_mensual_mwh: list[float], anios_a_futuro: int = 2) -> dict:
+    """Extrapola el consumo mensual futuro de un cliente a partir de SU PROPIO historico real --
+    con rangos (p10/p50/p90), nunca un solo numero. Misma logica que
+    `scripts/curva_precios.py` (nivel x estacionalidad + residuo -> percentiles): el NIVEL no se
+    predice con una tendencia arriesgada, se mantiene el mas reciente; la ESTACIONALIDAD sale del
+    propio historico del cliente; el RESIDUO (variabilidad real mes a mes) es lo que abre la banda
+    p10-p90 -- no una suposicion de cuanta incertidumbre "deberia" haber.
+
+    Args:
+        historico_mensual_mwh: Consumo mensual del cliente en MWh, EMPEZANDO EN ENERO, sin
+            huecos, con longitud multiplo de 12 (minimo 12 meses; con 24-36 la estacionalidad
+            sale mas fiable).
+        anios_a_futuro: Cuantos años hacia adelante extrapolar (por defecto 2).
+    """
+    n = len(historico_mensual_mwh)
+    if n < 12 or n % 12 != 0:
+        return {"error": "Se necesitan meses completos empezando en enero, en multiplos de 12 "
+                          "(12, 24, 36...). Recibido: " + str(n) + " meses."}
+
+    datos = np.array(historico_mensual_mwh).reshape(-1, 12)
+    n_anios = datos.shape[0]
+
+    nivel_por_anio = datos.mean(axis=1)
+    factor_estacional = (datos / nivel_por_anio[:, None]).mean(axis=0)  # 1 valor por mes (0=ene..11=dic)
+
+    nivel_reciente = float(nivel_por_anio[-1])  # el mas reciente, sin extrapolar tendencia -- ver limitaciones
+
+    esperado = nivel_por_anio[:, None] * factor_estacional[None, :]
+    residuo_relativo = (datos - esperado) / esperado  # variabilidad real, en proporcion
+    p10_r, p50_r, p90_r = np.percentile(residuo_relativo, [10, 50, 90])
+
+    proyeccion = []
+    for anio_futuro in range(1, anios_a_futuro + 1):
+        for mes in range(12):
+            base = nivel_reciente * factor_estacional[mes]
+            proyeccion.append({
+                "anio_relativo": anio_futuro, "mes": mes + 1,
+                "p10_mwh": round(float(base * (1 + p10_r)), 2),
+                "p50_mwh": round(float(base * (1 + p50_r)), 2),
+                "p90_mwh": round(float(base * (1 + p90_r)), 2),
+            })
+
+    return {
+        "etiqueta": "EXTRAPOLACION DEL CONSUMO DEL CLIENTE (basada en SU histórico real, con "
+                    "rangos -- NO es una prediccion de precio ni de mercado)",
+        "meses_historicos_usados": n, "años_historicos": n_anios,
+        "nivel_base_mensual_mwh": round(nivel_reciente, 2),
+        "proyeccion_mensual": proyeccion,
+        "limitaciones": [
+            "El nivel base se mantiene igual al del ultimo año -- no proyecta crecimiento ni "
+            "caida del negocio. Si el cliente espera crecer/reducir consumo, hay que ajustarlo "
+            "a mano multiplicando el nivel.",
+            f"La estacionalidad y la banda de incertidumbre salen de solo {n_anios} año(s) de "
+            "historico del cliente -- con mas años, la banda sera mas fiable.",
+            "No incorpora clima, precios de la energia ni decisiones del cliente (ej. nueva "
+            "maquinaria) que puedan cambiar el consumo futuro.",
+        ],
+    }
+
+
 _MODELO_EMBEDDING = None
 
 

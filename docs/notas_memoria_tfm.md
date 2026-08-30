@@ -1215,3 +1215,35 @@ propio del cliente** a uno o dos años con rangos (p10/p50/p90) en vez de un ún
 su propio histórico como base. Es la aplicación correcta de "extrapolar con percentiles" que se
 había planteado antes para baterías a 20 años (nota 33) — aquí sí encaja, porque parte de datos
 reales que el cliente aporta, no de una serie que no existe.
+
+**Construida y probada**: `extrapolar_consumo_cliente(historico_mensual_mwh, anios_a_futuro)`.
+Casualmente, el mismo día un compañero de equipo construyó `scripts/curva_precios.py` con
+exactamente la misma filosofía para el precio a 20 años (nivel × estacionalidad + residuo →
+percentiles, con el nivel explícitamente "NO SE PREDICE, SE APORTA" desde fuera) — confirma de
+forma independiente que el enfoque era el correcto. Se reutilizó la misma lógica para consumo:
+nivel = el más reciente del cliente (sin asumir tendencia de crecimiento), estacionalidad = la del
+propio histórico, y la banda p10/p90 sale de la variabilidad real mes a mes, no de un supuesto.
+Probado con un caso sintético (24 meses, pico de climatización en verano): proyectó correctamente
+el patrón estacional con bandas estrechas (esperable con solo 2 años de histórico, tal como avisa
+la propia herramienta en sus `limitaciones`).
+
+---
+
+## 35. Fuga meteorológica corregida por el equipo — verificado que NO afecta a `nucleo` ni a nuestro modelo
+
+El equipo corrigió una fuga real: los lags meteorológicos (`_met_Dm1`, `_met_Dm2`) salían de ERA5
+(reanálisis, publicado con 5 días de retraso) incluso en fechas donde ya existía previsión ECMWF
+real — a las 11:00 de D esos valores de ERA5 todavía no existían. La corrección hace que, desde
+que hay ECMWF disponible (abril de 2024 en adelante), los lags usen ECMWF.
+
+**Antes de asumir que había que reentrenar, se verificó directamente**: se comparó celda a celda
+las 8 columnas meteorológicas de lag entre `matriz_nucleo` (la que usa nuestro LightGBM) y la
+nueva `matriz_produccion` (donde sí se aplicó la corrección), sobre las 57.521 filas que ambas
+comparten — **cero diferencias**. La corrección no cambió ningún valor en el período que ya
+teníamos entrenado; su efecto real está en la parte más nueva de los datos, ya incorporada en
+`matriz_produccion` pero no en `matriz_nucleo`. Conclusión: nuestro modelo actual sigue siendo
+válido, no hace falta reentrenar por este motivo.
+
+**También llegó al repo**: `production/api/` (panel FastAPI + tabla `predictions` en Postgres,
+para mostrar predicciones de varios modelos en un mismo gráfico) y `scripts/curva_precios.py`
+(la curva de precio a 20 años con la metodología de percentiles ya descrita en la nota 34).
