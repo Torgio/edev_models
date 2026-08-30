@@ -11,7 +11,6 @@ formato de Prod.txt antes de que abras el PR:
 
     python run_pipeline.py                          # los cuatro + verificacion
     python run_pipeline.py --modelos ridge elasticnet
-    python run_pipeline.py --seleccion ambos spearman sfs ninguna   # compara los 4 modos
     python run_pipeline.py --solo-verificar         # no entrena, solo repasa entregables/
     python run_pipeline.py --forzar                 # rehace tambien tratamiento y ordenes
 
@@ -37,19 +36,19 @@ MODELOS = ["sarima", "sarimax", "ridge", "elasticnet"]
 # necesita instalados.
 
 
-def _ejecutar_modelo(nombre: str, forzar: bool, estrategias: dict, modo: str | None) -> None:
+def _ejecutar_modelo(nombre: str, forzar: bool, estrategias: dict) -> None:
     if nombre == "sarima":
         from tfm_horario.models import sarima
-        sarima.ejecutar(forzar, estrategias.get("sarima"), modo)
+        sarima.ejecutar(forzar, estrategias.get("sarima"))
     elif nombre == "sarimax":
         from tfm_horario.models import sarimax
-        sarimax.ejecutar(forzar, estrategias.get("sarimax"), modo)
+        sarimax.ejecutar(forzar, estrategias.get("sarimax"))
     elif nombre == "ridge":
         from tfm_horario.models import ridge
-        ridge.ejecutar(forzar, modo)
+        ridge.ejecutar(forzar)
     elif nombre == "elasticnet":
         from tfm_horario.models import elasticnet
-        elasticnet.ejecutar(forzar, modo)
+        elasticnet.ejecutar(forzar)
     else:
         raise ValueError(f"modelo desconocido: {nombre}")
 
@@ -58,9 +57,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--modelos", nargs="+", choices=MODELOS, default=MODELOS,
                         help="cuales entrenar (por defecto, los cuatro)")
-    parser.add_argument("--seleccion", nargs="+", choices=config.MODOS_SELECCION, default=None,
-                        help="uno o varios modos de seleccion; con varios, entrena cada modelo "
-                             "una vez por modo (por defecto, solo %s)" % config.MODO_SELECCION)
     parser.add_argument("--solo-verificar", action="store_true",
                         help="no entrena: solo repasa el formato de entregables/")
     parser.add_argument("--forzar", action="store_true",
@@ -78,14 +74,12 @@ def main() -> int:
     try:
         if not args.solo_verificar:
             forzar = args.forzar
-            modos = args.seleccion or [config.MODO_SELECCION]
-            for modo in modos:
-                for nombre in args.modelos:
-                    log.info("=== %s | seleccion=%s ===", nombre.upper(), modo)
-                    _ejecutar_modelo(nombre, forzar, estrategias, modo)
-                    # El --forzar solo aplica al primero: a partir de ahi la preparacion
-                    # ya esta recien regenerada y repetirla serian horas de computo.
-                    forzar = False
+            for nombre in args.modelos:
+                log.info("=== %s ===", nombre.upper())
+                _ejecutar_modelo(nombre, forzar, estrategias)
+                # El --forzar solo aplica al primero: a partir de ahi la preparacion
+                # ya esta recien regenerada y repetirla serian horas de computo.
+                forzar = False
 
         repaso = entrega.verificar_entregables()
         log.info("Verificacion de entregables:\n%s", repaso.to_string())
