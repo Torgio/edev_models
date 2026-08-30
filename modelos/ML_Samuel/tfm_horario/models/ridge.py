@@ -85,9 +85,9 @@ def coeficientes(modelo, columnas) -> pd.Series:
 
 
 # ---------------------------------------------------------------------------
-def ejecutar(forzar: bool = False) -> pd.Series:
+def ejecutar(forzar: bool = False, modo: str | None = None) -> pd.Series:
     """Prepara los datos, entrena y deja el entregable en entregables/ridge_horario/."""
-    datos, X_train_scaled, X_val_scaled = preparacion.preparar_escalados(forzar)
+    datos, X_train_scaled, X_val_scaled = preparacion.preparar_escalados(modo, forzar)
 
     modelo, pred, tabla = entrenar_y_predecir(
         X_train_scaled, datos["y_train"], X_val_scaled, datos["y_val"]
@@ -95,12 +95,13 @@ def ejecutar(forzar: bool = False) -> pd.Series:
 
     # El tuning se guarda en salidas/ (uso interno), NO en entregables/
     config.preparar_entorno()
-    tabla.to_csv(config.OUTPUT_DIR / "tuning_ridge.csv", index=False)
+    tabla.to_csv(config.OUTPUT_DIR / f"tuning_ridge_{datos['modo']}.csv", index=False)
     coeficientes(modelo, X_train_scaled.columns).to_csv(config.OUTPUT_DIR / "coefs_ridge.csv")
 
-    artifacts.guardar(pred, "pred_ridge")
+    modelo_id = entrega.id_con_modo(MODELO_ID, datos["modo"])
+    artifacts.guardar(pred, f"pred_{modelo_id}")
     entrega.guardar_entregable(
-        MODELO_ID,
+        modelo_id,
         modelo=modelo,
         pred=pred,
         features=list(X_train_scaled.columns),
@@ -112,6 +113,8 @@ def ejecutar(forzar: bool = False) -> pd.Series:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--seleccion", choices=config.MODOS_SELECCION, default=None,
+                        help=f"modo de seleccion de features (por defecto {config.MODO_SELECCION})")
     parser.add_argument("--forzar", action="store_true",
                         help="rehace el tratamiento en vez de leerlo de artifacts/")
     args = parser.parse_args()
@@ -119,7 +122,7 @@ def main() -> int:
     config.preparar_entorno()
     log_ = config.configurar_logging("ridge")
     try:
-        ejecutar(args.forzar)
+        ejecutar(args.forzar, args.seleccion)
     except Exception:
         log_.exception("Ridge ha fallado")
         return 1

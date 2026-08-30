@@ -166,9 +166,10 @@ def entrenar_y_predecir(
 
 
 # ---------------------------------------------------------------------------
-def ejecutar(forzar: bool = False, estrategia: str | None = None) -> pd.Series:
+def ejecutar(forzar: bool = False, estrategia: str | None = None,
+             modo: str | None = None) -> pd.Series:
     """Prepara los datos, busca orden (cacheado), ajusta, predice y compara con el naive."""
-    datos = preparacion.preparar_datos(forzar)
+    datos = preparacion.preparar_datos(modo, forzar)
     estrategia = estrategia or config.ESTRATEGIA_SARIMA
 
     # El orden se cachea aparte: es lo caro, y no cambia al probar otra estrategia
@@ -180,10 +181,11 @@ def ejecutar(forzar: bool = False, estrategia: str | None = None) -> pd.Series:
     fit = ajustar(datos["y_train"], order, seasonal_order)
     pred = predecir(fit, datos["y_val"], estrategia=estrategia)
 
-    artifacts.guardar(pred, "pred_sarima")
+    modelo_id = entrega.id_con_modo(MODELO_ID, datos["modo"])
+    artifacts.guardar(pred, f"pred_{modelo_id}")
     log.info("SARIMA listo (estrategia=%s)", estrategia)
     entrega.guardar_entregable(
-        MODELO_ID,
+        modelo_id,
         modelo=fit,
         pred=pred,
         features=[],                      # SARIMA sin exogenas: solo usa el historico del precio
@@ -195,6 +197,8 @@ def ejecutar(forzar: bool = False, estrategia: str | None = None) -> pd.Series:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--seleccion", choices=config.MODOS_SELECCION, default=None,
+                        help=f"modo de seleccion de features (por defecto {config.MODO_SELECCION})")
     parser.add_argument("--forzar", action="store_true",
                         help="rehace tratamiento y busqueda de orden en vez de leerlos de artifacts/")
     parser.add_argument("--estrategia", choices=config.ESTRATEGIAS, default=None,
@@ -204,7 +208,7 @@ def main() -> int:
     config.preparar_entorno()
     log_ = config.configurar_logging("sarima")
     try:
-        ejecutar(args.forzar, args.estrategia)
+        ejecutar(args.forzar, args.estrategia, args.seleccion)
     except Exception:
         log_.exception("SARIMA ha fallado")
         return 1

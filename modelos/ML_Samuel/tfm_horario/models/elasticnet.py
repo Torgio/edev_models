@@ -34,8 +34,10 @@ if __name__ == "__main__" and __spec__ is None:
 import argparse
 import itertools
 import logging
+import warnings
 
 import pandas as pd
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import ElasticNet
 from sklearn.metrics import mean_absolute_error
 
@@ -56,16 +58,37 @@ def tunear(X_train, y_train, X_val, y_val, alphas: list | None = None,
     filas = []
     for alpha, l1_ratio in itertools.product(alphas, l1_ratios):
         modelo = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=config.EN_MAX_ITER)
-        modelo.fit(X_train, y_train)
+
+        # Se captura el ConvergenceWarning de cada ajuste en vez de dejar que
+        # inunde la consola: interesa SABER que combinaciones no convergieron, no
+        # ver el mismo aviso 30 veces sin saber a cual corresponde.
+        with warnings.catch_warnings(record=True) as avisos:
+            warnings.simplefilter("always", ConvergenceWarning)
+            modelo.fit(X_train, y_train)
+            convergio = not any(issubclass(a.category, ConvergenceWarning) for a in avisos)
+
         filas.append({
             "alpha": alpha,
             "l1_ratio": l1_ratio,
             "MAE_val": mean_absolute_error(y_val, modelo.predict(X_val)),
+            "n_iter": int(modelo.n_iter_),
+            "convergio": convergio,
         })
 
     tabla = pd.DataFrame(filas).sort_values("MAE_val").reset_index(drop=True)
-    log.info("Mejor combinacion (ElasticNet): alpha=%s l1_ratio=%s MAE=%.3f",
-             tabla.iloc[0]["alpha"], tabla.iloc[0]["l1_ratio"], tabla.iloc[0]["MAE_val"])
+
+    sin_converger = tabla[~tabla["convergio"]]
+    if len(sin_converger):
+        log.warning("%d de %d combinaciones NO convergieron en %d iteraciones. "
+                    "Suelen ser los alphas mas pequeños sobre features colineales; "
+                    "sube EN_MAX_ITER en ajustes.py o usa un modo con seleccion.",
+                    len(sin_converger), len(tabla), config.EN_MAX_ITER)
+        log.warning("no convergen:\n%s",
+                    sin_converger[["alpha", "l1_ratio", "n_iter"]].to_string(index=False))
+
+    mejor = tabla.iloc[0]
+    log.info("Mejor combinacion (ElasticNet): alpha=%s l1_ratio=%s MAE=%.3f (n_iter=%d)",
+             mejor["alpha"], mejor["l1_ratio"], mejor["MAE_val"], mejor["n_iter"])
     return tabla
 
 
@@ -78,8 +101,24 @@ def entrenar_y_predecir(X_train, y_train, X_val, y_val, alphas: list | None = No
     es el mismo split que los escogio. Con el test sellado se corrige solo.
     """
     tabla = tunear(X_train, y_train, X_val, y_val, alphas, l1_ratios)
-    best_alpha = tabla.iloc[0]["alpha"]
-    best_l1 = tabla.iloc[0]["l1_ratio"]
+
+    # Solo se elige entre las combinaciones que CONVERGIERON. Un ajuste que se
+    # quedo a medias no es el modelo que dice ser: sus coeficientes dependen de
+    # donde se corto la optimizacion, asi que no es reproducible y no deberia
+    # acabar en el entregable aunque su MAE salga bajo.
+    convergidas = tabla[tabla["convergio"]]
+    if len(convergidas):
+        if len(convergidas) < len(tabla):
+            log.info("se elige entre las %d combinaciones convergidas de %d",
+                     len(convergidas), len(tabla))
+        mejor = convergidas.iloc[0]
+    else:
+        log.error("NINGUNA combinacion convergio: se usa la de menor MAE, pero el "
+                  "modelo NO es reproducible. Sube EN_MAX_ITER antes de entregarlo.")
+        mejor = tabla.iloc[0]
+
+    best_alpha = mejor["alpha"]
+    best_l1 = mejor["l1_ratio"]
 
     final = ElasticNet(alpha=best_alpha, l1_ratio=best_l1, max_iter=config.EN_MAX_ITER)
     final.fit(X_train, y_train)
@@ -95,9 +134,9 @@ def features_anuladas(modelo, columnas) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-def ejecutar(forzar: bool = False) -> pd.Series:
+def ejecutar(forzar: bool = False, modo: str | None = None) -> pd.Series:
     """Prepara los datos, entrena y deja el entregable en entregables/elasticnet_horario/."""
-    datos, X_train_scaled, X_val_scaled = preparacion.preparar_escalados(forzar)
+    datos, X_train_scaled, X_val_scaled = preparacion.preparar_escalados(modo, forzar)
 
     modelo, pred, tabla = entrenar_y_predecir(
         X_train_scaled, datos["y_train"], X_val_scaled, datos["y_val"]
@@ -105,13 +144,14 @@ def ejecutar(forzar: bool = False) -> pd.Series:
 
     # El tuning se guarda en salidas/ (uso interno), NO en entregables/
     config.preparar_entorno()
-    tabla.to_csv(config.OUTPUT_DIR / "tuning_elasticnet.csv", index=False)
+    tabla.to_csv(config.OUTPUT_DIR / f"tuning_elasticnet_{datos['modo']}.csv", index=False)
     anuladas = features_anuladas(modelo, X_train_scaled.columns)
     log.info("ElasticNet anula %d features: %s", len(anuladas), anuladas)
 
-    artifacts.guardar(pred, "pred_elasticnet")
+    modelo_id = entrega.id_con_modo(MODELO_ID, datos["modo"])
+    artifacts.guardar(pred, f"pred_{modelo_id}")
     entrega.guardar_entregable(
-        MODELO_ID,
+        modelo_id,
         modelo=modelo,
         pred=pred,
         features=list(X_train_scaled.columns),
@@ -123,6 +163,8 @@ def ejecutar(forzar: bool = False) -> pd.Series:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--seleccion", choices=config.MODOS_SELECCION, default=None,
+                        help=f"modo de seleccion de features (por defecto {config.MODO_SELECCION})")
     parser.add_argument("--forzar", action="store_true",
                         help="rehace el tratamiento en vez de leerlo de artifacts/")
     args = parser.parse_args()
@@ -130,7 +172,7 @@ def main() -> int:
     config.preparar_entorno()
     log_ = config.configurar_logging("elasticnet")
     try:
-        ejecutar(args.forzar)
+        ejecutar(args.forzar, args.seleccion)
     except Exception:
         log_.exception("ElasticNet ha fallado")
         return 1
