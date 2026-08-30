@@ -149,6 +149,14 @@ VAL_END = pd.Timestamp("2025-12-31").date()      # validation: TRAIN_END+1 -> VA
 # degradaria los ultimos lags. Para mover el corte, tocar SOLO esta constante.
 MODELO_END = pd.Timestamp("2026-07-31").date()   # ultimo dia predicho (D+1)
 
+# Descartar las filas sin precio es lo correcto para ENTRENAR -- una fila sin target no
+# ensena nada -- y lo contrario de lo que necesita PREDECIR: el precio de manana no existe
+# todavia, es justo lo que se quiere predecir, asi que con el filtro puesto esa fila se cae
+# siempre por mucho que se suba MODELO_END.
+# Por defecto True, o sea el comportamiento de siempre. Solo lo baja a False
+# `scripts/construir_matriz_produccion.py`, y solo mientras construye la matriz del dia.
+EXIGIR_TARGET = True
+
 # ── Inicio efectivo por cobertura de fuentes (23-ago-2026) ─────────────────────────────────
 # El dataset no arranca en DATASET_START si alguna fuente EXIGIDA no llega hasta ahi. Se
 # calcula el primer dia en que TODAS las tablas de esta lista tienen dato y se recorta ahi.
@@ -2109,6 +2117,25 @@ def exportar_excel(df: pd.DataFrame, ruta: Path, variante: str = "", max_filas: 
 #   "off"      sin meteorologia.
 ERA5_MODO = "lag"                 # "lag" | "perfecto" | "off"
 TABLA_ERA5 = "era5_weather_agg"
+
+# PREVISION ANTES QUE REANALISIS (decision del equipo, 30-ago-2026)
+#
+# Los lags `*_met_Dm1` / `*_met_Dm2` describen el tiempo de hace uno y dos dias y salian de
+# ERA5. Pero ERA5 es REANALISIS y Copernicus lo publica con unos 5 dias de retraso: a las
+# 11:00 del dia D, el reanalisis de D-1 y D-2 NO EXISTE. El modelo se estaba entrenando con
+# una variable que en produccion no vera nunca -- exactamente el defecto que el canal
+# `*_meteo` se construyo para evitar, colado por otra puerta.
+#
+# Con la prevision no pasa: existe antes del momento de predecir, que es lo unico que
+# importa. Asi que donde hay ECMWF manda ECMWF, en entrenamiento y en produccion por igual;
+# ERA5 solo cubre lo anterior a 2024-04, que es donde no hay archivo de prevision.
+#
+# Las dos tablas tienen las mismas 9 columnas y las mismas unidades (medido sobre jun-ago
+# 2026: t2m -0,21 K, msl +5,8 Pa, wind100 +0,73 m/s -- el sesgo de prevision conocido).
+#
+# Por defecto False para no cambiarle el dataset a nadie sin avisar.
+ERA5_PREFERIR_ECMWF = False
+TABLA_ECMWF = "ecmwf_forecast_agg"
 COLS_ERA5_SUAVES = ["t2m_mean", "d2m_mean", "msl_mean", "wind10_mean", "wind100_mean",
                     "wind_gust10_mean", "tcc_mean"]
 COLS_ERA5_RADIACION = ["ssrd_mean"]
@@ -2134,6 +2161,37 @@ def _era5_horario(conn) -> pd.DataFrame:
         f"SELECT {ts}, {', '.join(pedidas)} FROM {TABLA_ERA5} "
         f"WHERE {ts} BETWEEN %(start)s AND %(end)s ORDER BY {ts}",
         conn, params={"start": DATASET_START, "end": DATASET_END})
+
+    if ERA5_PREFERIR_ECMWF:
+        # La prevision PISA al reanalisis donde exista, no solo lo completa por la cola:
+        # el objetivo es que el modelo vea en entrenamiento lo mismo que vera al predecir.
+        tiene = set(_columnas_de(conn, TABLA_ECMWF))
+        cols_ec = [c for c in pedidas if c in tiene]
+        fc = pd.read_sql(
+            f"SELECT ts AS {ts}, {', '.join(cols_ec)} FROM {TABLA_ECMWF} "
+            f"WHERE ts BETWEEN %(start)s AND %(end)s ORDER BY ts",
+            conn, params={"start": DATASET_START, "end": DATASET_END})
+        # `wind_gust10_mean` esta en la tabla pero viene vacia: si se dejara, borraria el
+        # dato de ERA5 con nulos.
+        fc = fc.dropna(axis=1, how="all")
+        sustituibles = [c for c in cols_ec if c in fc.columns]
+        if len(fc) and sustituibles:
+            fc[ts] = pd.to_datetime(fc[ts])
+            df[ts] = pd.to_datetime(df[ts])
+            antes_n = df[sustituibles].notna().sum().sum()
+            df = df.merge(fc[[ts] + sustituibles], on=ts, how="outer", suffixes=("", "_fc"))
+            pisadas = 0
+            for c in sustituibles:
+                nuevo = df[f"{c}_fc"]
+                pisadas += int((nuevo.notna() & df[c].notna()).sum())
+                df[c] = nuevo.where(nuevo.notna(), df[c])
+            df = df.drop(columns=[f"{c}_fc" for c in sustituibles]).sort_values(ts)
+            print(f"[era5] PREVISION ANTES QUE REANALISIS: {len(fc):,} registros de "
+                  f"{TABLA_ECMWF} · {pisadas:,} celdas de ERA5 sustituidas de "
+                  f"{antes_n:,} · columnas {sorted(sustituibles)}")
+            fuera = sorted(set(pedidas) - set(sustituibles))
+            if fuera:
+                print(f"[era5]   siguen saliendo de ERA5 (ECMWF no las tiene): {fuera}")
 
     # naive -> UTC explicito. Es el pendiente del 17-ago sobre el que avisan las notas del
     # equipo: mezclar naive y aware en un join falla en silencio.
@@ -2390,7 +2448,13 @@ def construir_dataset_horario(incluir_clima: bool = False,
 
     # ── corte de modelado y limpieza ──────────────────────────────────────────────────────
     df = df[pd.to_datetime(df["fecha_objetivo"]) <= pd.Timestamp(MODELO_END)]
-    df = df[df["target_price"].notna()]
+    # Exigir target es lo correcto para ENTRENAR: una fila sin precio no ensena nada. Pero
+    # es justo lo contrario de lo que necesita PREDECIR: el precio de manana no existe
+    # todavia -- es lo que se quiere predecir -- y con este filtro esa fila se descarta
+    # siempre, se ponga lo que se ponga en MODELO_END.
+    # Por defecto queda como estaba; solo `construir_matriz_produccion.py` lo pone a False.
+    if EXIGIR_TARGET:
+        df = df[df["target_price"].notna()]
     df = df.sort_values(["fecha_objetivo", "hora"]).reset_index(drop=True)
 
     fuera = [c for c in COLS_EXCLUIDAS if c in df.columns]

@@ -15,9 +15,17 @@ SEGUN VALIDACION. Un fichero mas seria un sitio mas donde desincronizarse.
 
 LA COMPROBACION DE CONTRATO no es opcional. Un `.keras` guarda pesos, no el orden de las
 columnas ni la estandarizacion. Si la matriz se regenera con otro orden de canales, el
-modelo sigue prediciendo -- con numeros plausibles y equivocados, sin ningun aviso. Antes
-de predecir se compara el hash de la matriz y las tres listas de columnas contra lo que
-declara cada `.preprocesado.json`, y si no cuadra esto falla en voz alta.
+modelo sigue prediciendo -- con numeros plausibles y equivocados, sin ningun aviso.
+
+Se comprueba el ESPACIO DE ENTRADA, no el hash:
+
+    FALLA   las tres listas de columnas, o los escaladores, no coinciden
+    AVISA   el hash de la matriz es otro pero lo demas cuadra
+
+Esa distincion es la que permite que esto funcione a diario: la matriz gana una fila cada
+dia y su hash cambia siempre, asi que un contrato que abortara por hash se romperia el
+primer dia. Los escaladores se ajustan solo sobre train y el corte va por fecha fija
+(train hasta 2024-12-31), asi que anadir dias nuevos no los mueve.
 
 Uso por terminal:
     python scripts/predecir.py                          # ensemble sobre el test
@@ -56,12 +64,37 @@ class ContratoRoto(RuntimeError):
     """La matriz de hoy no es aquella con la que se entreno el modelo."""
 
 
-def _comprobar(pre, T, quien):
-    """Compara lo que el modelo espera contra lo que la matriz trae."""
-    fallos = []
+def _comprobar(pre, T, quien, avisar=True):
+    """Compara lo que el modelo espera contra lo que la matriz trae.
+
+    El HASH no puede ser motivo de fallo. Cambia cada vez que la matriz gana un dia, que
+    en produccion es todos los dias: un contrato que aborte por hash se rompe el primer
+    dia y obliga a reentrenar por nada. Lo que de verdad tiene que coincidir es el ESPACIO
+    DE ENTRADA -- el orden de las columnas y los escaladores -- porque eso es lo que el
+    modelo aprendio. Los escaladores se ajustan solo sobre train, y el corte va por fecha
+    fija, asi que anadir dias nuevos no los mueve: si han cambiado, es que algo mas lo hizo.
+    """
+    fallos, avisos = [], []
     h_mod, h_hoy = pre.get("hash_matriz"), T.meta.get("hash")
     if h_mod != h_hoy:
-        fallos.append(f"hash de matriz: se entreno con {h_mod}, hoy es {h_hoy}")
+        avisos.append(f"la matriz no es la del entrenamiento ({h_mod} -> {h_hoy}); "
+                      f"si solo se le han anadido dias, es lo esperado")
+
+    for clave, esc in (pre.get("escaladores") or {}).items():
+        v = T.esc.get(clave)
+        if v is None:
+            continue
+        for cual in ("mu", "sd"):
+            a = np.asarray(esc[cual], dtype=float).ravel()
+            b = np.asarray(getattr(v, cual), dtype=float).ravel()
+            if a.shape != b.shape:
+                fallos.append(f"escalador {clave}.{cual}: {a.size} valores frente a {b.size}")
+            elif not np.allclose(a, b, rtol=1e-4, atol=1e-6):
+                i = int(np.argmax(np.abs(a - b)))
+                fallos.append(f"escalador {clave}.{cual} cambiado: canal {i} pasa de "
+                              f"{a[i]:.4f} a {b[i]:.4f}. El modelo recibiria la entrada en "
+                              f"otra escala y devolveria numeros plausibles y equivocados")
+
     for campo, actual in (("canales", T.canales), ("cols_dec", T.cols_dec),
                           ("cols_est", T.cols_est)):
         esperado = list(pre.get(campo, []))
@@ -78,6 +111,9 @@ def _comprobar(pre, T, quien):
             f"{quien} no casa con esta matriz:\n  - " + "\n  - ".join(fallos) +
             "\n  Reentrena, o usa la matriz con la que se entreno. Predecir igualmente "
             "devolveria numeros plausibles y equivocados.")
+    if avisar and avisos:
+        for a in avisos:
+            print(f"  aviso · {quien}: {a}", file=sys.stderr)
 
 
 class Miembro:
@@ -87,6 +123,7 @@ class Miembro:
         self.familia, self.semilla = familia, semilla
         self.pre = json.loads((carpeta / f"{familia}.preprocesado.json")
                               .read_text(encoding="utf-8"))
+        self._avisado = False
         self.absoluto = self.pre.get("objetivo") == "absoluto"
         self.plana = self.pre.get("entrada") == "plana"
         s = semilla - SEMILLA
@@ -101,7 +138,8 @@ class Miembro:
         return f"{self.familia}__s{self.semilla - SEMILLA}"
 
     def predecir(self, T, m):
-        _comprobar(self.pre, T, str(self))
+        _comprobar(self.pre, T, str(self), avisar=not self._avisado)
+        self._avisado = True
         if self.plana:
             from entrenar_finales import vista_plana
             X = vista_plana(T)[m]

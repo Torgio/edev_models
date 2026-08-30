@@ -1,0 +1,17 @@
+{
+  "nombre": "produccion",
+  "hash": "84e493d8",
+  "generada": "2026-08-30 12:21",
+  "modelo_end": "2026-09-02",
+  "filas": 58241,
+  "columnas": 133,
+  "ventana": "2020-01-08 -> 2026-08-30",
+  "train_end": "2024-12-31",
+  "val_end": "2025-12-31",
+  "derivada_de": {
+    "matriz": "nucleo",
+    "hash": "4a8f328e"
+  },
+  "solape_identico": true,
+  "catalogo_columnas": "matriz_nucleo_columnas.csv"
+}
