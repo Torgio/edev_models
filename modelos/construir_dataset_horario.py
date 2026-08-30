@@ -54,7 +54,7 @@ from config import load_config
 # comparables (mismas fuentes, mismo criterio de leak-safety), solo cambia la estructura de filas.
 from construir_dataset_maestro import (
     DATASET_START, DATASET_END, TRAIN_END, VAL_END,
-    COLS_SEGURAS_FORECAST, COLS_NTC, COLS_FORECAST_ENTSOE,
+    COLS_SEGURAS_FORECAST, COLS_NTC,
     TABLA_DEMANDA_REAL, COLS_DEMANDA_REAL, TABLA_ENTSOE_REAL, COLS_ENTSOE_REAL,
     TABLA_ESIOS_REAL, COLS_ESIOS_REAL, COLS_PRECIO_VECINOS, COLS_CLIMA, COLS_COMMODITIES,
     COLS_AUTOCONSUMO_PREV, COLS_CAPACIDAD_DISPONIBLE,
@@ -126,8 +126,17 @@ def construir_dataset_horario(solo_filas_validas: bool = True, pdbc: str | None 
         # del mercado (mismo catalogo verificado que el dataset diario). ---
         df_fcst = _serie_horaria(conn, "esios_forecast_da", COLS_SEGURAS_FORECAST, idx)
         df_ntc = _serie_horaria(conn, "load_inter", COLS_NTC, idx)
-        df_fcst_entsoe = _serie_horaria(conn, "entsoe_forecast_da", COLS_FORECAST_ENTSOE, idx)
-        df_fcst_entsoe.columns = [f"entsoe_{c}" for c in df_fcst_entsoe.columns]
+        # entsoe_forecast_da RETIRADA (26-ago-2026): un compañero de equipo confirmo que la tabla
+        # `forecast` es la tabla FINAL para previsiones -- verificado en la BD: ree_gwind_prev y
+        # ree_gsolar_prev de `forecast` son IDENTICAS (corr=1,0) a gen_wind_prev_mw/gen_solar_pv_
+        # prev_mw de esios_forecast_da (que ya usamos via COLS_SEGURAS_FORECAST), y ree_demanda_prev
+        # de `forecast` es identica (corr=1,0) a demanda_mercado_prev_mw (que tambien ya usamos) --
+        # asi que entsoe_wind_forecast_mw/entsoe_solar_forecast_mw/entsoe_load_forecast_mw de
+        # entsoe_forecast_da nunca aportaron una fuente realmente distinta, solo una copia. Ademas
+        # confirmado con 5 semillas (prueba_redundancia_robustez.py, docs/notas_memoria_tfm.md
+        # nota 25): quitarlas no cambia el MAE de forma real. `entsoe_load` (demanda REAL, no
+        # prevision) se mantiene -- viene de `load_inter`, que ya es la tabla final consolidada
+        # para demanda real, y ahi si conviven dos lecturas legitimas (REE y ENTSO-E).
 
         # Autoconsumo previsto, de la nueva vista `forecast` (22-ago-2026) -- union por timestamp
         # exacto, mismo criterio que el resto de features seguras de esta seccion.
@@ -205,28 +214,62 @@ def construir_dataset_horario(solo_filas_validas: bool = True, pdbc: str | None 
     lag_24h = reales.shift(LAG_1D_HORAS).add_suffix("_lag24h")
     lag_168h = reales.shift(LAG_7D_HORAS).add_suffix("_lag168h")
 
+    # Indicador de disponibilidad para columnas con nulos masivos y ESTRUCTURALES (no aleatorios):
+    # ree_gbattery_mw / ree_cbattery_mw solo tienen dato real desde que hay baterias de red
+    # operativas -- 99,3% de nulos en train (ver docs/notas_memoria_tfm.md). En vez de imputar la
+    # mediana y que el modelo trate ese valor como si fuera una lectura real, se añade una columna
+    # binaria (1 = habia dato real esa hora, 0 = se va a imputar) para que el modelo pueda aprender
+    # a distinguir ambos casos. La imputacion de la mediana sigue haciendose aparte, en el script
+    # de entrenamiento (fillna(medianas)) -- este indicador solo la acompaña.
+    COLS_INDICADOR_DISPONIBILIDAD = ["ree_gbattery_mw", "ree_cbattery_mw"]
+    for col in COLS_INDICADOR_DISPONIBILIDAD:
+        if col in reales.columns:
+            lag_24h[f"{col}_lag24h_disponible"] = lag_24h[f"{col}_lag24h"].notna().astype(int)
+            lag_168h[f"{col}_lag168h_disponible"] = lag_168h[f"{col}_lag168h"].notna().astype(int)
+
     pdbc_mismodia = None
     if pdbc == "mismodia_diagnostico":
         pdbc_mismodia = df_pdbc.add_prefix("PELIGRO_mismodia_")
 
-    # --- Commodities: dia D = fecha local Madrid de la fila, menos 1 dia (mismo criterio "ya
-    # ocurrio" que _features_dia_d del dataset diario) ---
+    # --- Commodities: 2 dias antes del dia OBJETIVO (X-2), no 1 (corregido 29-ago-2026) ---
+    # Un compañero de equipo audito la "frontera de fuga" (que dato existe realmente a las 12:00
+    # del dia de decision, cuando cierra la subasta del dia objetivo X) y encontro que gas/CO2
+    # (Trayport) cierran su sesion a las ~17:30 -- DESPUES del cierre electrico de las 12:00. Con
+    # el dia de decision = X-1: a las 12:00 de X-1, la sesion de commodities de X-1 TODAVIA NO HA
+    # CERRADO (cierra a las 17:30 de X-1) -- la ultima sesion ya cerrada y disponible es la de
+    # X-2. Antes de esta correccion se usaba la fecha X-1 (un dia demasiado reciente: fuga
+    # potencial). Coste verificado de la version segura: +0.11 EUR/MWh de MAE (12.63 -> 12.74),
+    # dentro del ruido de semilla ya documentado (nota 25) -- se prefiere pagar ese margen a
+    # arriesgar una fuga real.
     df_comm["fecha"] = pd.to_datetime(df_comm["fecha"]).dt.date
     df_comm = df_comm.sort_values("fecha").set_index("fecha").ffill()
-    dia_d = (idx.tz_convert("Europe/Madrid") - pd.Timedelta(days=1)).date
-    comm_por_fila = df_comm.reindex(dia_d)
+    fecha_segura_commodities = (idx.tz_convert("Europe/Madrid") - pd.Timedelta(days=2)).date
+    comm_por_fila = df_comm.reindex(fecha_segura_commodities)
     comm_por_fila.index = idx
 
     # --- Calendario: describe la propia hora objetivo (ya se sabe con certeza de antemano) ---
     idx_madrid = idx.tz_convert("Europe/Madrid")
+    # Mecanismo iberico de tope al gas ("excepcion iberica", RDL 10/2022): vigente 15-jun-2022 a
+    # 31-dic-2023, verificado de forma independiente (MITECO / prensa especializada, 25-ago-2026),
+    # no solo tomado del script de un compañero. Es un cambio de regla del mercado que el modelo
+    # no puede inferir de otras columnas -- fecha conocida con certeza de antemano, no hay fuga.
+    # Caveat: el mecanismo estuvo legalmente vigente todo ese rango pero no siempre "activo" en la
+    # practica (hubo tramos en que el precio del gas cayo por debajo del umbral y no llego a topar)
+    # -- este flag marca la ventana LEGAL, un primer indicador estructural, no una medida exacta de
+    # cuando el tope realmente influyo en el precio.
+    TOPE_GAS_INICIO = pd.Timestamp("2022-06-15").date()
+    TOPE_GAS_FIN = pd.Timestamp("2023-12-31").date()
+    fecha_local = idx_madrid.date
+    regimen_tope_gas = ((fecha_local >= TOPE_GAS_INICIO) & (fecha_local <= TOPE_GAS_FIN)).astype(int)
     calendario = pd.DataFrame({
         "hora": idx_madrid.hour,
         "dow": idx_madrid.dayofweek,
         "month": idx_madrid.month,
         "is_weekend": (idx_madrid.dayofweek >= 5).astype(int),
+        "regimen_tope_gas": regimen_tope_gas,
     }, index=idx)
 
-    piezas = [precio.rename("precio"), df_fcst, df_autoconsumo, df_ntc, df_fcst_entsoe, df_clima,
+    piezas = [precio.rename("precio"), df_fcst, df_autoconsumo, df_ntc, df_clima,
               lag_24h, lag_168h, comm_por_fila, calendario]
     if pdbc_mismodia is not None:
         piezas.append(pdbc_mismodia)
