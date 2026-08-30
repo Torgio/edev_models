@@ -1168,3 +1168,22 @@ añadió por su cuenta un matiz honesto sobre el tamaño de muestra (32 horas, s
 exactamente el comportamiento que el system prompt pedía. Confirma que el diseño (herramientas
 deterministas + regla explícita de "predicción vs. referencia histórica" en el prompt) funciona
 en la práctica, no solo en el papel.
+
+**Nueva herramienta**: `precio_negativos(anio)` — el precio spot español sí puede ser negativo
+(exceso de renovables sin demanda que lo absorba, no es un error de datos). Dato real encontrado
+al probarla: en 2026, **681 de 5.831 horas (11,68%)** tuvieron precio negativo, con un mínimo de
+**-9,83 €/MWh el 29 de marzo a las 14:00** — frente a **0 horas negativas en 2023**. Confirma con
+un número concreto la tendencia, ya intuida en el EDA del equipo, de que las horas de precio
+negativo se han vuelto mucho más frecuentes con el crecimiento de la solar.
+
+**RAG documental construido**: `modelos/asistente/indexar_documentacion.py` trocea
+`notas_memoria_tfm.md` y `columnas_pendientes_equipo.md` por nota numerada (42 chunks en total,
+cada nota ya es una unidad semántica coherente, no hizo falta partir por tamaño de texto), genera
+embeddings con un modelo local y multilingüe (`fastembed`,
+`paraphrase-multilingual-MiniLM-L12-v2`, 384 dimensiones — sin necesidad de una segunda clave de
+API de pago, ya que Anthropic no ofrece embeddings propios) y los guarda en Postgres con
+`pgvector`. Probado con *"¿por qué no se usa un Transformer en el proyecto?"*: recuperó
+exactamente las notas 31 y 33 (las correctas) como las más similares, y el asistente completo
+sintetizó una respuesta correcta citando las fuentes, sin inventar nada. Con esto el asistente ya
+cubre las dos mitades del diseño original: herramientas deterministas para datos/predicción, y
+RAG semántico para metodología/decisiones.

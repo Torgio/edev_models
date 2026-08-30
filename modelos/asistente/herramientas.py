@@ -250,6 +250,54 @@ def simular_bateria(potencia_mw: float, capacidad_mwh: float, eficiencia: float,
     }
 
 
+_MODELO_EMBEDDING = None
+
+
+def _cargar_modelo_embedding():
+    global _MODELO_EMBEDDING
+    if _MODELO_EMBEDDING is None:
+        from fastembed import TextEmbedding
+        _MODELO_EMBEDDING = TextEmbedding(
+            model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+    return _MODELO_EMBEDDING
+
+
+def buscar_documentacion(pregunta: str, k: int = 3) -> dict:
+    """Busqueda semantica (RAG) sobre la documentacion del proyecto (notas_memoria_tfm.md,
+    columnas_pendientes_equipo.md) -- para preguntas de METODOLOGIA/decisiones ("por que", "como
+    se decidio", "que es"), no para datos de precio (para eso, las otras herramientas).
+    Requiere haber corrido antes `indexar_documentacion.py`."""
+    from pgvector.psycopg2 import register_vector
+
+    modelo = _cargar_modelo_embedding()
+    vector_pregunta = list(modelo.embed([pregunta]))[0]
+
+    conn = _conectar()
+    try:
+        register_vector(conn)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT fuente, numero, titulo, texto, embedding <=> %s AS distancia
+            FROM documentacion_embeddings
+            ORDER BY distancia ASC
+            LIMIT %s
+        """, (vector_pregunta, k))
+        filas = cur.fetchall()
+    finally:
+        conn.close()
+
+    if not filas:
+        return {"error": "La tabla documentacion_embeddings esta vacia -- corre indexar_documentacion.py primero."}
+
+    return {
+        "etiqueta": "FRAGMENTOS DE LA DOCUMENTACION DEL PROYECTO (citar la fuente/nota, no inventar)",
+        "resultados": [
+            {"fuente": f, "nota": n, "titulo": t, "texto": txt, "similitud": round(1 - d, 3)}
+            for f, n, t, txt, d in filas
+        ],
+    }
+
+
 if __name__ == "__main__":
     print("=== Ejemplo: percentiles historicos de la hora 20h en septiembre ===")
     print(precio_historico_percentiles(hora=20, mes=9))

@@ -48,6 +48,10 @@ vivo.
 Para preguntas sobre cuanto ganaria una bateria con ciertas caracteristicas, usa `simular_bateria`
 -- es siempre un backtest sobre precio REAL ya ocurrido, dejalo claro en la respuesta.
 
+Para preguntas de "por que", "como se decidio" o "que es X" sobre el proyecto (metodologia,
+decisiones de diseño, hallazgos), usa `buscar_documentacion` y basa tu respuesta en lo que
+devuelva, citando de que nota/documento sale -- no la uses para preguntas de precios o numeros.
+
 Responde en español, con los numeros que las herramientas devuelven -- nunca inventes una cifra
 que no venga de una llamada a herramienta."""
 
@@ -111,7 +115,21 @@ def prediccion_d_mas_1() -> str:
     return json.dumps(_h.prediccion_d_mas_1(), ensure_ascii=False)
 
 
-TOOLS = [precio_historico_percentiles, precio_negativos, simular_bateria, prediccion_d_mas_1]
+@beta_tool
+def buscar_documentacion(pregunta: str) -> str:
+    """Busqueda semantica sobre la documentacion del proyecto (decisiones de diseño, hallazgos,
+    metodologia -- notas_memoria_tfm.md y columnas_pendientes_equipo.md). Usa esta herramienta
+    para preguntas de "por que", "como se decidio", "que es X" -- NUNCA para preguntas de precio o
+    numeros de datos, para eso estan las otras herramientas.
+
+    Args:
+        pregunta: La pregunta o tema a buscar en la documentacion, en lenguaje natural.
+    """
+    return json.dumps(_h.buscar_documentacion(pregunta), ensure_ascii=False)
+
+
+TOOLS = [precio_historico_percentiles, precio_negativos, simular_bateria, prediccion_d_mas_1,
+         buscar_documentacion]
 
 
 def preguntar(pregunta: str, modelo: str = "claude-opus-5") -> str:
