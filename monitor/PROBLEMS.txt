@@ -1,2 +1,0 @@
-[2026-08-24 10:00:02] 1 problema(s):
-  - ATASCO: 'trayport_daily' llega a 2026-08-16 00:00 — 8 días de retraso (no avanza desde la última pasada).

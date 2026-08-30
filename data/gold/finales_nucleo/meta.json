@@ -1,0 +1,10 @@
+{
+  "matriz": "nucleo",
+  "hash": "4a8f328e",
+  "semillas": 3,
+  "naive_val_MAE": 19.946,
+  "naive_test_MAE": 16.7,
+  "dias_train": 1812,
+  "dias_val": 365,
+  "dias_test": 211
+}
