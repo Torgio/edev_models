@@ -250,6 +250,109 @@ def simular_bateria(potencia_mw: float, capacidad_mwh: float, eficiencia: float,
     }
 
 
+def simular_autoconsumo_solar(potencia_solar_kwp: float, potencia_bateria_mw: float,
+                               capacidad_bateria_mwh: float, eficiencia_bateria: float,
+                               consumo_anual_mwh: float, desde: str, hasta: str) -> dict:
+    """Simula el ahorro de instalar paneles solares + bateria frente a comprar toda la energia
+    a precio de mercado, para una empresa. VERSION 1 -- ver `limitaciones` en la respuesta para
+    que se pueda comunicar con precision que falta mejorar.
+
+    Logica, hora a hora: la generacion solar cubre primero el consumo directo; el excedente
+    carga la bateria; si falta generacion, la bateria descarga; lo que sigue faltando se compra a
+    precio real de mercado; el excedente que no cabe en la bateria se vende a precio de mercado.
+
+    Simplificaciones de esta primera version (documentadas, no ocultas):
+      - Perfil de consumo PLANO (el mismo consumo cada hora) -- una empresa real tiene forma
+        horaria/semanal/estacional. Lo correcto es que el cliente aporte su propia curva.
+      - Generacion solar estimada de forma simple: potencia instalada x (radiacion real /
+        1000 W/m², la condicion estandar de fabrica de un panel) -- sin perdidas por
+        temperatura, orientacion/inclinacion del panel, ni eficiencia del inversor.
+      - Sin degradacion de bateria ni costes de operacion/mantenimiento (mismo criterio que
+        simular_bateria).
+    """
+    conn = _conectar()
+    try:
+        df_precio = pd.read_sql(
+            "SELECT datetime, es_esios AS precio FROM spot_price "
+            "WHERE datetime BETWEEN %(desde)s AND %(hasta)s ORDER BY datetime",
+            conn, params={"desde": desde, "hasta": hasta})
+        df_sol = pd.read_sql(
+            "SELECT ts, ssrd_mean FROM era5_weather_agg "
+            "WHERE ts BETWEEN %(desde)s AND %(hasta)s ORDER BY ts",
+            conn, params={"desde": desde, "hasta": hasta})
+    finally:
+        conn.close()
+
+    df_precio["datetime"] = pd.to_datetime(df_precio["datetime"], utc=True)
+    df_sol["ts"] = pd.to_datetime(df_sol["ts"], utc=True)
+
+    idx = pd.date_range(df_precio["datetime"].min(), df_precio["datetime"].max(), freq="h", tz="UTC")
+    precio = df_precio.set_index("datetime")["precio"].reindex(idx)
+    radiacion = df_sol.set_index("ts")["ssrd_mean"].reindex(idx).interpolate(limit=2).fillna(0)
+
+    # Hueco recurrente de 1h en el cambio de hora de octubre (visto en 2024 Y 2025 -- ver nota 28
+    # de la memoria, mismo patron cada año en spot_price). Tolerable con interpolate(limit=1);
+    # si hay huecos mas grandes, algo distinto esta pasando y si hay que avisar.
+    huecos_antes = precio.isna().sum()
+    precio = precio.interpolate(limit=1)
+    if precio.isna().any():
+        return {"error": f"Faltan {precio.isna().sum()} horas de precio en ese rango (mas de un "
+                          f"hueco aislado) -- elige un periodo distinto."}
+    if huecos_antes > 0:
+        pass  # hueco de 1h relleno por interpolacion, no se detiene la simulacion por esto
+
+    generacion_mw = (potencia_solar_kwp / 1000) * (radiacion / 1000).clip(lower=0)
+    consumo_mw = pd.Series(consumo_anual_mwh / 8760, index=idx)  # perfil PLANO, ver limitaciones
+
+    soc = 0.0  # estado de carga de la bateria, MWh
+    coste_con_instalacion = 0.0
+    coste_sin_instalacion = 0.0
+    energia_autoconsumida = 0.0
+
+    for t in idx:
+        gen, con, p = generacion_mw[t], consumo_mw[t], precio[t]
+        coste_sin_instalacion += con * p
+
+        directo = min(gen, con)
+        energia_autoconsumida += directo
+        excedente = gen - directo
+        deficit = con - directo
+
+        if excedente > 0:
+            carga = min(excedente, potencia_bateria_mw, capacidad_bateria_mwh - soc)
+            soc += carga
+            sobra = excedente - carga
+            coste_con_instalacion -= sobra * p  # vertido a red = ingreso
+        elif deficit > 0:
+            descarga = min(deficit, potencia_bateria_mw, soc) * eficiencia_bateria
+            soc -= descarga / eficiencia_bateria if eficiencia_bateria > 0 else 0
+            energia_autoconsumida += descarga
+            falta = deficit - descarga
+            coste_con_instalacion += falta * p
+
+    dias = len(idx) / 24
+    ahorro_total = coste_sin_instalacion - coste_con_instalacion
+    return {
+        "etiqueta": "SIMULACION SOBRE DATOS REALES (backtest historico, version 1 -- ver limitaciones)",
+        "parametros": {"potencia_solar_kwp": potencia_solar_kwp, "potencia_bateria_mw": potencia_bateria_mw,
+                       "capacidad_bateria_mwh": capacidad_bateria_mwh, "eficiencia_bateria": eficiencia_bateria,
+                       "consumo_anual_mwh_asumido": consumo_anual_mwh, "desde": desde, "hasta": hasta},
+        "dias_simulados": round(dias, 1),
+        "coste_sin_instalacion_eur": round(coste_sin_instalacion, 2),
+        "coste_con_instalacion_eur": round(coste_con_instalacion, 2),
+        "ahorro_eur": round(ahorro_total, 2),
+        "ahorro_anualizado_eur": round(ahorro_total / dias * 365, 2) if dias > 0 else None,
+        "porcentaje_autoconsumo": round(100 * energia_autoconsumida / consumo_mw.sum(), 1) if consumo_mw.sum() > 0 else None,
+        "limitaciones": [
+            "Perfil de consumo PLANO (mismo cada hora) -- el siguiente paso es que el cliente "
+            "aporte su propia curva de consumo real.",
+            "Generacion solar simplificada (radiacion/1000 W/m2 x potencia) -- falta modelar "
+            "perdidas por temperatura, orientacion del panel y eficiencia del inversor.",
+            "Sin degradacion de bateria ni costes de operacion/mantenimiento.",
+        ],
+    }
+
+
 _MODELO_EMBEDDING = None
 
 

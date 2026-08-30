@@ -48,6 +48,12 @@ vivo.
 Para preguntas sobre cuanto ganaria una bateria con ciertas caracteristicas, usa `simular_bateria`
 -- es siempre un backtest sobre precio REAL ya ocurrido, dejalo claro en la respuesta.
 
+Para preguntas sobre ahorro con paneles solares + bateria en una empresa, usa
+`simular_autoconsumo_solar` -- es una VERSION 1 con un perfil de consumo plano (simplificado).
+SIEMPRE incluye la lista `limitaciones` que devuelve la herramienta al final de tu respuesta, sin
+resumirla ni omitirla -- es la parte que le dice al usuario que esto es un primer avance, no un
+diseño definitivo.
+
 Para preguntas de "por que", "como se decidio" o "que es X" sobre el proyecto (metodologia,
 decisiones de diseño, hallazgos), usa `buscar_documentacion` y basa tu respuesta en lo que
 devuelva, citando de que nota/documento sale -- no la uses para preguntas de precios o numeros.
@@ -107,6 +113,30 @@ def precio_negativos(anio: int | None = None) -> str:
 
 
 @beta_tool
+def simular_autoconsumo_solar(potencia_solar_kwp: float, potencia_bateria_mw: float,
+                               capacidad_bateria_mwh: float, eficiencia_bateria: float,
+                               consumo_anual_mwh: float, desde: str, hasta: str) -> str:
+    """Simula el ahorro de instalar paneles solares + bateria en una empresa frente a comprar
+    toda la energia al mercado, sobre datos REALES ya ocurridos (backtest, no proyeccion a
+    futuro). VERSION 1: usa un perfil de consumo PLANO (repartido a partes iguales en el año) --
+    dilo siempre en la respuesta, junto con las demas `limitaciones` que devuelve la herramienta.
+
+    Args:
+        potencia_solar_kwp: Potencia pico instalada de paneles solares, en kWp.
+        potencia_bateria_mw: Potencia de la bateria en MW.
+        capacidad_bateria_mwh: Capacidad de energia de la bateria en MWh.
+        eficiencia_bateria: Eficiencia de ida y vuelta de la bateria, entre 0 y 1.
+        consumo_anual_mwh: Consumo electrico anual estimado de la empresa, en MWh.
+        desde: Fecha de inicio del backtest, YYYY-MM-DD.
+        hasta: Fecha de fin del backtest, YYYY-MM-DD.
+    """
+    return json.dumps(
+        _h.simular_autoconsumo_solar(potencia_solar_kwp, potencia_bateria_mw, capacidad_bateria_mwh,
+                                      eficiencia_bateria, consumo_anual_mwh, desde, hasta),
+        ensure_ascii=False)
+
+
+@beta_tool
 def prediccion_d_mas_1() -> str:
     """La UNICA prediccion real del proyecto: el precio que el modelo entrenado predice para las
     24 horas del dia siguiente. No acepta parametros -- siempre es "mañana" respecto a la fecha
@@ -128,8 +158,8 @@ def buscar_documentacion(pregunta: str) -> str:
     return json.dumps(_h.buscar_documentacion(pregunta), ensure_ascii=False)
 
 
-TOOLS = [precio_historico_percentiles, precio_negativos, simular_bateria, prediccion_d_mas_1,
-         buscar_documentacion]
+TOOLS = [precio_historico_percentiles, precio_negativos, simular_bateria, simular_autoconsumo_solar,
+         prediccion_d_mas_1, buscar_documentacion]
 
 
 def preguntar(pregunta: str, modelo: str = "claude-opus-5") -> str:

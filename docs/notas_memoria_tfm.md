@@ -1187,3 +1187,31 @@ exactamente las notas 31 y 33 (las correctas) como las más similares, y el asis
 sintetizó una respuesta correcta citando las fuentes, sin inventar nada. Con esto el asistente ya
 cubre las dos mitades del diseño original: herramientas deterministas para datos/predicción, y
 RAG semántico para metodología/decisiones.
+
+**Hallazgo colateral, mismo patrón que la nota 28**: al construir el simulador de autoconsumo
+solar apareció otro hueco de 1 hora en `spot_price`, esta vez en el cambio de hora de **octubre
+de 2024** (`2024-10-27 00:00 UTC`) — el mismo patrón exacto que ya se había documentado para 2025.
+Confirma que es un hueco recurrente cada año en la transición de octubre, no un incidente aislado.
+Se hizo tolerante con `interpolate(limit=1)` en vez de fallar la simulación por un hueco de una
+sola hora, con una comprobación explícita de que no se cuele un hueco más grande sin avisar.
+
+## 34. Simulador de autoconsumo solar + batería — primera versión, para mostrar avance al equipo
+
+Extiende `simular_bateria` con generación solar real (ERA5, `ssrd_mean`) y un perfil de consumo,
+simulando hora a hora: la solar cubre primero el consumo directo, el excedente carga la batería,
+el déficit lo cubre la batería o -si no alcanza- el mercado. Probado con un caso realista (300 kWp
+solar + batería 0,5 MW/1 MWh, empresa de 500 MWh/año, backtest 2024): **26.138 € de ahorro anual,
+77,9% de autoconsumo**, sobre un coste de referencia de 31.429 € comprando todo al mercado.
+
+**Documentado como versión 1, con limitaciones explícitas que el asistente siempre repite en la
+respuesta** (no las omite ni las resume): perfil de consumo plano (no la curva real del cliente),
+generación solar simplificada (sin pérdidas por temperatura/orientación/inversor), sin
+degradación de batería ni costes de operación.
+
+**Siguiente mejora concreta, ya con un diseño claro**: sustituir el perfil plano por la curva de
+consumo real que aporte el cliente, y sobre esa curva aplicar la misma idea que la capa de
+incertidumbre de LightGBM (notas 20-21) — no predecir el precio, sino **extrapolar el consumo
+propio del cliente** a uno o dos años con rangos (p10/p50/p90) en vez de un único número, usando
+su propio histórico como base. Es la aplicación correcta de "extrapolar con percentiles" que se
+había planteado antes para baterías a 20 años (nota 33) — aquí sí encaja, porque parte de datos
+reales que el cliente aporta, no de una serie que no existe.
