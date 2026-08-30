@@ -1331,3 +1331,26 @@ reunión con el equipo: lo probado y validado hasta ahora son horizontes de 1-2 
 5-10 años debilita bastante los dos supuestos del método (nivel del último año se mantiene
 constante, y la estacionalidad se calcula sobre el propio histórico del cliente) — con pocos años
 de historial de partida, cuanto más lejos se proyecta, menos fiables son las bandas p10/p90.
+
+## 39. Pendiente a futuro (no es nuestro trabajo ahora): parámetros de batería en la interfaz + €/MWh capturado
+
+Un compañero, sin ser parte del trabajo de este bloque (la interfaz web no la construimos
+nosotros), adelantó una idea de diseño para cuando se aborde: dejar espacio en los laterales de
+la página para que el usuario introduzca las características reales de su batería, y que la
+simulación diaria devuelva, además del ahorro en euros, un valor de **€/MWh capturado** — el
+precio medio efectivo que la operación de la batería logró aprovechar (diferencia entre el precio
+al que vendió/descargó y al que compró/cargó), en vez de solo el ahorro total. Es una métrica más
+comparable entre baterías de distinto tamaño.
+
+Los parámetros de batería que propuso, para tenerlos en cuenta si esto avanza:
+- Número de horas de autonomía de la batería.
+- Potencia (MW) — con la duda, sin resolver todavía, de si el dato correcto a pedir es potencia o
+  MWh (capacidad); habría que revisarlo cuando se diseñe el formulario.
+- Degradación cada 1.000 ciclos.
+- Ciclos máximos de vida.
+- Porcentaje de carga máxima y mínima (los límites de SoC — no cargar al 100% ni descargar al 0%
+  alarga la vida útil real).
+
+Ninguno de estos parámetros está hoy en `simular_bateria` ni en `simular_autoconsumo_solar`
+(ambas asumen eficiencia de ida/vuelta fija y ningún límite de degradación o de SoC) — queda
+anotado aquí para cuando se decida ampliar el simulador, no como algo que haya que construir ya.
