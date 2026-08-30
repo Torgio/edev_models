@@ -14,11 +14,21 @@ prototipo, se usa un modelo pequeño que corre en la propia maquina. Si mas adel
 mejor calidad de busqueda, cambiar a Voyage es sustituir esta funcion de embedding, no rehacer el
 diseño.
 
+FUENTE DE LA DOCUMENTACION -- PUNTO IMPORTANTE (31-ago-2026): las notas de `docs/*.md` son
+apuntes de una sola persona (Willy, via esta sesion), verificados contra la base de datos pero NO
+revisados por el resto del equipo -- no son una fuente "oficial". Por eso se añadieron tambien los
+DOCSTRINGS de los scripts de todo el equipo (`scripts/*.py`, `production/api/main.py`): son
+codigo que corre de verdad, escrito por varias personas, no la interpretacion de una sola. No
+resuelve el problema del todo (sigue sin ser un documento aprobado explicitamente por el equipo),
+pero es una fuente mas objetiva y multi-autor que solo las notas. Ver nota 38 de
+`notas_memoria_tfm.md` para la discusion completa.
+
 Uso:
     cd d:\POSGRADO\TFM\edev_models
     .venv\Scripts\python.exe modelos/asistente/indexar_documentacion.py
 """
 
+import ast
 import re
 import sys
 from pathlib import Path
@@ -37,6 +47,11 @@ FUENTES = [
     ("notas_memoria_tfm", REPO / "docs" / "notas_memoria_tfm.md"),
     ("columnas_pendientes_equipo", REPO / "docs" / "columnas_pendientes_equipo.md"),
 ]
+
+# Carpetas de codigo cuyo docstring de modulo (la explicacion de cabecera, no funciones internas)
+# se indexa como fuente objetiva -- escrita por quien construyo cada pieza, verificada por el
+# hecho de que el script corre. Un chunk por archivo.
+CARPETAS_CODIGO = ["scripts", "production/api"]
 
 
 def _conectar():
@@ -59,6 +74,35 @@ def _trocear(texto: str) -> list[dict]:
     return chunks
 
 
+def _extraer_docstrings_codigo() -> list[dict]:
+    """Recorre `scripts/` y `production/api/`, saca el docstring de modulo (la cabecera, no
+    docstrings de funciones internas) de cada .py con `ast.get_docstring()`, y arma un chunk por
+    archivo. `fuente` es la ruta relativa (unica por archivo, para el UNIQUE fuente+numero), con
+    `numero=1` fijo -- un solo chunk por script, no hay "notas" numeradas dentro del codigo."""
+    chunks = []
+    for carpeta in CARPETAS_CODIGO:
+        base = REPO / carpeta
+        if not base.is_dir():
+            continue
+        for ruta in sorted(base.glob("*.py")):
+            try:
+                arbol = ast.parse(ruta.read_text(encoding="utf-8"))
+                docstring = ast.get_docstring(arbol)
+            except (SyntaxError, UnicodeDecodeError):
+                docstring = None
+            if not docstring:
+                continue
+            relativa = ruta.relative_to(REPO).as_posix()
+            titulo = docstring.strip().splitlines()[0].strip()
+            chunks.append({
+                "fuente": f"codigo:{relativa}",
+                "numero": 1,
+                "titulo": titulo,
+                "texto": docstring.strip(),
+            })
+    return chunks
+
+
 def main():
     print(f"Cargando modelo de embeddings local ({MODELO_EMBEDDING})...")
     modelo = TextEmbedding(model_name=MODELO_EMBEDDING)
@@ -74,6 +118,10 @@ def main():
             c["fuente"] = fuente
         todos_los_chunks.extend(chunks)
         print(f"  {fuente}: {len(chunks)} chunks")
+
+    chunks_codigo = _extraer_docstrings_codigo()
+    todos_los_chunks.extend(chunks_codigo)
+    print(f"  codigo (docstrings de {'/'.join(CARPETAS_CODIGO)}): {len(chunks_codigo)} chunks")
 
     print(f"\nGenerando {len(todos_los_chunks)} embeddings...")
     textos = [f"{c['titulo']}\n\n{c['texto']}" for c in todos_los_chunks]

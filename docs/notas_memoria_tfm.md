@@ -1295,3 +1295,39 @@ por la API real, no solo en terminal.
 **Decisión de alcance para `preguntar()`**: se mantuvo la función original devolviendo solo texto
 (para no romper el uso ya existente en terminal) y se añadió `preguntar_con_imagenes()` aparte,
 que es la que usa el endpoint de la API.
+
+## 38. La fuente del RAG documental no puede ser solo mis notas — se amplió con el código del equipo
+
+Al mostrar el artifact del asistente, surgió la pregunta correcta: *"¿la documentación que usa el
+asistente nace de mis propias notas?"*. Respuesta honesta: sí, hasta ahora el corpus del RAG eran
+únicamente `notas_memoria_tfm.md` y `columnas_pendientes_equipo.md` — verificados contra la base de
+datos punto por punto, pero escritos por una sola persona y no revisados por el resto del equipo.
+No es una fuente "oficial", y es exactamente lo que preguntaba también un compañero: *"¿con qué se
+está alimentando esta IA?"*.
+
+**Mejora concreta ya aplicada**: se añadió al índice el docstring de cabecera de cada script del
+equipo (`scripts/*.py`, `production/api/main.py` — 25 archivos con documentación técnica real en su
+propio código, escrita por varias personas distintas, no solo yo). Es una fuente más objetiva
+porque está verificada por el hecho de que el código corre y hace lo que el docstring dice — no es
+interpretación de una sola persona. El corpus pasó de 42 a 71 fragmentos (`buscar_documentacion`
+ya devuelve resultados mezclando notas propias y docstrings de compañeros — probado con una
+pregunta sobre `matriz_nucleo`, que trajo la nota 30 junto con los docstrings de
+`construir_matriz_produccion.py`, `rejilla_matrices.py`, `depurar_matriz.py` y
+`preparar_tensores.py`).
+
+**Lo que esto NO resuelve**: sigue sin ser un documento aprobado explícitamente por el equipo en
+una reunión — solo es más objetivo y multi-autor que antes. La pregunta de fondo ("¿qué fuente de
+información sobre el proyecto consideramos oficial?") queda pendiente de discutir en vivo con el
+equipo, no es algo que se pueda resolver unilateralmente aquí.
+
+**Sobre la extrapolación de consumo a 5-10 años (pregunta de un compañero)**: `extrapolar_consumo_
+cliente()` **no usa ninguno de los modelos de predicción de precio cargados en el servidor**. Es
+completamente independiente del LightGBM/ensemble: toma solo el histórico de consumo mensual que
+aporte el propio cliente y aplica una descomposición estadística (nivel + estacionalidad +
+percentiles del residuo), la misma familia de método que `scripts/curva_precios.py` usa para la
+curva de precios a 20 años — deliberadamente NO encadena el modelo D+1 hacia el futuro (el propio
+script de precios documenta por qué: el error se acumula año a año). Caveat importante para la
+reunión con el equipo: lo probado y validado hasta ahora son horizontes de 1-2 años; extender a
+5-10 años debilita bastante los dos supuestos del método (nivel del último año se mantiene
+constante, y la estacionalidad se calcula sobre el propio histórico del cliente) — con pocos años
+de historial de partida, cuanto más lejos se proyecta, menos fiables son las bandas p10/p90.
