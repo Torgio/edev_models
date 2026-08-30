@@ -173,7 +173,17 @@ def preparar(matriz="nucleo", ventana=VENTANA_DIAS, multicanal=True, verbose=Tru
             BLOQUES.append(panel(cols_prog, desfase=1))      # `_D` describe T-1
             canales += [c[:-2] + "@D" for c in cols_prog]
         if cols_dm1:
-            BLOQUES.append(panel(cols_dm1, desfase=2))       # `_Dm1` describe T-2
+            # DESFASE 1, NO 2. Con 2, el indice d del panel contenia la generacion OBSERVADA
+            # del propio dia d, y como el encoder llega hasta T-1 = dia D, el modelo recibia
+            # las 24 horas de generacion del dia en que se predice. A las 11:00 de D esa
+            # generacion no existe: medido el 30/08/2026, `esios_gen` y `entsoe_gen_data`
+            # tenian 0 horas del dia D. Era fuga, y ademas obligaba a que la matriz tuviera
+            # dos dias mas alla del objetivo, que es lo que impedia predecir manana.
+            #
+            # Con desfase 1 el indice d lleva la generacion de d-1, asi que la ultima
+            # posicion del encoder es D-1, que si esta publicada. El precio y el bloque
+            # programado (`_D`, el PBF) se quedan como estaban: esos si existen a las 11:00.
+            BLOQUES.append(panel(cols_dm1, desfase=1))       # `_Dm1` -> el dia anterior
             canales += [c[:-4] for c in cols_dm1]
 
     V = ventana

@@ -1,0 +1,19 @@
+# Modelos de LightGBM: NO tocar los finales de linea.
+#
+# Se guardan en el formato de texto nativo de LightGBM (`h00.txt` ... `h23.txt`, uno por
+# hora) en vez de en pickle, para que sigan abriendose dentro de un ano aunque cambie la
+# version de la libreria. El precio es que git los ve como texto y, con
+# `core.autocrlf=true` -- el valor por defecto en Windows --, les mete CRLF al hacer
+# checkout.
+#
+# El parser de LightGBM no lo tolera: no lanza una excepcion, ABORTA EL PROCESO. Medido el
+# 30-ago-2026 sobre `boosting__s1/h00.txt`: con CRLF el interprete muere sin mensaje
+# recuperable; con LF carga sus 480 arboles.
+#
+# `-text` desactiva cualquier conversion en las dos direcciones.
+production/models/**/h??.txt   -text
+data/gold/**/h??.txt           -text
+
+# Los .keras y los .parquet son binarios de verdad; que git no intente adivinarlo.
+*.keras   binary
+*.parquet binary
