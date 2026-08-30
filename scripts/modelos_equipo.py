@@ -88,6 +88,10 @@ def matriz_plana(matriz="produccion") -> pd.DataFrame:
                          parse_dates=["fecha_pred", "fecha_objetivo", "ts"])
     df = df.set_index([pd.to_datetime(df.fecha_objetivo), df.hora.astype(int)])
     df.index.names = ["fecha_objetivo", "hora"]
+    if df.index.has_duplicates:
+        # El domingo de octubre la hora 2 se repite. `preparar_tensores` la promedia
+        # (`aggfunc="mean"`); aqui hay que hacer lo mismo o el reindex revienta.
+        df = df.groupby(level=[0, 1]).mean(numeric_only=True)
     _CACHE[matriz] = df
     return df
 
@@ -138,17 +142,28 @@ class ArbolPlano:
     def filas(self, fechas) -> pd.DataFrame:
         """Las 24 filas de cada dia objetivo, en orden dia-mayor y con SUS columnas.
 
-        Si falta alguna fila el reindex la deja a NaN y aqui se para: un arbol con NaN no
-        falla, devuelve un numero, y seria un numero inventado.
+        El domingo de marzo tiene 23 horas: falta la 2. El tensor la rellena interpolando
+        (`_rellena`, en `preparar_tensores`) porque tiene que ser rectangular, y aqui hay
+        que hacer lo mismo o las (dias, 24) no casan con las de `T.y`. Solo se toca el dia
+        afectado, no la matriz entera.
+
+        Lo que NO se rellena es un dia entero ausente: sus 24 horas quedan a NaN, la
+        interpolacion dentro del dia no tiene de donde tirar y esto se para. Un arbol con
+        NaN no falla, devuelve un numero, y seria un numero inventado.
         """
         df = matriz_plana(self.matriz)
         idx = pd.MultiIndex.from_product([pd.to_datetime(fechas), range(24)],
                                          names=["fecha_objetivo", "hora"])
         X = df.reindex(idx)[self.features]
+        hueco = X.isna().any(axis=1)
+        if hueco.any():
+            dias = X.index.get_level_values(0)[hueco].unique()
+            X.loc[dias] = (X.loc[dias].groupby(level=0, group_keys=False)
+                           .apply(lambda g: g.interpolate(limit_direction="both")))
         if X.isna().any().any():
             faltan = X.index[X.isna().any(axis=1)]
             raise ValueError(
-                f"{self}: {len(faltan)} filas incompletas en la matriz, la primera "
+                f"{self}: {len(faltan)} filas irrecuperables en la matriz, la primera "
                 f"{faltan[0]}. Reconstruye la matriz antes de predecir.")
         return X
 
@@ -172,15 +187,25 @@ def cargar(modelo="todos", matriz="produccion", semilla=None):
     return Predictor(f"equipo:{modelo}", miembros, matriz)
 
 
-def evaluar(matriz="produccion", tramo="va"):
+def evaluar(matriz="produccion", tramo="va", desde=None, hasta=None):
     """MAE de cada arbol y de cada semilla, contra el precio real de ese tramo.
 
     Sobre validacion por defecto: es donde se eligen representantes sin mirar test, que es
     la regla que dice seguir la metadata de Magdalena.
+
+    `desde`/`hasta` importan mas de lo que parece. El test de `por_semilla.csv` son 212
+    dias (2 de enero a 31 de julio), pero la matriz de PRODUCCION llega a agosto y su test
+    son 243. Comparar 243 dias contra 212 y presentarlo como la misma columna seria un
+    error silencioso: agosto no se parece a la primavera.
     """
     from preparar_tensores import preparar
     T = preparar(matriz, verbose=False)
     m = {"tr": T.tr, "va": T.va, "te": T.te}[tramo]
+    f = pd.to_datetime(T.fechas)
+    if desde is not None:
+        m = m & np.asarray(f >= pd.Timestamp(desde))
+    if hasta is not None:
+        m = m & np.asarray(f <= pd.Timestamp(hasta))
     # `T.y` sale de `PRECIO[t_idx]` y no pasa por ningun escalador: ya son EUR/MWh.
     real = T.y[m]
 
@@ -224,8 +249,10 @@ def main():
         return
 
     if a.evaluar:
-        d, naive, n = evaluar(a.matriz, a.tramo if a.tramo != "todo" else "va")
-        print(f"\n  MAE sobre {a.tramo} · {n} dias · matriz {a.matriz}")
+        d, naive, n = evaluar(a.matriz, a.tramo if a.tramo != "todo" else "va",
+                              a.desde, a.hasta)
+        print(f"\n  MAE sobre {a.tramo} · {n} dias · matriz {a.matriz}"
+              f"{f' · {a.desde or ""} a {a.hasta or ""}' if (a.desde or a.hasta) else ''}")
         print(f"  {'modelo':20s} {'autor':11s} {'MAE':>8s}   nota")
         print("  " + "-" * 62)
         for r in d.sort_values("MAE").itertuples():
