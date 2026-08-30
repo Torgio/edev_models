@@ -52,8 +52,20 @@ Si `prediccion_d_mas_1` devuelve el campo `advertencia`, TRASLADA esa advertenci
 cual, no la omitas -- significa que el sistema de produccion todavia no esta conectado a datos en
 vivo.
 
+Para preguntas de "cuantas horas negativas", "cual fue el minimo" (un numero resumen), usa
+`precio_negativos`. Para "lista/tabla/grafica de las horas o dias con los precios mas
+negativos" (el detalle, no el resumen), usa `precio_horas_negativas` -- no digas que no puedes
+mostrar esto, el dato SI esta disponible con esta herramienta.
+
 Para preguntas sobre cuanto ganaria una bateria con ciertas caracteristicas, usa `simular_bateria`
 -- es siempre un backtest sobre precio REAL ya ocurrido, dejalo claro en la respuesta.
+
+Para preguntas sobre el precio a MESES O AÑOS vista (2027, "dentro de una decada", curvas a
+2046...), usa `precio_futuro_curva`, NUNCA `precio_historico_percentiles` -- esa ultima es solo
+para patrones YA OCURRIDOS, no para proyectar. `precio_futuro_curva` es la metodologia del
+equipo validada por backtest; sigue siendo un ESCENARIO con supuestos, no una prediccion
+determinista -- traslada siempre el campo `advertencia` si aparece, igual que con
+`prediccion_d_mas_1`.
 
 Para preguntas sobre ahorro con paneles solares + bateria en una empresa, usa
 `simular_autoconsumo_solar` -- es una VERSION 1 con un perfil de consumo plano (simplificado).
@@ -126,6 +138,20 @@ def precio_negativos(anio: int | None = None) -> str:
 
 
 @beta_tool
+def precio_horas_negativas(anio: int | None = None, limite: int = 100) -> str:
+    """Lista detallada (dia, hora, precio) de las horas de precio NEGATIVO de un año, de mas a
+    menos negativa. Usa esta herramienta -- no `precio_negativos` -- cuando pidan un LISTADO,
+    tabla o grafica de las horas/dias con los precios mas negativos, no solo el conteo o el
+    minimo absoluto.
+
+    Args:
+        anio: Año a consultar. Omitir para usar el año en curso.
+        limite: Cuantas horas devolver como maximo (100 por defecto, tope duro 500).
+    """
+    return json.dumps(_h.precio_horas_negativas(anio, limite), ensure_ascii=False)
+
+
+@beta_tool
 def simular_autoconsumo_solar(potencia_solar_kwp: float, potencia_bateria_mw: float,
                                capacidad_bateria_mwh: float, eficiencia_bateria: float,
                                consumo_anual_mwh: float, desde: str, hasta: str) -> str:
@@ -147,6 +173,26 @@ def simular_autoconsumo_solar(potencia_solar_kwp: float, potencia_bateria_mw: fl
         _h.simular_autoconsumo_solar(potencia_solar_kwp, potencia_bateria_mw, capacidad_bateria_mwh,
                                       eficiencia_bateria, consumo_anual_mwh, desde, hasta),
         ensure_ascii=False)
+
+
+@beta_tool
+def precio_futuro_curva(desde: str, hasta: str, nivel_por_anio: dict[int, float] | None = None) -> str:
+    """Curva de precio a largo plazo (meses o años vista, incluidas decadas) -- metodologia del
+    equipo validada por backtest (scripts/curva_precios.py), no percentiles historicos simples.
+    Usa esta herramienta para "precio en 2030", "curva hasta 2046", "como evolucionara el
+    precio" -- NUNCA `precio_historico_percentiles` para horizontes futuros largos, esa es solo
+    para patrones YA OCURRIDOS. Sigue siendo un ESCENARIO, no una prediccion determinista --
+    dejalo claro en la respuesta, sobre todo el campo `advertencia` si aparece.
+
+    Args:
+        desde: Fecha de inicio, YYYY-MM-DD.
+        hasta: Fecha de fin, YYYY-MM-DD.
+        nivel_por_anio: Opcional -- nivel de precio medio anual en EUR/MWh, con solo unas pocas
+            anclas (2-4 años, ej. {2027: 66, 2030: 60, 2046: 52}) -- el resto se interpola
+            automaticamente, no hace falta dar todos los años. Si el usuario no da ninguno,
+            omitir este parametro -- la herramienta avisa que usara un marcador de posicion.
+    """
+    return json.dumps(_h.precio_futuro_curva(desde, hasta, nivel_por_anio), ensure_ascii=False)
 
 
 @beta_tool
@@ -188,8 +234,9 @@ def buscar_documentacion(pregunta: str) -> str:
 
 
 CODE_EXECUTION = {"type": "code_execution_20260521", "name": "code_execution"}
-TOOLS = [precio_historico_percentiles, precio_negativos, simular_bateria, simular_autoconsumo_solar,
-         extrapolar_consumo_cliente, prediccion_d_mas_1, buscar_documentacion]
+TOOLS = [precio_historico_percentiles, precio_negativos, precio_horas_negativas, simular_bateria,
+         simular_autoconsumo_solar, precio_futuro_curva, extrapolar_consumo_cliente,
+         prediccion_d_mas_1, buscar_documentacion]
 
 
 def preguntar_con_imagenes(pregunta: str, modelo: str = "claude-opus-5") -> dict:

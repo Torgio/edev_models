@@ -155,6 +155,58 @@ def precio_negativos(anio: int | None = None) -> dict:
     return resultado
 
 
+def precio_horas_negativas(anio: int | None = None, limite: int = 100) -> dict:
+    """Lista detallada de las horas de precio NEGATIVO de un año, dia a dia -- REFERENCIA
+    HISTORICA sobre precio real ya ocurrido. Complementa a `precio_negativos` (que solo da el
+    conteo total y el minimo del año): esta devuelve cada hora individual (dia, hora, precio),
+    ordenada de mas negativa a menos, para que se pueda presentar como tabla o graficar.
+
+    Antes de existir esta funcion, una pregunta como "lista las horas con los precios mas
+    negativos de 2026" no se podia responder aunque el dato SI estuviera en la base de datos --
+    `precio_negativos` solo trae el minimo absoluto, no el detalle. Esta funcion cierra ese hueco.
+
+    Args:
+        anio: Año a consultar. Omitir para usar el año en curso.
+        limite: Cuantas horas devolver como maximo (de mas a menos negativa). Por defecto 100;
+            un año completo puede tener varios cientos de horas negativas (ej. 681 en 2026), asi
+            que subir el limite mucho encarece el contexto -- 100-200 ya cubre sobradamente
+            cualquier pregunta razonable de "las mas negativas" o "los peores dias".
+    """
+    anio = anio or pd.Timestamp.now(tz="Europe/Madrid").year
+    limite = max(1, min(limite, 500))  # tope duro para no disparar el contexto del LLM
+    conn = _conectar()
+    try:
+        df = pd.read_sql(
+            "SELECT datetime, es_esios FROM spot_price "
+            "WHERE EXTRACT(YEAR FROM datetime AT TIME ZONE 'Europe/Madrid') = %(anio)s "
+            "AND es_esios IS NOT NULL AND es_esios < 0 "
+            "ORDER BY es_esios ASC LIMIT %(lim)s",
+            conn, params={"anio": anio, "lim": limite},
+        )
+    finally:
+        conn.close()
+
+    if df.empty:
+        return {"etiqueta": "REFERENCIA HISTORICA (precio real ya ocurrido, no es una prediccion)",
+                "anio": anio, "horas_negativas": [],
+                "nota": f"Ninguna hora con precio negativo en {anio} (hasta la fecha disponible)."}
+
+    local = pd.to_datetime(df["datetime"], utc=True).dt.tz_convert("Europe/Madrid")
+    filas = [{"dia": str(t.date()), "hora": int(t.hour), "precio_eur_mwh": round(float(p), 2)}
+             for t, p in zip(local, df["es_esios"])]
+    return {
+        "etiqueta": "REFERENCIA HISTORICA (precio real ya ocurrido, no es una prediccion) -- "
+                    "ordenado de mas negativo a menos, no cronologicamente",
+        "anio": anio,
+        "horas_mostradas": len(filas),
+        "limite_aplicado": limite,
+        "aviso_si_se_pide_el_total": "usa precio_negativos(anio) para el conteo TOTAL real de "
+                                      "horas negativas del año -- esta lista puede estar truncada "
+                                      "por `limite`.",
+        "horas_negativas": filas,
+    }
+
+
 def prediccion_d_mas_1() -> dict:
     """La prediccion real del modelo para el dia siguiente (D+1) -- el UNICO horizonte donde el
     proyecto predice de verdad, no extrapola.
@@ -351,6 +403,79 @@ def simular_autoconsumo_solar(potencia_solar_kwp: float, potencia_bateria_mw: fl
             "Sin degradacion de bateria ni costes de operacion/mantenimiento.",
         ],
     }
+
+
+def precio_futuro_curva(desde: str, hasta: str, nivel_por_anio: dict[int, float] | None = None) -> dict:
+    """Curva de precio horario para CUALQUIER rango, incluido horizonte largo (varios años a
+    futuro) -- envuelve `scripts/curva_precios.py`, construido por un compañero del equipo y
+    validado por backtest (ver `metodologia` en la respuesta). Es la herramienta correcta para
+    "precio en 2030", "curva a 2046", "cómo evolucionará el precio en 10 años" -- NUNCA uses
+    `precio_historico_percentiles` para estos casos, esa es solo para patrones YA OCURRIDOS.
+
+    Distincion importante que hay que trasladar siempre al usuario: esto NO es una prediccion
+    determinista como `prediccion_d_mas_1` (que solo existe para mañana). Es un ESCENARIO --
+    cose tres tramos segun la fecha (historico real / lo que predijeron los modelos de D+1, si
+    el rango los alcanza / una simulacion Monte Carlo para el resto), y el tramo simulado
+    depende de un supuesto de NIVEL de precio anual que hay que aportar (viene de futuros MIBEL
+    o de un escenario, no se predice) -- si no se aporta, se usa la media de los ultimos 12
+    meses mantenida plana, que es un marcador de posicion, no una prevision real de mercado.
+
+    Args:
+        desde: Fecha de inicio, YYYY-MM-DD. Puede ser pasada, de mañana en adelante, o a
+            decadas vista.
+        hasta: Fecha de fin, YYYY-MM-DD.
+        nivel_por_anio: Opcional. Nivel de precio medio anual en EUR/MWh, dando solo unas pocas
+            "anclas" (2-4 años bastan) -- ej. {2027: 66, 2030: 60, 2040: 55, 2046: 52}. Los años
+            intermedios se interpolan linealmente automaticamente. Si se omite, se usa un
+            marcador de posicion (media de los ultimos 12 meses, plana) -- avisar de esto en la
+            respuesta.
+    """
+    import sys as _sys
+    _sys.path.append(str(REPO / "scripts"))
+    from curva_precios import curva, por_anclas
+
+    if nivel_por_anio:
+        # `curva()` exige el nivel de TODOS los años del rango, no solo anclas -- por_anclas()
+        # es el propio helper del script para interpolar entre las anclas dadas (asi el usuario
+        # (o el LLM) puede dar solo 2-4 puntos, como en el uso real de curva_precios.py, sin que
+        # esto explote con un ValueError por años intermedios que faltan).
+        anio_ini, anio_fin = pd.Timestamp(desde).year, pd.Timestamp(hasta).year
+        nivel_por_anio = por_anclas(nivel_por_anio, anio_ini, anio_fin)
+
+    c = curva(desde, hasta, nivel=nivel_por_anio, n=200, verbose=False)
+    c = c.assign(anio=c["dia"].dt.year)
+
+    resumen = []
+    for (anio, origen), grupo in c.groupby(["anio", "origen"]):
+        fila = {"anio": int(anio), "origen": origen, "dias": int(grupo["dia"].nunique()),
+                "precio_medio_eur_mwh": round(float(grupo["p50"].mean()), 2)}
+        if origen == "simulado":
+            fila["p10_eur_mwh"] = round(float(grupo["p10"].mean()), 2)
+            fila["p90_eur_mwh"] = round(float(grupo["p90"].mean()), 2)
+            fila["horas_negativas_pct"] = round(100 * float((grupo["p50"] < 0).mean()), 1)
+        resumen.append(fila)
+    resumen.sort(key=lambda f: (f["anio"], f["origen"]))
+
+    hay_simulado = any(f["origen"] == "simulado" for f in resumen)
+    resultado = {
+        "etiqueta": "ESCENARIO A LARGO PLAZO (metodologia validada por backtest -- NO es una "
+                    "prediccion determinista, es una curva de referencia con banda de "
+                    "incertidumbre donde hace falta simular)",
+        "desde": desde, "hasta": hasta,
+        "resumen_anual": resumen,
+        "metodologia": "precio(dia,hora) = nivel(año) x factor estacional del historico + forma "
+                       "intradiaria (deformandose por la canibalizacion solar: el valle de "
+                       "mediodia se hunde año a año) + residuo remuestreado de dias reales "
+                       "completos -- fuente: scripts/curva_precios.py",
+    }
+    if hay_simulado and nivel_por_anio is None:
+        resultado["advertencia"] = (
+            "No se aporto un escenario de nivel de precio anual -- se uso la media de los "
+            "ultimos 12 meses mantenida plana para los años simulados. Es un MARCADOR DE "
+            "POSICION, no una prevision de mercado: el nivel real deberia salir de los futuros "
+            "MIBEL (cotizan a 3-4 años) o de un escenario fundamental del equipo."
+        )
+    return resultado
 
 
 def extrapolar_consumo_cliente(historico_mensual_mwh: list[float], anios_a_futuro: int = 2) -> dict:

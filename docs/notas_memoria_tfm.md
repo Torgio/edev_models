@@ -1354,3 +1354,59 @@ Los parámetros de batería que propuso, para tenerlos en cuenta si esto avanza:
 Ninguno de estos parámetros está hoy en `simular_bateria` ni en `simular_autoconsumo_solar`
 (ambas asumen eficiencia de ida/vuelta fija y ningún límite de degradación o de SoC) — queda
 anotado aquí para cuando se decida ampliar el simulador, no como algo que haya que construir ya.
+
+## 40. Prueba en vivo con el equipo: dos huecos corregidos en el asistente, y un hallazgo importante
+
+Prueba en vivo con un compañero, con dos consecuencias directas y un hallazgo pendiente de acordar
+en equipo.
+
+**Hueco 1, corregido — "lista las horas con los precios más negativos de 2026"**: el asistente
+respondió que no podía mostrar esto, y era cierto para las herramientas que existían: `precio_
+negativos` solo daba el conteo total y el mínimo absoluto del año, no el detalle. El dato SÍ
+estaba en la base de datos. Se añadió `precio_horas_negativas(año, límite)`, que devuelve la
+lista día a día (hasta 500 horas) ordenada de más negativa a menos, para tabular o graficar.
+Verificado con la misma pregunta: ahora responde con la tabla correcta (las 10 más negativas de
+2026 se concentran en domingos de finales de marzo/principios de abril, 12h-16h — canibalización
+solar).
+
+**Hallazgo importante — `scripts/curva_precios.py` / `notebooks/07_curva_precios.ipynb`**: un
+compañero construyó, de forma independiente, la metodología correcta para "precio a 2027-2046"
+que a nuestro asistente le faltaba. Hasta ahora, para cualquier pregunta de precio a largo plazo
+el asistente solo tenía `precio_historico_percentiles` (patrones YA ocurridos) — no una curva de
+escenario a futuro. `curva_precios.py` sí lo es, y está **validado por backtest** (notebook,
+sección 8b: simulando 2025 "a ciegas" con datos hasta 2024, la cobertura P1-P99 sale ~98% y
+P10-P90 ~80%, justo lo esperado). La descomposición es `precio(día,hora) = nivel(año) × factor
+estacional + forma intradiaria + residuo remuestreado de días reales completos`, con dos
+decisiones que vale la pena que quede en la memoria:
+- El **nivel** (precio medio del año) NO se predice — lo aporta el equipo (futuros MIBEL o un
+  escenario), porque encadenar el modelo D+1 hacia 20 años acumula error hasta aplanarse en la
+  media.
+- La **forma intradiaria se toma de los ÚLTIMOS 2 años**, no de todo el histórico, porque se está
+  deformando: el valle de mediodía pasó de -0,29 €/MWh (2020) a -49,08 (2026) por canibalización
+  solar — promediar con 2020 daría una forma que ya no existe. Es, según sus propias palabras, "el
+  argumento del capítulo de baterías": lo que hace rentable una batería no es que el precio suba,
+  es que el spread se abra.
+
+Se añadió `precio_futuro_curva(desde, hasta, nivel_por_año)` envolviendo esta herramienta, y el
+system prompt ahora dirige cualquier pregunta de precio a meses/años vista hacia ella en vez de
+hacia los percentiles históricos. Probado con un escenario de nivel 2027-2046: el precio medio cae
+un 22% pero el spread (p90-p10) se ensancha — exactamente el patrón que motiva el caso de negocio
+de baterías, ahora con evidencia del propio equipo en la respuesta del asistente.
+
+**Bug encontrado y corregido en el propio wrapper**: la función `curva()` exige el nivel de TODOS
+los años del rango, no solo unas anclas — dar solo `{2027: 66, 2030: 60}` la rompía con un
+`ValueError`. El script YA trae el helper `por_anclas()` para interpolar entre anclas (así lo usa
+el notebook), pero nuestra primera versión del wrapper no lo llamaba. Corregido: ahora se acepta
+dar solo 2-4 años de ancla, como en el uso real del script.
+
+**Pendiente de diseño, no construido todavía — el plan de "rango de vida de la batería"**: en la
+misma reunión se esbozó una idea más ambiciosa: que el cliente aporte las condiciones de su
+batería y un rango de fechas (pasado o futuro), y el asistente calcule su vida útil combinando la
+curva de precio (histórica si existe, o `curva_precios` si es a futuro) con una lógica de
+carga/descarga que se adelante al precio — cargar en las horas baratas, descargar en las caras
+(esto último ya lo hace `simular_bateria` día a día, pero solo sobre histórico real, nunca sobre
+un escenario futuro). Para el cálculo de "vida" hace falta además lo que quedó anotado en la nota
+39 (ciclos máximos, degradación cada 1.000 ciclos, %SoC min/max) — nada de eso existe hoy en el
+simulador. Es una pieza grande que toca tres cosas a la vez (curva a futuro + optimización de
+despacho + degradación), así que antes de construirla conviene acotar el alcance con el equipo en
+vez de improvisarlo.
