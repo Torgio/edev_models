@@ -136,7 +136,19 @@ def _clasificar(df, multicanal=True):
 
 def preparar(matriz="nucleo", ventana=VENTANA_DIAS, multicanal=True, verbose=True):
     ruta = REPO / "data" / "gold" / f"matriz_{matriz}.parquet"
-    df = pd.read_parquet(ruta).sort_values(["fecha_objetivo", "hora"]).reset_index(drop=True)
+    try:
+        df = pd.read_parquet(ruta)
+    except Exception as e:
+        # Los parquet escritos desde WSL (pyarrow 25) no los abre el pyarrow 19 de
+        # Windows: "Repetition level histogram size mismatch". El CSV tiene lo mismo y lo
+        # lee cualquiera, asi que sirve de red -- tarda unos segundos mas y ya.
+        csv = ruta.with_suffix(".csv")
+        if not csv.exists():
+            raise
+        if verbose:
+            print(f"  (el parquet no se puede leer aqui: {type(e).__name__}; se usa el CSV)")
+        df = pd.read_csv(csv, parse_dates=["fecha_pred", "fecha_objetivo", "ts"])
+    df = df.sort_values(["fecha_objetivo", "hora"]).reset_index(drop=True)
     import json
     meta = json.loads((ruta.with_suffix(".meta.json")).read_text(encoding="utf-8"))
 
