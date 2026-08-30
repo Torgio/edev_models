@@ -1268,3 +1268,30 @@ qué modelo hay detrás:
 su propia `anthropic_api_key` en su `credentials.json` local para que el endpoint funcione en su
 máquina — no se sube ninguna clave al servidor compartido todavía. Si el equipo decide llevar esto
 al VPS de producción, hay que decidir antes cómo se gestiona esa clave (ver la propia nota 33).
+
+## 37. Dos cierres antes de enseñar el asistente al equipo: alcance cerrado y gráficas en la respuesta
+
+**Alcance cerrado, verificado con una pregunta real**: se probó *"¿cuál es la capital de Francia?"*
+y el asistente respondió "París" antes de redirigir — es decir, el modelo de lenguaje sí puede
+contestar cultura general con su propio conocimiento de entrenamiento (no busca en internet, pero
+tampoco se queda en blanco). Para una pregunta de datos fuera del alcance (*"¿precio del petróleo
+Brent?"*) sí se comportó bien: se negó a inventar una cifra y explicó por qué. Se cerró la primera
+grieta añadiendo una regla explícita al system prompt — verificado de nuevo, ahora la pregunta de
+Francia también se rechaza. Para explicarlo con precisión si alguien del equipo pregunta: el
+asistente **nunca fabrica datos/números** (eso ya estaba garantizado por diseño, herramientas
+deterministas), pero sin esta regla sí podía "charlar" de temas ajenos al proyecto usando
+conocimiento general del modelo — ya cerrado.
+
+**Gráficas en la respuesta**: se añadió la herramienta server-side `code_execution` (matplotlib
+preinstalado en el sandbox de Anthropic) a las herramientas disponibles. El asistente, cuando la
+pregunta pide ver una curva, primero llama a la herramienta de datos correspondiente (nunca
+inventa números para graficar) y con esos números reales genera la figura. Probado con *"muéstrame
+una gráfica de cómo varía el precio histórico según la hora del día en 2025"*: generó la imagen y
+un análisis correcto (valle solar 10h-16h con p25 prácticamente en 0 €/MWh, pico de noche
+19h-22h). La imagen se recupera vía `client.beta.files.download()`, se codifica en base64, y tanto
+`production/api/main.py` como el widget de `index.html` ya la muestran — probado de punta a punta
+por la API real, no solo en terminal.
+
+**Decisión de alcance para `preguntar()`**: se mantuvo la función original devolviendo solo texto
+(para no romper el uso ya existente en terminal) y se añadió `preguntar_con_imagenes()` aparte,
+que es la que usa el endpoint de la API.

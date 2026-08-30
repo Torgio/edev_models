@@ -65,6 +65,12 @@ Para preguntas de "por que", "como se decidio" o "que es X" sobre el proyecto (m
 decisiones de diseño, hallazgos), usa `buscar_documentacion` y basa tu respuesta en lo que
 devuelva, citando de que nota/documento sale -- no la uses para preguntas de precios o numeros.
 
+Cuando el usuario pida ver una curva, grafica o evolucion de algo (precios, consumo, ahorro por
+duracion de bateria...), llama PRIMERO a la herramienta de datos correspondiente, y con esos
+numeros reales usa `code_execution` para dibujar un grafico simple con matplotlib (una figura,
+ejes con nombre, nada de colores decorativos) -- nunca dibujes con datos que no vengan de una
+herramienta.
+
 Responde en español, con los numeros que las herramientas devuelven -- nunca inventes una cifra
 que no venga de una llamada a herramienta."""
 
@@ -181,12 +187,45 @@ def buscar_documentacion(pregunta: str) -> str:
     return json.dumps(_h.buscar_documentacion(pregunta), ensure_ascii=False)
 
 
+CODE_EXECUTION = {"type": "code_execution_20260521", "name": "code_execution"}
 TOOLS = [precio_historico_percentiles, precio_negativos, simular_bateria, simular_autoconsumo_solar,
          extrapolar_consumo_cliente, prediccion_d_mas_1, buscar_documentacion]
 
 
+def preguntar_con_imagenes(pregunta: str, modelo: str = "claude-opus-5") -> dict:
+    """Como `preguntar`, pero devuelve tambien las graficas que el asistente haya generado con
+    `code_execution` (matplotlib), como PNG en base64 -- para interfaces (la API/web) que puedan
+    mostrarlas. Devuelve {"texto": str, "imagenes_base64": list[str]}."""
+    import base64
+
+    client = anthropic.Anthropic(api_key=load_anthropic_key())
+    runner = client.beta.messages.tool_runner(
+        model=modelo,
+        max_tokens=4096,
+        system=SYSTEM_PROMPT,
+        tools=TOOLS + [CODE_EXECUTION],
+        messages=[{"role": "user", "content": pregunta}],
+    )
+
+    texto, imagenes = "(sin texto en la respuesta)", []
+    for mensaje in runner:
+        for block in mensaje.content:
+            if block.type == "text":
+                texto = block.text
+            elif block.type == "bash_code_execution_tool_result":
+                resultado = block.content
+                if getattr(resultado, "type", None) == "bash_code_execution_result" and resultado.content:
+                    for item in resultado.content:
+                        if item.type == "bash_code_execution_output":
+                            archivo = client.beta.files.download(item.file_id)
+                            imagenes.append(base64.b64encode(archivo.read()).decode())
+    return {"texto": texto, "imagenes_base64": imagenes}
+
+
 def preguntar(pregunta: str, modelo: str = "claude-opus-5") -> str:
-    """Hace una pregunta al asistente y devuelve su respuesta final en texto."""
+    """Hace una pregunta al asistente y devuelve su respuesta final en texto (sin graficas --
+    para eso, `preguntar_con_imagenes`). Se mantiene igual que antes para no romper el uso ya
+    existente en terminal."""
     client = anthropic.Anthropic(api_key=load_anthropic_key())
 
     runner = client.beta.messages.tool_runner(

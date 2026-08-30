@@ -155,9 +155,9 @@ def asistente(cuerpo: PreguntaAsistente):
     proyecto). Si no esta configurada, se devuelve un error claro en vez de que la pagina falle
     en silencio.
     """
-    from chat import preguntar
+    from chat import preguntar_con_imagenes
     try:
-        respuesta = preguntar(cuerpo.pregunta)
+        r = preguntar_con_imagenes(cuerpo.pregunta)
     except FileNotFoundError:
         raise HTTPException(500, "No hay credentials.json en esta maquina.")
     except KeyError:
@@ -165,7 +165,7 @@ def asistente(cuerpo: PreguntaAsistente):
                                   "cada persona necesita la suya propia para usar el asistente.")
     except Exception as e:
         raise HTTPException(500, f"Error del asistente: {e}")
-    return {"respuesta": respuesta}
+    return {"respuesta": r["texto"], "imagenes_base64": r["imagenes_base64"]}
 
 
 # Se monta al final: si fuera antes, se tragaria tambien las rutas /api/*.

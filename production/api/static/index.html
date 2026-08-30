@@ -111,6 +111,9 @@
     border-radius:9px; font-size:13.5px; line-height:1.6; white-space:pre-wrap;
     display:none;
   }
+  .respuesta-asistente img{
+    display:block; max-width:100%; margin-top:12px; border-radius:8px; border:1px solid var(--linea);
+  }
   .respuesta-asistente.mostrando{display:block}
   .respuesta-asistente.cargando{color:var(--tenue)}
   .respuesta-asistente.error{border-color:#7a2e2e; color:#e08a8a}
@@ -395,6 +398,11 @@ async function preguntarAsistente(texto){
     if (!r.ok) throw new Error(datos.detail || 'Error del asistente.');
     cajaRespuesta.className = 'respuesta-asistente mostrando';
     cajaRespuesta.textContent = datos.respuesta;
+    for (const b64 of (datos.imagenes_base64 || [])) {
+      const img = document.createElement('img');
+      img.src = 'data:image/png;base64,' + b64;
+      cajaRespuesta.appendChild(img);
+    }
   } catch (e) {
     cajaRespuesta.className = 'respuesta-asistente mostrando error';
     cajaRespuesta.textContent = 'No se pudo obtener respuesta: ' + e.message;
