@@ -45,3 +45,6 @@ data/ecmwf_forecast_tensors/
 
 # copias de seguridad de matrices anteriores: se quedan en local, no viajan
 data/gold/z_*/
+data/gold/finales_nucleo_ANTES_del_arreglo/
+__pycache__/
+*.pyc

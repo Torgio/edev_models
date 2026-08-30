@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Predicción PMD · TFM Energía</title>
+<style>
+  :root{
+    --fondo:#08080a; --panel:#101014; --linea:#1e1e24; --texto:#e8e8ea;
+    --tenue:#7a7a85; --real:#ffffff;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--fondo); color:var(--texto);
+    font:14px/1.45 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex; flex-direction:column; align-items:center;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{
+    width:100%; max-width:1180px; padding:26px 22px 14px;
+    display:flex; align-items:baseline; gap:16px; flex-wrap:wrap;
+  }
+  h1{font-size:15px; font-weight:600; margin:0; letter-spacing:.2px}
+  h1 span{color:var(--tenue); font-weight:400}
+  .crece{flex:1}
+  main{width:100%; max-width:1180px; padding:0 22px 40px}
+
+  /* navegacion */
+  .nav{display:flex; align-items:center; gap:10px}
+  button.mover{
+    background:var(--panel); color:var(--texto); border:1px solid var(--linea);
+    border-radius:7px; width:34px; height:34px; font-size:15px; cursor:pointer;
+    display:grid; place-items:center; transition:border-color .12s,background .12s;
+  }
+  button.mover:hover:not(:disabled){border-color:#3a3a44; background:#16161c}
+  button.mover:disabled{opacity:.3; cursor:not-allowed}
+  input[type=date]{
+    background:var(--panel); color:var(--texto); border:1px solid var(--linea);
+    border-radius:7px; padding:7px 10px; font:inherit; color-scheme:dark; cursor:pointer;
+  }
+  .dia{font-variant-numeric:tabular-nums; color:var(--tenue); font-size:13px}
+
+  /* grafico */
+  .lienzo{position:relative; margin-top:18px}
+  svg{display:block; width:100%; height:auto; overflow:visible}
+  /* rejilla en blanco muy tenue: con 24 verticales, cualquier cosa mas fuerte compite
+     con las series y el grafico se ensucia */
+  .rejilla{stroke:#fff; stroke-opacity:.10; stroke-width:1}
+  .rejilla.vert{stroke-opacity:.09}
+  .rejilla.cero{stroke-opacity:.30}
+  .eje{fill:var(--tenue); font-size:11px; font-variant-numeric:tabular-nums}
+  .eje.unidad{fill:#9a9aa5; font-size:10.5px; letter-spacing:.3px}
+  .serie{fill:none; stroke-linejoin:round; stroke-linecap:round}
+  .guia{stroke:#40404c; stroke-width:1; stroke-dasharray:3 3}
+
+  /* lectura al pasar el raton */
+  .lectura{
+    position:absolute; pointer-events:none; background:rgba(16,16,20,.96);
+    border:1px solid var(--linea); border-radius:8px; padding:9px 11px; min-width:168px;
+    font-size:12px; opacity:0; transition:opacity .1s; backdrop-filter:blur(6px);
+  }
+  .lectura b{display:block; margin-bottom:6px; font-variant-numeric:tabular-nums}
+  .lectura div{display:flex; align-items:center; gap:7px; justify-content:space-between}
+  .lectura i{width:9px; height:2.5px; border-radius:2px; flex:none}
+  .lectura em{font-style:normal; color:var(--tenue); flex:1}
+  .lectura u{text-decoration:none; font-variant-numeric:tabular-nums}
+
+  /* leyenda */
+  .leyenda{
+    display:flex; flex-wrap:wrap; gap:6px 8px; margin-top:20px;
+  }
+  .chip{
+    display:flex; align-items:center; gap:7px; padding:5px 10px 5px 8px;
+    background:var(--panel); border:1px solid var(--linea); border-radius:20px;
+    cursor:pointer; user-select:none; transition:opacity .12s,border-color .12s;
+    font-size:12px;
+  }
+  .chip:hover{border-color:#3a3a44}
+  .chip.off{opacity:.32}
+  .chip i{width:14px; height:3px; border-radius:2px; flex:none}
+  .chip u{text-decoration:none; color:var(--tenue); font-variant-numeric:tabular-nums}
+  .pista{margin-top:14px; color:var(--tenue); font-size:12px}
+  .aviso{
+    margin-top:26px; padding:14px 16px; border:1px solid var(--linea);
+    border-radius:9px; color:var(--tenue); font-size:13px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Precio marginal diario <span>· predicción por modelo</span></h1>
+  <div class="crece"></div>
+  <div class="nav">
+    <button class="mover" id="antes" title="Día anterior (←)">‹</button>
+    <input type="date" id="fecha">
+    <button class="mover" id="despues" title="Día siguiente (→)">›</button>
+  </div>
+</header>
+
+<main>
+  <div class="dia" id="cabecera"></div>
+  <div class="lienzo">
+    <svg id="grafico" viewBox="0 0 1000 440" preserveAspectRatio="none"></svg>
+    <div class="lectura" id="lectura"></div>
+  </div>
+  <div class="leyenda" id="leyenda"></div>
+  <div class="pista">Pulsa una serie para ocultarla · flechas ← → para cambiar de día</div>
+</main>
+
+<script>
+const COLOR = {
+  real:             '#ffffff',
+  ensemble:         '#ffc247',
+  gru:              '#4fd1e0',
+  seq2seq:          '#a78bfa',
+  denso:            '#5ed69a',
+  simplernn:        '#f472b6',
+  boosting:         '#fb923c',
+  conv1d_lstm:      '#60a5fa',
+  seq2seq_absoluto: '#2dd4bf',
+  lstm:             '#f87171',
+};
+
+// El real es la referencia, no una prediccion mas: va solido, blanco, grueso y opaco.
+// Los modelos van finos, discontinuos y a media opacidad para que se lean como un haz
+// alrededor de el en vez de competir con el. Cada uno con su patron: con nueve series el
+// color solo no basta, y ademas asi se distinguen si alguien lo imprime en blanco y negro.
+const GROSOR  = k => k === 'real' ? 3.2 : k === 'ensemble' ? 2.1 : 1.6;
+const OPACO   = k => k === 'real' ? 1 : k === 'ensemble' ? .95 : .78;
+const RAYA = {
+  real:             null,          // continua
+  ensemble:         null,          // continua tambien: es el que se sirve por defecto
+  gru:              '7 3',
+  seq2seq:          '3 3',
+  denso:            '1 3',
+  simplernn:        '9 3 2 3',
+  boosting:         '2 2',
+  conv1d_lstm:      '12 4',
+  seq2seq_absoluto: '6 2 1 2',
+  lstm:             '4 4',
+};
+
+// el mismo patron para el cuadradito de la leyenda, con un degradado repetido
+function muestra(k){
+  const c = COLOR[k] || '#888';
+  if (!RAYA[k]) return `background:${c}`;
+  const [a, b] = RAYA[k].split(' ').map(Number);
+  return `background:repeating-linear-gradient(90deg,${c} 0 ${a}px,transparent ${a}px ${a+b}px)`;
+}
+
+// Marco fijo del eje Y. No empieza en 0 a proposito: en el tramo de test el 12,7 % de las
+// horas tienen PMD negativo, asi que un eje 0-250 recortaria una hora de cada ocho.
+const RANGO = {lo:-25, hi:275};
+const W = 1000, H = 440, M = {t:26, r:30, b:34, l:56};
+const svg = document.getElementById('grafico');
+const lectura = document.getElementById('lectura');
+const inpFecha = document.getElementById('fecha');
+
+let datos = null, ocultas = new Set(), limites = null;
+
+const ns = 'http://www.w3.org/2000/svg';
+const el = (t, a={}) => { const e = document.createElementNS(ns, t);
+  for (const k in a) e.setAttribute(k, a[k]); return e; };
+
+// Ticks "redondos": sin esto el eje sale con numeros como 47,3183 y se lee fatal.
+function ticks(min, max, n=6){
+  const bruto = (max - min) / n;
+  const mag = Math.pow(10, Math.floor(Math.log10(bruto)));
+  const paso = [1,2,2.5,5,10].map(x=>x*mag).find(x=>x>=bruto) || 10*mag;
+  const out = [];
+  for (let v = Math.ceil(min/paso)*paso; v <= max; v += paso) out.push(v);
+  return out;
+}
+
+function pintar(){
+  svg.textContent = '';
+  if (!datos) return;
+  const n = datos.horas.length;
+  const visibles = Object.entries(datos.series).filter(([k]) => !ocultas.has(k));
+  const todo = [...(ocultas.has('real') ? [] : datos.real), ...visibles.flatMap(([,v]) => v)]
+               .filter(v => v !== null);
+  if (!todo.length) return;
+
+  // Escala FIJA para que dos dias se puedan comparar de un vistazo: si el eje se
+  // reajustara cada dia, una jornada plana y otra con un pico de 200 se verian iguales.
+  // Se estira solo cuando el dia se sale del marco -- recortar escondería datos, y el
+  // 12,7 % de las horas del tramo tienen precio NEGATIVO.
+  let lo = Math.min(RANGO.lo, ...todo), hi = Math.max(RANGO.hi, ...todo);
+  if (lo < RANGO.lo) lo = Math.floor((lo - 10) / 25) * 25;
+  if (hi > RANGO.hi) hi = Math.ceil((hi + 10) / 25) * 25;
+  limites = {lo, hi, n};
+
+  const X = i => M.l + i * (W - M.l - M.r) / Math.max(n - 1, 1);
+  const Y = v => M.t + (hi - v) * (H - M.t - M.b) / (hi - lo);
+
+  // una vertical por cada hora del dia, no solo cada tres
+  datos.horas.forEach((h, i) => {
+    svg.append(el('line', {class:'rejilla vert', x1:X(i), x2:X(i), y1:M.t, y2:H-M.b}));
+    // H1..H24 es la numeracion del mercado, no la del reloj: H1 es la hora 00:00-01:00.
+    // Al ir por indice se ajusta sola a los dias de 23 y 25 horas del cambio de horario.
+    const tx = el('text', {class:'eje', x:X(i), y:H-M.b+19, 'text-anchor':'middle'});
+    tx.textContent = 'H' + (i + 1); svg.append(tx);
+  });
+
+  for (const t of ticks(lo, hi)){
+    // el cero se marca mas que los demas: separa cobrar de pagar por generar
+    const cero = Math.abs(t) < 1e-9;
+    svg.append(el('line', {class:'rejilla' + (cero ? ' cero' : ''),
+                           x1:M.l, x2:W-M.r, y1:Y(t), y2:Y(t)}));
+    const tx = el('text', {class:'eje', x:M.l-10, y:Y(t)+4, 'text-anchor':'end'});
+    tx.textContent = Math.round(t); svg.append(tx);
+  }
+
+  const un = el('text', {class:'eje unidad', x:M.l-10, y:M.t-4, 'text-anchor':'end'});
+  un.textContent = '€/MWh'; svg.append(un);
+  const hx = el('text', {class:'eje unidad', x:(M.l + W - M.r) / 2, y:H - 2,
+                         'text-anchor':'middle'});
+  hx.textContent = 'Horas'; svg.append(hx);
+
+  const traza = (vals, k) => {
+    let d = '', roto = true;
+    vals.forEach((v, i) => {
+      if (v === null){ roto = true; return; }
+      d += (roto ? 'M' : 'L') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1) + ' ';
+      roto = false;
+    });
+    if (!d) return;
+    const a = {class:'serie', d, stroke:COLOR[k] || '#888',
+               'stroke-width':GROSOR(k), 'stroke-opacity':OPACO(k)};
+    if (RAYA[k]) a['stroke-dasharray'] = RAYA[k];
+    svg.append(el('path', a));
+  };
+
+  // primero los modelos, el real al final para que quede por encima de todos
+  for (const [k] of visibles) traza(datos.series[k], k);
+  if (!ocultas.has('real')) traza(datos.real, 'real');
+
+  svg.append(el('line', {class:'guia', id:'guia', y1:M.t, y2:H-M.b, x1:-99, x2:-99}));
+}
+
+svg.addEventListener('mousemove', ev => {
+  if (!datos || !limites) return;
+  const caja = svg.getBoundingClientRect();
+  const px = (ev.clientX - caja.left) / caja.width * W;
+  const i = Math.round((px - M.l) / ((W - M.l - M.r) / Math.max(limites.n - 1, 1)));
+  if (i < 0 || i >= limites.n) return;
+  const X = M.l + i * (W - M.l - M.r) / Math.max(limites.n - 1, 1);
+  const g = document.getElementById('guia');
+  if (g){ g.setAttribute('x1', X); g.setAttribute('x2', X); }
+
+  const filas = [['real', datos.real[i]],
+                 ...Object.entries(datos.series).map(([k, v]) => [k, v[i]])]
+    .filter(([k, v]) => v !== null && !ocultas.has(k))
+    .sort((a, b) => b[1] - a[1]);
+  lectura.innerHTML = `<b>H${i + 1} · ${datos.horas[i]}</b>` + filas.map(([k, v]) =>
+    `<div><i style="${muestra(k)}"></i>` +
+    `<em>${k === 'real' ? 'PMD real' : k}</em><u>${v.toFixed(1)}</u></div>`).join('');
+  lectura.style.opacity = 1;
+  const izq = X / W * caja.width;
+  lectura.style.left = Math.min(izq + 18, caja.width - 190) + 'px';
+  lectura.style.top = '12px';
+});
+svg.addEventListener('mouseleave', () => {
+  lectura.style.opacity = 0;
+  const g = document.getElementById('guia');
+  if (g){ g.setAttribute('x1', -99); g.setAttribute('x2', -99); }
+});
+
+function leyenda(){
+  const cont = document.getElementById('leyenda');
+  cont.textContent = '';
+  const orden = ['real', ...Object.keys(datos.series)
+    .sort((a, b) => (datos.mae_dia[a] ?? 99) - (datos.mae_dia[b] ?? 99))];
+  for (const k of orden){
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (ocultas.has(k) ? ' off' : '');
+    const mae = k === 'real' ? '' : `<u>${datos.mae_dia[k] ?? '–'}</u>`;
+    chip.innerHTML = `<i style="${muestra(k)}"></i>` +
+                     `<span>${k === 'real' ? 'PMD real' : k}</span>${mae}`;
+    chip.onclick = () => {
+      ocultas.has(k) ? ocultas.delete(k) : ocultas.add(k);
+      pintar(); leyenda();
+    };
+    cont.append(chip);
+  }
+}
+
+async function cargar(dia){
+  const r = await fetch(`/api/dia/${dia}`);
+  const cab = document.getElementById('cabecera');
+  if (!r.ok){
+    datos = null; svg.textContent = ''; document.getElementById('leyenda').textContent = '';
+    cab.textContent = `Sin datos para ${dia}.`;
+    return;
+  }
+  datos = await r.json();
+  inpFecha.value = dia;
+  const f = new Date(dia + 'T12:00:00');
+  cab.textContent = f.toLocaleDateString('es-ES',
+    {weekday:'long', day:'numeric', month:'long', year:'numeric'}) +
+    ` · ${datos.horas.length} horas` +
+    (datos.horas.length !== 24 ? ' (cambio de hora)' : '');
+  pintar(); leyenda();
+  history.replaceState(null, '', '?dia=' + dia);
+}
+
+function mover(dias){
+  const d = new Date(inpFecha.value + 'T12:00:00');
+  d.setDate(d.getDate() + dias);
+  const s = d.toISOString().slice(0, 10);
+  if (inpFecha.min && s < inpFecha.min) return;
+  if (inpFecha.max && s > inpFecha.max) return;
+  cargar(s);
+}
+
+document.getElementById('antes').onclick = () => mover(-1);
+document.getElementById('despues').onclick = () => mover(1);
+inpFecha.onchange = () => cargar(inpFecha.value);
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowLeft') mover(-1);
+  if (e.key === 'ArrowRight') mover(1);
+});
+addEventListener('resize', pintar);
+
+(async () => {
+  const r = await fetch('/api/rango');
+  if (!r.ok){
+    document.querySelector('main').insertAdjacentHTML('beforeend',
+      '<div class="aviso">No hay predicciones cargadas. Ejecuta ' +
+      '<code>python scripts/guardar_predicciones.py --backfill</code>.</div>');
+    return;
+  }
+  const g = await r.json();
+  inpFecha.min = g.desde; inpFecha.max = g.hasta;
+  const pedido = new URLSearchParams(location.search).get('dia');
+  cargar(pedido && pedido >= g.desde && pedido <= g.hasta ? pedido : g.hasta);
+})();
+</script>
+</body>
+</html>
