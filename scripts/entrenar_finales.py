@@ -15,14 +15,18 @@ Variantes de un mismo esqueleto no son familias distintas: `Seq2Seq residuo`, `+
 de otra manera. Meterlas todas en un ensemble le daba a esa familia el 62 % del voto y al
 GRU -- el mejor modelo individual -- un 6 %.
 
-    gru                 celda GRU, un tercio menos de parametros que la LSTM
-    conv1d_lstm         Conv1D con stride antes de la recurrente
-    seq2seq             LSTM + RepeatVector, el de referencia
-    simplernn           el escalon basico, ~35 k parametros
-    lstm                la gemela del GRU, para la comparacion limpia
-    denso               MLP sobre la vista aplanada
-    boosting            LightGBM, un modelo por hora
-    seq2seq_absoluto    predice el precio, no el residuo
+Los nombres mezclan dos ejes: `gru` nombra una CELDA y `seq2seq` una TOPOLOGIA. Un
+seq2seq no es un tipo de LSTM -- es una forma de cablear, y puede llevar LSTM o GRU.
+
+    familia            topologia     celda       que aisla frente a seq2seq
+    seq2seq            enc-decoder   LSTM        -- es la referencia
+    gru                enc-decoder   GRU         la CELDA
+    simplernn          enc-decoder   SimpleRNN   la celda, escalon basico (~35 k par.)
+    lstm               DIRECTA       LSTM        el DECODER
+    seq2seq_absoluto   enc-decoder   LSTM        el OBJETIVO: precio, no residuo
+    conv1d_lstm        enc-decoder   LSTM        Conv1D con stride en la entrada
+    denso              vista plana   --          control sin recurrencia
+    boosting           vista plana   --          LightGBM, un modelo por hora
 
 El ultimo entra pese a perder en MAE porque es el que mejor CAPTURA el spread, y para
 operar una bateria eso es lo que cuenta. La correlacion entre MAE y captura es -0,285: son
@@ -93,6 +97,51 @@ def vista_plana(T):
     return np.concatenate(partes, axis=1).astype("float32")
 
 
+class BosqueHorario:
+    """Los 24 LightGBM de una semilla -- uno por hora-- con la interfaz minima que usa
+    el bucle de entrenamiento, para que no tenga que distinguir arboles de redes.
+
+    Se guarda como carpeta con 24 ficheros en el formato nativo de LightGBM en vez de
+    un pickle: un pickle ata el modelo a la version exacta de la libreria y del
+    interprete, y estos ficheros los tienen que poder abrir los companeros dentro de
+    un ano.
+    """
+
+    def __init__(self, modelos):
+        self.modelos = modelos                      # 24, en orden de hora
+
+    @staticmethod
+    def _booster(m):
+        # recien entrenado es un LGBMRegressor; cargado de fichero, ya un Booster
+        return getattr(m, "booster_", m)
+
+    def count_params(self):
+        return int(sum(self._booster(m).num_trees() for m in self.modelos))
+
+    def save(self, ruta):
+        # el bucle le pasa un `.keras` porque no distingue; guardamos al lado, en
+        # carpeta propia y en formato nativo.
+        carpeta = Path(ruta).with_suffix("")
+        carpeta.mkdir(parents=True, exist_ok=True)
+        for h, m in enumerate(self.modelos):
+            self._booster(m).save_model(str(carpeta / f"h{h:02d}.txt"))
+
+    @staticmethod
+    def cargar(carpeta):
+        import lightgbm as lgb
+        carpeta = Path(carpeta)
+        faltan = [h for h in range(24) if not (carpeta / f"h{h:02d}.txt").exists()]
+        if faltan:
+            raise FileNotFoundError(
+                f"{carpeta} no tiene las 24 horas: faltan {faltan}")
+        return BosqueHorario([lgb.Booster(model_file=str(carpeta / f"h{h:02d}.txt"))
+                              for h in range(24)])
+
+    def predict(self, A, verbose=0):
+        # LGBMRegressor y Booster exponen el mismo .predict
+        return np.column_stack([m.predict(A) for m in self.modelos])
+
+
 def construir(fam, T, keras, layers):
     ie = keras.Input(shape=T.X_enc.shape[1:], name="hist")
     idc = keras.Input(shape=T.X_dec.shape[1:], name="fut")
@@ -109,9 +158,29 @@ def construir(fam, T, keras, layers):
 
     enc = layers.Bidirectional(celda(u, dropout=dr))(x)
     ctx = layers.Concatenate()([enc, layers.Dense(64, activation="relu")(ist)])
-    dec = layers.Concatenate()([layers.RepeatVector(24)(ctx), idc])
-    dec = celda(u, return_sequences=True, dropout=dr)(dec)
-    out = layers.Reshape((24,))(layers.TimeDistributed(layers.Dense(1))(dec))
+
+    if fam == "lstm":
+        # LSTM DIRECTA, sin decoder: el encoder resume el historico, se le pegan los
+        # estaticos y el futuro conocido aplanado, y una Dense saca las 24 horas de
+        # golpe.
+        #
+        # Antes esta rama no existia y `lstm` caia en la de abajo, con lo que
+        # construia EXACTAMENTE el mismo encoder-decoder que `seq2seq`: mismos
+        # 259.681 parametros y r = 0,99947 entre sus predicciones. Eran la misma
+        # familia dos veces, y en el ensemble le daban doble voto a esa arquitectura.
+        #
+        # Asi cada comparacion mueve UNA sola cosa respecto a `seq2seq`:
+        #   gru              -> la celda
+        #   lstm             -> el decoder   (esta)
+        #   seq2seq_absoluto -> el objetivo
+        z = layers.Concatenate()([ctx, layers.Flatten()(idc)])
+        z = layers.Dropout(dr)(layers.Dense(256, activation="relu")(z))
+        out = layers.Dense(24)(z)
+    else:
+        dec = layers.Concatenate()([layers.RepeatVector(24)(ctx), idc])
+        dec = celda(u, return_sequences=True, dropout=dr)(dec)
+        out = layers.Reshape((24,))(layers.TimeDistributed(layers.Dense(1))(dec))
+
     m = keras.Model([ie, idc, ist], out, name=fam)
     m.compile(optimizer=keras.optimizers.Adam(1e-3),
               loss=keras.losses.Huber(delta=1.0), metrics=["mae"])
@@ -131,15 +200,25 @@ def entrenar(fam, T, yr, inv_r, ys, inv_abs, semilla, keras, layers):
         A = vista_plana(T)
         pv = np.zeros((int(T.va.sum()), 24))
         pt = np.zeros((int(T.te.sum()), 24))
+        bosque = []
         for h in range(24):
+            # subsample/colsample no son ajuste fino: sin ellos LightGBM es
+            # completamente determinista y `random_state` no hace NADA. Las tres
+            # semillas devolvian el mismo modelo bit a bit -- sd 0,000, que parecia
+            # estabilidad ejemplar y era un artefacto. Con bagging por filas y
+            # submuestreo de columnas la semilla vuelve a significar algo y la
+            # desviacion mide lo que dice medir.
             g = lgb.LGBMRegressor(n_estimators=800, learning_rate=0.03, num_leaves=31,
                                   objective="huber", verbose=-1, random_state=semilla,
-                                  n_jobs=-1)
+                                  n_jobs=-1, subsample=0.8, subsample_freq=1,
+                                  colsample_bytree=0.8)
             g.fit(A[T.tr], yr[T.tr][:, h], eval_set=[(A[T.va], yr[T.va][:, h])],
                   callbacks=[lgb.early_stopping(50, verbose=False)])
             pv[:, h] = g.predict(A[T.va])
             pt[:, h] = g.predict(A[T.te])
-        return inv_r(pv, T.va), inv_r(pt, T.te), 0, None
+            bosque.append(g)
+        b = BosqueHorario(bosque)
+        return inv_r(pv, T.va), inv_r(pt, T.te), b.count_params(), b
 
     if fam == "denso":
         A = vista_plana(T)
@@ -196,22 +275,37 @@ def main():
           f"{len(a.familias) * a.semillas} entrenamientos")
     print()
 
-    filas, pv_todo, pt_todo = [], {}, {}
+    cols = [f"h{h:02d}" for h in range(24)]
+    fechas_va = pd.to_datetime(T.fechas[T.va])
+    fechas_te = pd.to_datetime(T.fechas[T.te])
+
+    # Resume. Antes esto arrancaba vacio y reescribia el CSV entero, asi que lanzarlo
+    # con --familias boosting borraba las filas de las otras siete sin avisar.
+    csv = salida / "por_semilla.csv"
+    filas = pd.read_csv(csv).to_dict("records") if csv.exists() else []
+    yahay = {(r["familia"], r["semilla"]) for r in filas}
+    if yahay:
+        print(f"   continuando: {len(filas)} entrenamientos ya hechos")
+
     t0 = time.time()
     for fam in a.familias:
         for s in range(a.semillas):
+            if (fam, SEMILLA + s) in yahay:
+                continue
             pv, pt, npar, modelo = entrenar(fam, T, yr, inv_r, ys, inv_abs,
                                             SEMILLA + s, keras, layers)
             mv, mt = metricas(T.y[T.va], pv), metricas(T.y[T.te], pt)
-            clave = f"{fam}__s{s}"
-            pv_todo[clave], pt_todo[clave] = pv, pt
             filas.append({"familia": fam, "semilla": SEMILLA + s, "parametros": npar,
                           "MAE_val": round(mv["MAE"], 3), "MAE_test": round(mt["MAE"], 3),
                           "captura_val_%": round(mv["captura_%"], 2),
                           "captura_test_%": round(mt["captura_%"], 2),
                           "pico_1h_test_%": round(mt["pico_1h_%"], 2),
                           "vs_naive_val_%": round(100 * (mv["MAE"] / nv["MAE"] - 1), 1)})
-            pd.DataFrame(filas).to_csv(salida / "por_semilla.csv", index=False)
+            pd.DataFrame(filas).to_csv(csv, index=False)
+            pd.DataFrame(pv, index=fechas_va, columns=cols).to_csv(
+                salida / f"pred_val_{fam}__s{s}.csv")
+            pd.DataFrame(pt, index=fechas_te, columns=cols).to_csv(
+                salida / f"pred_test_{fam}__s{s}.csv")
             print(f"   {fam:18s} s{s}  MAE val {mv['MAE']:6.3f} · test {mt['MAE']:6.3f} "
                   f"· captura {mt['captura_%']:5.1f}%   [{(time.time()-t0)/60:.0f} min]")
             # TODAS las semillas: el representante se elige despues por MAE de
@@ -248,10 +342,17 @@ def main():
     miembros = [f"{r.familia}__s{r.semilla - SEMILLA}" for r in mejor_por_fam.itertuples()
                 if r.MAE_val < nv["MAE"]]
     if len(miembros) > 1:
-        e_va = np.mean([pv_todo[k] for k in miembros], axis=0)
-        e_te = np.mean([pt_todo[k] for k in miembros], axis=0)
+        # de disco: con resume, parte de las familias vienen de una pasada anterior y
+        # no estan en memoria.
+        e_va = np.mean([pd.read_csv(salida / f"pred_val_{k}.csv", index_col=0).values
+                        for k in miembros], axis=0)
+        e_te = np.mean([pd.read_csv(salida / f"pred_test_{k}.csv", index_col=0).values
+                        for k in miembros], axis=0)
         ev, et = metricas(T.y[T.va], e_va), metricas(T.y[T.te], e_te)
-        pv_todo["ensemble"], pt_todo["ensemble"] = e_va, e_te
+        pd.DataFrame(e_va, index=fechas_va, columns=cols).to_csv(
+            salida / "pred_val_ensemble.csv")
+        pd.DataFrame(e_te, index=fechas_te, columns=cols).to_csv(
+            salida / "pred_test_ensemble.csv")
         res.loc["ensemble"] = {"n": len(miembros), "parametros": 0,
                                "MAE_val": round(ev["MAE"], 3), "MAE_val_sd": np.nan,
                                "MAE_test": round(et["MAE"], 3), "MAE_test_sd": np.nan,
@@ -277,11 +378,6 @@ def main():
         print("   NO coinciden -> exportar los dos, y decirlo en la memoria.")
 
     res.to_csv(salida / "resumen.csv")
-    fechas_va = pd.to_datetime(T.fechas[T.va])
-    for k, p in pv_todo.items():
-        pd.DataFrame(p, index=fechas_va,
-                     columns=[f"h{h:02d}" for h in range(24)]).to_csv(
-            salida / f"pred_val_{k}.csv")
     if a.guardar_modelos:
         print()
         print("Cada .keras va con su .preprocesado.json: escaladores, orden de columnas y")
