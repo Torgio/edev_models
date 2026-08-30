@@ -1118,3 +1118,43 @@ adelante, 1.308 días, excluye por completo la crisis de 2021-2022) rindió peor
 nota 22 (un modelo sin exposición a la crisis pierde contra la persistencia) — es una segunda
 confirmación, con datos de otra fuente, de que recortar la ventana de entrenamiento para "evitar"
 la crisis sale caro, no barato.
+
+---
+
+## 33. Cierre formal del Transformer, y primer paso del asistente (LLM + herramientas, no RAG documental)
+
+**Transformer**: se documentó en `notebooks/06_justificacion_no_transformer.ipynb` (con datos
+reales, no ilustrativos) la decisión de no seguir invirtiendo tiempo en F13. Cinco líneas de
+evidencia independientes: (1) el equipo ya comparó 7 arquitecturas de deep learning con 3
+semillas cada una sobre la misma matriz, sin que el Transformer explore territorio nuevo; (2) el
+ruido de inicialización del propio equipo (hasta ~1,2 €/MWh entre semillas del mismo modelo) hace
+que cualquier mejora futura del Transformer necesite validación multi-semilla para ser creíble;
+(3) el objetivo del proyecto es captura de arbitraje, no MAE, y ahí tampoco gana con claridad; (4)
+nuestra propia curva de entrenamiento se estanca por encima de LightGBM sin señales de que más
+épocas lo resuelvan; (5) la literatura (Zeng et al., AAAI 2023) ya anticipaba este resultado antes
+de correr un solo experimento. Sumado al calendario (F13 declarado prescindible en tres informes
+sucesivos del equipo, cierre total el 9 de septiembre), la decisión es no retomarlo salvo que
+sobre tiempo el 11 de septiembre.
+
+**Asistente (LLM + herramientas)**: se aclaró con el usuario que lo que se necesita no es RAG
+documental clásico (recuperar y citar texto) sino un patrón de **"tool use" / function calling**:
+el modelo de lenguaje entiende la pregunta y llama a funciones deterministas que hacen el cálculo
+real — los números nunca salen del LLM. Distinción central del diseño, para que el sistema sea
+defendible ante el tribunal: **"predicción"** solo existe para D+1 (el único horizonte real del
+proyecto, sale del modelo entrenado) — cualquier otro horizonte (una semana, un mes, un rango de
+años) se responde como **"referencia histórica"** (percentiles del precio real ya ocurrido en
+circunstancias parecidas), nunca disfrazado de predicción del modelo.
+
+Primera pieza construida y probada: `modelos/asistente/herramientas.py` — tres funciones
+deterministas (`precio_historico_percentiles`, `precio_historico_serie`, `simular_bateria` con
+parámetros de batería a elección, y `prediccion_d_mas_1`).
+
+**Hallazgo real al probar `prediccion_d_mas_1`, no ocultado**: el dataset usa `DATASET_END`, una
+constante fija (hoy "2026-08-15") que el equipo congeló a propósito para que la comparación de
+matrices del 30-31 de agosto sea reproducible. Como consecuencia, la función daba la predicción
+del día siguiente a esa fecha congelada, no de mañana en sentido literal — exactamente la pieza
+que el propio equipo ya tiene identificada como pendiente ("features de D+1 desde Postgres", P1
+en las tareas del 29-ago). No se tocó `DATASET_END` (rompería la comparación de todo el equipo el
+día que se elige el modelo principal) — en su lugar, la función ahora compara la fecha objetivo
+contra "mañana" real y devuelve una `advertencia` explícita cuando no coinciden, en vez de fingir
+que da una predicción actual.
