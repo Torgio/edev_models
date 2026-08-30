@@ -1247,3 +1247,24 @@ válido, no hace falta reentrenar por este motivo.
 **También llegó al repo**: `production/api/` (panel FastAPI + tabla `predictions` en Postgres,
 para mostrar predicciones de varios modelos en un mismo gráfico) y `scripts/curva_precios.py`
 (la curva de precio a 20 años con la metodología de percentiles ya descrita en la nota 34).
+
+## 36. El asistente entra en el panel del equipo — sin marca de Claude visible
+
+En vez de una página aparte, el asistente se integró directamente en `production/api` (el panel
+del equipo que llegó en la nota 35) — así la página sigue siendo del grupo, sin ningún indicio de
+qué modelo hay detrás:
+
+- **Backend**: un endpoint nuevo, `POST /api/asistente` (`production/api/main.py`), que reenvía
+  la pregunta a `modelos/asistente/chat.py` y devuelve la respuesta. Los dos endpoints que ya
+  existían (`/api/rango`, `/api/dia/{dia}`) no se tocaron.
+- **Frontend**: una sección "Asistente del proyecto" añadida a `production/api/static/index.html`,
+  con el mismo estilo visual oscuro que el resto del panel (mismos colores, misma tipografía) —
+  caja de pregunta, tres sugerencias de ejemplo, y el área de respuesta.
+- **Probado de punta a punta**: servidor local (`uvicorn production.api.main:app --port 8000`),
+  pregunta real vía `POST /api/asistente` → respuesta correcta con los datos reales (681 horas
+  negativas, -9,83 €/MWh). La página y `/api/docs` se siguen sirviendo con normalidad.
+
+**Nota de seguridad, ya decidida en la nota 33 y que sigue aplicando aquí**: cada persona necesita
+su propia `anthropic_api_key` en su `credentials.json` local para que el endpoint funcione en su
+máquina — no se sube ninguna clave al servidor compartido todavía. Si el equipo decide llevar esto
+al VPS de producción, hay que decidir antes cómo se gestiona esa clave (ver la propia nota 33).

@@ -85,6 +85,42 @@
     margin-top:26px; padding:14px 16px; border:1px solid var(--linea);
     border-radius:9px; color:var(--tenue); font-size:13px;
   }
+
+  /* asistente */
+  .asistente{
+    margin-top:32px; border-top:1px solid var(--linea); padding-top:22px;
+  }
+  .asistente h2{font-size:14px; font-weight:600; margin:0 0 4px; letter-spacing:.2px}
+  .asistente .sub{color:var(--tenue); font-size:12.5px; margin:0 0 14px}
+  .caja-pregunta{display:flex; gap:8px}
+  .caja-pregunta textarea{
+    flex:1; resize:none; background:var(--panel); color:var(--texto);
+    border:1px solid var(--linea); border-radius:8px; padding:10px 12px;
+    font:inherit; font-size:13px; line-height:1.4; min-height:20px; max-height:120px;
+  }
+  .caja-pregunta textarea:focus{outline:none; border-color:#3a3a44}
+  .caja-pregunta button{
+    background:var(--panel); color:var(--texto); border:1px solid var(--linea);
+    border-radius:8px; padding:0 18px; font:inherit; font-size:13px; cursor:pointer;
+    transition:border-color .12s,background .12s;
+  }
+  .caja-pregunta button:hover:not(:disabled){border-color:#3a3a44; background:#16161c}
+  .caja-pregunta button:disabled{opacity:.4; cursor:not-allowed}
+  .respuesta-asistente{
+    margin-top:14px; padding:14px 16px; background:var(--panel); border:1px solid var(--linea);
+    border-radius:9px; font-size:13.5px; line-height:1.6; white-space:pre-wrap;
+    display:none;
+  }
+  .respuesta-asistente.mostrando{display:block}
+  .respuesta-asistente.cargando{color:var(--tenue)}
+  .respuesta-asistente.error{border-color:#7a2e2e; color:#e08a8a}
+  .sugerencias{display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 0}
+  .sugerencia{
+    background:var(--panel); border:1px solid var(--linea); border-radius:20px;
+    padding:5px 12px; font-size:12px; color:var(--tenue); cursor:pointer;
+    transition:border-color .12s,color .12s;
+  }
+  .sugerencia:hover{border-color:#3a3a44; color:var(--texto)}
 </style>
 </head>
 <body>
@@ -107,6 +143,21 @@
   </div>
   <div class="leyenda" id="leyenda"></div>
   <div class="pista">Pulsa una serie para ocultarla · flechas ← → para cambiar de día</div>
+
+  <div class="asistente">
+    <h2>Asistente del proyecto</h2>
+    <p class="sub">Pregunta sobre precios históricos, baterías, autoconsumo solar o el proyecto en general.</p>
+    <div class="caja-pregunta">
+      <textarea id="preguntaAsistente" rows="1" placeholder="Escribe tu pregunta..."></textarea>
+      <button id="enviarAsistente">Preguntar</button>
+    </div>
+    <div class="sugerencias">
+      <span class="sugerencia" data-q="¿Cuántas horas de precio negativo ha habido este año?">Horas negativas este año</span>
+      <span class="sugerencia" data-q="Tengo una batería de 2 MW y 4 MWh al 90% de eficiencia. ¿Cuánto habría ganado en 2023?">Simular una batería</span>
+      <span class="sugerencia" data-q="¿Por qué no se usa un Transformer en el proyecto?">¿Por qué no Transformer?</span>
+    </div>
+    <div class="respuesta-asistente" id="respuestaAsistente"></div>
+  </div>
 </main>
 
 <script>
@@ -324,6 +375,41 @@ addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') mover(1);
 });
 addEventListener('resize', pintar);
+
+// --- Asistente del proyecto (LLM + herramientas por debajo, ver /api/asistente) ---
+const cajaPregunta = document.getElementById('preguntaAsistente');
+const botonPreguntar = document.getElementById('enviarAsistente');
+const cajaRespuesta = document.getElementById('respuestaAsistente');
+
+async function preguntarAsistente(texto){
+  if (!texto || !texto.trim()) return;
+  cajaRespuesta.className = 'respuesta-asistente mostrando cargando';
+  cajaRespuesta.textContent = 'Pensando...';
+  botonPreguntar.disabled = true;
+  try {
+    const r = await fetch('/api/asistente', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({pregunta: texto}),
+    });
+    const datos = await r.json();
+    if (!r.ok) throw new Error(datos.detail || 'Error del asistente.');
+    cajaRespuesta.className = 'respuesta-asistente mostrando';
+    cajaRespuesta.textContent = datos.respuesta;
+  } catch (e) {
+    cajaRespuesta.className = 'respuesta-asistente mostrando error';
+    cajaRespuesta.textContent = 'No se pudo obtener respuesta: ' + e.message;
+  } finally {
+    botonPreguntar.disabled = false;
+  }
+}
+
+botonPreguntar.onclick = () => preguntarAsistente(cajaPregunta.value);
+cajaPregunta.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); preguntarAsistente(cajaPregunta.value); }
+});
+document.querySelectorAll('.sugerencia').forEach(s => {
+  s.onclick = () => { cajaPregunta.value = s.dataset.q; preguntarAsistente(s.dataset.q); };
+});
 
 (async () => {
   const r = await fetch('/api/rango');

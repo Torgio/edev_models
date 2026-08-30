@@ -26,9 +26,11 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.append(str(REPO / "ingesta"))
+sys.path.append(str(REPO / "modelos" / "asistente"))
 
 TZ = "Europe/Madrid"
 ESTATICOS = Path(__file__).parent / "static"
@@ -137,6 +139,33 @@ def por_dia(dia: date):
         "series": series,
         "mae_dia": mae,
     })
+
+
+class PreguntaAsistente(BaseModel):
+    pregunta: str
+
+
+@app.post("/api/asistente")
+def asistente(cuerpo: PreguntaAsistente):
+    """Reenvia la pregunta al asistente (LLM + herramientas, ver modelos/asistente/chat.py).
+
+    Requiere `anthropic_api_key` en el credentials.json de la maquina donde corre esto -- cada
+    persona usa su propia clave local, no una compartida en el servidor (ver nota 33/decision de
+    seguridad: es una clave con creditos reales, a diferencia del resto de credenciales del
+    proyecto). Si no esta configurada, se devuelve un error claro en vez de que la pagina falle
+    en silencio.
+    """
+    from chat import preguntar
+    try:
+        respuesta = preguntar(cuerpo.pregunta)
+    except FileNotFoundError:
+        raise HTTPException(500, "No hay credentials.json en esta maquina.")
+    except KeyError:
+        raise HTTPException(500, "Falta 'anthropic_api_key' en credentials.json -- "
+                                  "cada persona necesita la suya propia para usar el asistente.")
+    except Exception as e:
+        raise HTTPException(500, f"Error del asistente: {e}")
+    return {"respuesta": respuesta}
 
 
 # Se monta al final: si fuera antes, se tragaria tambien las rutas /api/*.
