@@ -191,11 +191,12 @@ DUDOSAS_EXPLICITAS = ("pbf_publicado_D", "pbf_completo_D", "meteo_es_forecast")
 # sin que se pisen, y el modelo_id del entregable lleva el sufijo del modo.
 MODOS_SELECCION = ("ambos", "spearman", "sfs", "ninguna")
 
-# Por defecto "ninguna": la matriz ya viene depurada y auditada por el equipo, asi
-# que la primera referencia interesante es "que hacen los modelos con TODO lo que
-# hay". Ademas arranca en segundos (no paga el SFS), asi que es lo mejor para la
-# primera pasada. Los modos con seleccion se piden con --seleccion y se comparan
-# contra esta referencia.
+# Por defecto "spearman": es el pipeline basico acordado. Quita las features sin
+# relacion monotona con el precio y las redundantes entre si, sin pagar el SFS, asi
+# que sigue arrancando en segundos. Ademas evita el peor condicionamiento numerico
+# de "ninguna" (128 features con familias casi identicas), que es donde ElasticNet
+# daba ConvergenceWarning.
+# Los demas modos se piden con --seleccion y se comparan contra esta referencia.
 MODO_SELECCION = "spearman"
 # Protegidas: la relacion precio/hora del dia es en U, no monotona, y Spearman le da
 # un rho casi cero. Sin esta proteccion el selector tiraria la feature mas importante.
@@ -258,6 +259,30 @@ AUTO_ARIMA_PARAMS = dict(
     stepwise=True, trace=True, error_action="ignore", suppress_warnings=True,
 )
 # Fallback si auto_arima no termina en un tiempo razonable (dejar constancia en la memoria)
+# El ajuste de statsmodels guarda las matrices del filtro de Kalman para CADA hora:
+# nobs x k_states^2. Con m=24 (k_states ~28) y 5 años de historia son ~5 GB, y el
+# OOM killer se lleva el proceso ("Killed", sin traceback). Con low_memory=True solo
+# se conserva lo imprescindible: medido, 1.034 MB -> 152 MB sobre un año, y
+# `forecast` y `append(refit=False)` -- lo unico que necesita bloques24 -- siguen
+# funcionando. A cambio se pierden diagnosticos que este pipeline no usa (residuos
+# suavizados, estados suavizados).
+SARIMA_LOW_MEMORY = True
+
+# Historia maxima para ajustar SARIMA/SARIMAX. None = toda. El consumo crece lineal
+# con las horas, asi que recortar es la otra palanca si aun asi no cabe: 3 años de
+# precio horario ya contienen de sobra la estructura diaria y semanal, y ademas
+# dejan fuera la crisis del gas de 2021-2022, que se comporta muy distinto de 2025.
+SARIMA_MAX_HORAS_TRAIN = None      # p.ej. 24 * 365 * 3
+
+# Horas finales de train sobre las que se reconstruye el ESTADO del filtro de Kalman
+# despues de estimar los parametros. `low_memory=True` estima sin guardar el filtro,
+# pero entonces no hay estado y `extend()` no puede continuar la serie; re-filtrar
+# solo esta ventana lo recupera con memoria acotada.
+# El estado de un modelo con m=24 converge en pocos dias, asi que 30 dias sobran:
+# medido, la prediccion sale IDENTICA a filtrar los 5 años enteros (2.042 MB -> 190 MB).
+# None = filtrar todo train (exacto por construccion, pero es lo que provocaba el OOM).
+SARIMA_VENTANA_ESTADO = 24 * 30
+
 ORDER_FALLBACK = (2, 0, 1)
 SEASONAL_ORDER_FALLBACK = (1, 1, 1, M_ESTACIONAL)
 
