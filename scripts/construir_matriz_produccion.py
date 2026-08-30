@@ -101,7 +101,8 @@ def construir_produccion(hasta: date, verbose=True, usar_cache=False):
     # El corte del equipo, movido solo para esta pasada. `DATASET_END` es hasta donde se
     # LEE de la base y tiene que ir por delante del objetivo: la fila de D necesita el
     # precio de D+1 como target, y los lags D-1/D-7 necesitan margen por detras.
-    antes = (v5.MODELO_END, v5.DATASET_END, v5.EXIGIR_TARGET, v5.ERA5_PREFERIR_ECMWF)
+    antes = (v5.MODELO_END, v5.DATASET_END, v5.EXIGIR_TARGET,
+             v5.ERA5_PREFERIR_ECMWF, v5.ESPINA_CALENDARIO)
     v5.MODELO_END = hasta
     v5.DATASET_END = str(hasta + timedelta(days=1))
     # Donde hay prevision, manda la prevision. ERA5 es reanalisis con 5 dias de retraso:
@@ -109,6 +110,9 @@ def construir_produccion(hasta: date, verbose=True, usar_cache=False):
     # entrenar con algo que en produccion no se tiene. Esto tiene que ir activado TAMBIEN
     # al construir la matriz de entrenamiento, o las dos dejan de ser comparables.
     v5.ERA5_PREFERIR_ECMWF = True
+    # La base sale del pivot de precios, asi que sin esto no existe la fila del dia
+    # que se quiere predecir -- no tiene precio todavia, que es el motivo de predecirlo.
+    v5.ESPINA_CALENDARIO = True
     # Si se pide un dia cuyo precio aun no existe -- manana --, hay que dejar de exigir
     # target: si no, esa fila se cae y no hay nada que predecir. Solo se relaja cuando
     # hace falta, para que los dias con precio sigan comprobandose como siempre.
@@ -121,13 +125,15 @@ def construir_produccion(hasta: date, verbose=True, usar_cache=False):
               f"{'   (el dia pedido aun no tiene precio)' if not v5.EXIGIR_TARGET else ''}")
         print(f"    PREFERIR_ECMWF {antes[3]}  ->  {v5.ERA5_PREFERIR_ECMWF}"
               f"   (los lags meteo salen de la prevision, no del reanalisis)")
+        print(f"    ESPINA_CALEND. {antes[4]}  ->  {v5.ESPINA_CALENDARIO}"
+              f"   (la fila del dia a predecir no depende de que haya precio)")
         print()
 
     try:
         datos = construir(cache=CACHE, forzar=not usar_cache, verbose=verbose)
     finally:
         (v5.MODELO_END, v5.DATASET_END, v5.EXIGIR_TARGET,
-         v5.ERA5_PREFERIR_ECMWF) = antes          # no dejar el modulo tocado
+         v5.ERA5_PREFERIR_ECMWF, v5.ESPINA_CALENDARIO) = antes   # no dejar el modulo tocado
 
     datos, _ = apagon.imputar(datos, verbose=verbose)
     datos, _ = depurar_matriz.depurar(datos, verbose=verbose)

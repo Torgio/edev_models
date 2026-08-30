@@ -72,6 +72,15 @@ def capacidad_diaria() -> pd.DataFrame:
                          "eolica_gw": (c.wind_mw / 1000).to_numpy()}, index=c.dia)
 
 
+def gas_diario() -> pd.Series:
+    """Cotizacion diaria del gas MIBGAS, que es quien pone el coste marginal de la tarde."""
+    from curva_precios import _con
+    with _con() as con:
+        g = pd.read_sql("SELECT fecha, gas_mibgas FROM commodities ORDER BY fecha", con)
+    return pd.Series(g.gas_mibgas.to_numpy(), index=pd.to_datetime(g.fecha),
+                     name="gas").dropna()
+
+
 def tabla(desde="2024-01-01") -> pd.DataFrame:
     """Una fila por dia: forma del precio, meteo y capacidad.
 
@@ -87,7 +96,10 @@ def tabla(desde="2024-01-01") -> pd.DataFrame:
         "valle": h[h.hora.between(12, 15)].groupby("dia").rel.mean(),
         "pico": h[h.hora.between(19, 21)].groupby("dia").rel.mean()})
     d["spread"] = d.pico - d.valle
-    d = d.join(meteo_diaria(), how="inner").join(capacidad_diaria(), how="inner").dropna()
+    d = d.join(meteo_diaria(), how="inner").join(capacidad_diaria(), how="inner")
+    d = d.join(gas_diario(), how="left")
+    d["gas"] = d.gas.ffill()
+    d = d.dropna()
     # LA VARIABLE QUE IMPORTA: energia, no potencia. Radiacion por capacidad.
     d["solar_efectiva"] = d.ssrd_mean * d.solar_gw / 1000
     d["eolica_efectiva"] = d.wind100_mean ** 3 * d.eolica_gw / 1000   # potencia ~ v^3
@@ -102,20 +114,26 @@ def ajustar(d: pd.DataFrame | None = None):
     sobre la media del dia.
     """
     d = tabla() if d is None else d
-    X = np.column_stack([d.solar_efectiva, d.eolica_efectiva, np.ones(len(d))])
+    # El gas entra porque la meteorologia sola NO explica el pico de la tarde: R2 de 0,018.
+    # Tiene sentido -- el pico lo marca el coste marginal de la ultima central termica que
+    # casa, y eso es gas, no viento. Medido: gas ~ pico +0,305, gas ~ nivel +0,438.
+    X = np.column_stack([d.solar_efectiva, d.eolica_efectiva, d.gas, np.ones(len(d))])
     cv, *_ = np.linalg.lstsq(X, d.valle.to_numpy(), rcond=None)
     cp, *_ = np.linalg.lstsq(X, d.pico.to_numpy(), rcond=None)
 
     def r2(c, y):
         return 1 - ((y - X @ c) ** 2).sum() / ((y - y.mean()) ** 2).sum()
 
-    return (lambda s, e: (float(cv[0] * s + cv[1] * e + cv[2]),
-                          float(cp[0] * s + cp[1] * e + cp[2])),
+    return (lambda s, e, g: (float(cv[0] * s + cv[1] * e + cv[2] * g + cv[3]),
+                             float(cp[0] * s + cp[1] * e + cp[2] * g + cp[3])),
             {"n_dias": len(d),
              "valle_R2": round(float(r2(cv, d.valle.to_numpy())), 3),
              "pico_R2": round(float(r2(cp, d.pico.to_numpy())), 3),
              "valle_por_solar": round(float(cv[0]), 3),
              "pico_por_solar": round(float(cp[0]), 3),
              "valle_por_eolica": round(float(cv[1]), 5),
+             "valle_por_gas": round(float(cv[2]), 3),
+             "pico_por_gas": round(float(cp[2]), 3),
+             "gas_medio": round(float(d.gas.mean()), 1),
              "solar_ef_media": round(float(d.solar_efectiva.mean()), 1),
              "eolica_ef_media": round(float(d.eolica_efectiva.mean()), 1)})
