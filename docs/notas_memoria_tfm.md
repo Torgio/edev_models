@@ -1158,3 +1158,13 @@ en las tareas del 29-ago). No se tocó `DATASET_END` (rompería la comparación 
 día que se elige el modelo principal) — en su lugar, la función ahora compara la fecha objetivo
 contra "mañana" real y devuelve una `advertencia` explícita cuando no coinciden, en vez de fingir
 que da una predicción actual.
+
+**Primera conversación real con el asistente ya conectado** (`modelos/asistente/chat.py`, patrón
+"tool use" del SDK oficial de Anthropic — `@beta_tool` + `tool_runner`, modelo `claude-opus-5`):
+se le preguntó *"¿Cuánto ha costado la luz históricamente los domingos de agosto entre las 20h y
+las 21h?"* y respondió correctamente citando los percentiles reales de ambas horas, etiquetando
+todo como *"Referencia histórica (no es una predicción del modelo)"* sin que se le insistiera, y
+añadió por su cuenta un matiz honesto sobre el tamaño de muestra (32 horas, sin acotar por año) —
+exactamente el comportamiento que el system prompt pedía. Confirma que el diseño (herramientas
+deterministas + regla explícita de "predicción vs. referencia histórica" en el prompt) funciona
+en la práctica, no solo en el papel.

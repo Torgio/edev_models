@@ -82,5 +82,36 @@ def load_cds_key():
             "Falta 'cds_api_key' en credentials.json. "
             "Añade tu Personal Access Token de https://cds.climate.copernicus.eu/profile"
         )
- 
+
     return creds["cds_api_key"]
+
+
+def load_anthropic_key():
+    """
+    Carga y devuelve la clave de API de Anthropic (Claude) desde credentials.json.
+    Es una clave PERSONAL con creditos reales -- a diferencia del resto de credenciales de este
+    fichero (gratuitas), nunca debe copiarse al credentials.json del servidor sin pensarlo primero.
+
+    Uso:
+        from config import load_anthropic_key
+        clave = load_anthropic_key()
+    """
+    if not CREDENTIALS_PATH.exists():
+        raise FileNotFoundError(
+            f"\n  credentials.json not found at: {CREDENTIALS_PATH}\n"
+            "  Añade la clave con la estructura:\n"
+            "  {\n"
+            "    \"anthropic_api_key\": \"sk-ant-...\"\n"
+            "  }"
+        )
+
+    with open(CREDENTIALS_PATH) as f:
+        creds = json.load(f)
+
+    if "anthropic_api_key" not in creds:
+        raise KeyError(
+            "Falta 'anthropic_api_key' en credentials.json. "
+            "Añadela desde https://console.anthropic.com (seccion API Keys)."
+        )
+
+    return creds["anthropic_api_key"]
