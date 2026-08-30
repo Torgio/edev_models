@@ -112,6 +112,49 @@ def precio_historico_serie(desde: str, hasta: str) -> pd.DataFrame:
     return df
 
 
+def precio_negativos(anio: int | None = None) -> dict:
+    """Cuenta horas de precio negativo y el minimo (mas negativo) del año -- REFERENCIA
+    HISTORICA, sobre precio real ya ocurrido. Si `anio` es None, usa el año en curso.
+
+    El precio spot español SI puede ser negativo (excedente de renovables sin demanda que lo
+    absorba) -- no es un error de datos, es una condicion real de mercado.
+    """
+    anio = anio or pd.Timestamp.now(tz="Europe/Madrid").year
+    conn = _conectar()
+    try:
+        df = pd.read_sql(
+            "SELECT datetime, es_esios FROM spot_price "
+            "WHERE EXTRACT(YEAR FROM datetime AT TIME ZONE 'Europe/Madrid') = %(anio)s "
+            "AND es_esios IS NOT NULL",
+            conn, params={"anio": anio},
+        )
+    finally:
+        conn.close()
+
+    if df.empty:
+        return {"error": f"No hay datos para el año {anio}."}
+
+    df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
+    negativos = df[df["es_esios"] < 0]
+    total_horas = len(df)
+
+    resultado = {
+        "etiqueta": "REFERENCIA HISTORICA (precio real ya ocurrido, no es una prediccion)",
+        "anio": anio,
+        "horas_con_dato": total_horas,
+        "horas_con_precio_negativo": int(len(negativos)),
+        "porcentaje_horas_negativas": round(100 * len(negativos) / total_horas, 2),
+    }
+    if len(negativos) > 0:
+        fila_min = negativos.loc[negativos["es_esios"].idxmin()]
+        resultado["precio_minimo_eur_mwh"] = round(float(fila_min["es_esios"]), 2)
+        resultado["fecha_hora_minimo"] = str(fila_min["datetime"])
+    else:
+        resultado["precio_minimo_eur_mwh"] = None
+        resultado["nota"] = f"Ninguna hora con precio negativo en {anio} (hasta la fecha disponible)."
+    return resultado
+
+
 def prediccion_d_mas_1() -> dict:
     """La prediccion real del modelo para el dia siguiente (D+1) -- el UNICO horizonte donde el
     proyecto predice de verdad, no extrapola.

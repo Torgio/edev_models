@@ -91,6 +91,18 @@ def simular_bateria(potencia_mw: float, capacidad_mwh: float, eficiencia: float,
 
 
 @beta_tool
+def precio_negativos(anio: int | None = None) -> str:
+    """Cuenta cuantas horas de precio NEGATIVO ha habido en un año (y cual fue el minimo /
+    mas negativo). Referencia historica, sobre precio real. En España el precio spot SI puede
+    ser negativo (exceso de renovables) -- no es un error.
+
+    Args:
+        anio: Año a consultar. Omitir para usar el año en curso.
+    """
+    return json.dumps(_h.precio_negativos(anio), ensure_ascii=False)
+
+
+@beta_tool
 def prediccion_d_mas_1() -> str:
     """La UNICA prediccion real del proyecto: el precio que el modelo entrenado predice para las
     24 horas del dia siguiente. No acepta parametros -- siempre es "mañana" respecto a la fecha
@@ -99,7 +111,7 @@ def prediccion_d_mas_1() -> str:
     return json.dumps(_h.prediccion_d_mas_1(), ensure_ascii=False)
 
 
-TOOLS = [precio_historico_percentiles, simular_bateria, prediccion_d_mas_1]
+TOOLS = [precio_historico_percentiles, precio_negativos, simular_bateria, prediccion_d_mas_1]
 
 
 def preguntar(pregunta: str, modelo: str = "claude-opus-5") -> str:
