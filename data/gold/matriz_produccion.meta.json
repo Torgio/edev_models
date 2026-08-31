@@ -1,11 +1,11 @@
 {
   "nombre": "produccion",
-  "hash": "6faf12cd",
-  "generada": "2026-08-30 17:59",
-  "modelo_end": "2026-08-31",
-  "filas": 58265,
+  "hash": "d14b7cb4",
+  "generada": "2026-08-31 21:50",
+  "modelo_end": "2026-09-01",
+  "filas": 58289,
   "columnas": 133,
-  "ventana": "2020-01-08 -> 2026-08-31",
+  "ventana": "2020-01-08 -> 2026-09-01",
   "train_end": "2024-12-31",
   "val_end": "2025-12-31",
   "derivada_de": {
