@@ -11,9 +11,22 @@ solo existe para D+1 (prediccion_d_mas_1); cualquier otro horizonte se responde 
 "referencia historica" (percentiles reales, precio_historico_percentiles), nunca disfrazado de
 prediccion del modelo.
 
-Modelo por defecto: claude-opus-5 (el que recomienda el SDK). Si el coste es una preocupacion
-para las pruebas, se puede cambiar a "claude-haiku-4-5" pasando el parametro `modelo` -- esta
-tarea (elegir una herramienta y redactar la respuesta) no necesita el modelo mas grande.
+Modelo: se elige con `MODELO_POR_DEFECTO`, un solo sitio para cambiarlo (antes estaba repetido
+como valor por defecto en cada funcion). Precios de referencia (30-ago-2026, EUR/1M tokens
+entrada+salida): Opus 5 ~5+25, Sonnet 5 ~2+10, Haiku 4.5 ~1+5 -- para esta tarea (elegir que
+herramienta llamar y redactar la respuesta con el resultado) no hace falta el modelo mas grande;
+Haiku 4.5 es el mas barato y normalmente basta. Cambiar el modelo NO afecta a que numeros salen
+(esos los da siempre `herramientas.py`, nunca el LLM) -- solo a que tan bien elige la herramienta
+y que tan natural redacta, asi que conviene probar unas cuantas preguntas tipicas antes de dejarlo
+como definitivo.
+
+Historial de conversaciones: cada llamada a `preguntar`/`preguntar_con_imagenes` queda registrada
+en `historial.jsonl` (una linea JSON por pregunta: fecha, modelo, pregunta, respuesta, tokens).
+Es local, no se sube a git (ver .gitignore) -- para revisarlo desde terminal, usar
+`ver_historial.py`. La consola de Anthropic (Console) NO sirve para esto: su pestaña de Usage
+muestra tokens y coste agregado por clave/modelo, pero no el contenido de las preguntas ni
+respuestas -- por diseño de privacidad, Anthropic no expone el texto de las llamadas API en la
+consola.
 
 Uso:
     from modelos.asistente.chat import preguntar
@@ -22,6 +35,7 @@ Uso:
 
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import anthropic
@@ -32,6 +46,30 @@ sys.path.append(str(Path(__file__).parent))
 
 from config import load_anthropic_key
 import herramientas as _h
+
+MODELO_POR_DEFECTO = "claude-opus-5"
+HISTORIAL_PATH = Path(__file__).parent / "historial.jsonl"
+
+
+def _registrar_historial(pregunta: str, texto: str, modelo: str, tokens_entrada: int,
+                          tokens_salida: int, n_imagenes: int = 0) -> None:
+    """Anade una linea al historial local (JSON Lines, un registro por pregunta). No falla la
+    conversacion si el registro falla (ej. disco lleno) -- es una conveniencia para depurar/mostrar
+    el uso, no una parte critica del asistente."""
+    try:
+        registro = {
+            "fecha": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "modelo": modelo,
+            "pregunta": pregunta,
+            "respuesta": texto,
+            "tokens_entrada": tokens_entrada,
+            "tokens_salida": tokens_salida,
+            "n_imagenes": n_imagenes,
+        }
+        with open(HISTORIAL_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps(registro, ensure_ascii=False) + "\n")
+    except OSError:
+        pass
 
 SYSTEM_PROMPT = """Eres el asistente del proyecto de prediccion de precio electrico y baterias (TFM UCM).
 
@@ -258,7 +296,7 @@ TOOLS = [precio_historico_percentiles, precio_tabla_horaria, precio_negativos, p
          prediccion_d_mas_1, buscar_documentacion]
 
 
-def preguntar_con_imagenes(pregunta: str, modelo: str = "claude-opus-5") -> dict:
+def preguntar_con_imagenes(pregunta: str, modelo: str = MODELO_POR_DEFECTO) -> dict:
     """Como `preguntar`, pero devuelve tambien las graficas que el asistente haya generado con
     `code_execution` (matplotlib), como PNG en base64 -- para interfaces (la API/web) que puedan
     mostrarlas. Devuelve {"texto": str, "imagenes_base64": list[str]}."""
@@ -274,7 +312,10 @@ def preguntar_con_imagenes(pregunta: str, modelo: str = "claude-opus-5") -> dict
     )
 
     texto, imagenes = "(sin texto en la respuesta)", []
+    tokens_entrada = tokens_salida = 0
     for mensaje in runner:
+        tokens_entrada += mensaje.usage.input_tokens
+        tokens_salida += mensaje.usage.output_tokens
         for block in mensaje.content:
             if block.type == "text":
                 texto = block.text
@@ -285,10 +326,11 @@ def preguntar_con_imagenes(pregunta: str, modelo: str = "claude-opus-5") -> dict
                         if item.type == "bash_code_execution_output":
                             archivo = client.beta.files.download(item.file_id)
                             imagenes.append(base64.b64encode(archivo.read()).decode())
+    _registrar_historial(pregunta, texto, modelo, tokens_entrada, tokens_salida, len(imagenes))
     return {"texto": texto, "imagenes_base64": imagenes}
 
 
-def preguntar(pregunta: str, modelo: str = "claude-opus-5") -> str:
+def preguntar(pregunta: str, modelo: str = MODELO_POR_DEFECTO) -> str:
     """Hace una pregunta al asistente y devuelve su respuesta final en texto (sin graficas --
     para eso, `preguntar_con_imagenes`). Se mantiene igual que antes para no romper el uso ya
     existente en terminal."""
@@ -303,11 +345,17 @@ def preguntar(pregunta: str, modelo: str = "claude-opus-5") -> str:
     )
 
     ultimo = None
+    tokens_entrada = tokens_salida = 0
     for mensaje in runner:
         ultimo = mensaje
+        tokens_entrada += mensaje.usage.input_tokens
+        tokens_salida += mensaje.usage.output_tokens
     if ultimo is None:
+        _registrar_historial(pregunta, "(el asistente no devolvio respuesta)", modelo, tokens_entrada, tokens_salida)
         return "(el asistente no devolvio respuesta)"
-    return next((b.text for b in ultimo.content if b.type == "text"), "(sin texto en la respuesta)")
+    texto = next((b.text for b in ultimo.content if b.type == "text"), "(sin texto en la respuesta)")
+    _registrar_historial(pregunta, texto, modelo, tokens_entrada, tokens_salida)
+    return texto
 
 
 if __name__ == "__main__":

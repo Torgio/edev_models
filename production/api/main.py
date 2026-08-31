@@ -143,6 +143,12 @@ def por_dia(dia: date):
 
 class PreguntaAsistente(BaseModel):
     pregunta: str
+    # Opcional: para comparar coste/calidad entre modelos desde la propia pagina sin tocar
+    # codigo. Si se omite, chat.py usa MODELO_POR_DEFECTO (claude-opus-5).
+    modelo: str | None = None
+
+
+MODELOS_PERMITIDOS = {"claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"}
 
 
 @app.post("/api/asistente")
@@ -155,9 +161,12 @@ def asistente(cuerpo: PreguntaAsistente):
     proyecto). Si no esta configurada, se devuelve un error claro en vez de que la pagina falle
     en silencio.
     """
-    from chat import preguntar_con_imagenes
+    from chat import preguntar_con_imagenes, MODELO_POR_DEFECTO
+    if cuerpo.modelo and cuerpo.modelo not in MODELOS_PERMITIDOS:
+        raise HTTPException(400, f"Modelo '{cuerpo.modelo}' no reconocido. "
+                                  f"Usa uno de: {sorted(MODELOS_PERMITIDOS)}.")
     try:
-        r = preguntar_con_imagenes(cuerpo.pregunta)
+        r = preguntar_con_imagenes(cuerpo.pregunta, modelo=cuerpo.modelo or MODELO_POR_DEFECTO)
     except FileNotFoundError:
         raise HTTPException(500, "No hay credentials.json en esta maquina.")
     except KeyError:
