@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Pulso Energía · Estado del módulo de batería</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --background:#f3f6f2; --foreground:#17322b;
+  --primary:#173f35;    --primary-foreground:#f7faf7;
+  --secondary:#e4ece8;  --muted:#e9eeeb; --muted-foreground:#697a74;
+  --border:#d8e0dc;     --ring:#43a99f;
+  --acento:#258160;     --alerta:#924831;
+  --radius:.85rem;      --sombra:0 20px 60px rgba(18,48,40,.07);
+  --sans:'Geist',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'Geist Mono',ui-monospace,'SF Mono',Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--background);color:var(--foreground);font-family:var(--sans);
+     font-size:10pt;line-height:1.5;-webkit-font-smoothing:antialiased;
+     -webkit-print-color-adjust:exact;print-color-adjust:exact}
+@page{size:A4;margin:0}
+.hoja{width:210mm;min-height:297mm;padding:15mm 14mm 10mm;page-break-after:always;
+      overflow:hidden;display:flex;flex-direction:column}
+.hoja:last-child{page-break-after:auto}
+.hoja > .pie{margin-top:auto}
+
+h1{font-size:26pt;line-height:1.1;font-weight:600;letter-spacing:-.02em;margin:0 0 6px}
+h2{font-size:15.5pt;line-height:1.2;font-weight:600;letter-spacing:-.01em;
+   margin:0 0 12px;color:var(--primary)}
+h3{font-size:10.5pt;font-weight:600;margin:20px 0 8px;color:var(--primary)}
+p{margin:0 0 9px}
+.sobre{font-size:7.8pt;font-weight:600;letter-spacing:.13em;text-transform:uppercase;
+       color:var(--muted-foreground);margin:0 0 6px}
+.entrada{font-size:11pt;color:var(--muted-foreground);max-width:150mm;margin:0 0 18px}
+.tenue{color:var(--muted-foreground)}
+code{font-family:var(--mono);font-size:8.6pt;background:var(--muted);padding:1px 5px;
+     border-radius:5px;color:var(--primary)}
+.mono{font-family:var(--mono)}
+
+.marca{display:flex;align-items:center;gap:13px;margin-bottom:30px}
+.logo{width:44px;height:44px;border-radius:13px;background:var(--primary);
+      display:grid;place-items:center;flex:none}
+.logo svg{width:21px;height:21px;fill:#7fe3bd}
+.marca b{font-size:12.5pt;font-weight:600;display:block;line-height:1.2}
+
+.tarjeta{background:#fff;border:1px solid var(--border);border-radius:var(--radius);
+         padding:16px 18px;box-shadow:var(--sombra);margin-bottom:12px}
+.tarjeta.plana{box-shadow:none}
+.tarjeta.suave{background:var(--secondary);border-color:#cfdcd6;box-shadow:none}
+.rej{display:grid;gap:11px}
+.r2{grid-template-columns:1fr 1fr}
+.r3{grid-template-columns:repeat(3,1fr)}
+
+table{width:100%;border-collapse:collapse;font-size:8.8pt}
+th{text-align:left;font-weight:600;font-size:7.8pt;letter-spacing:.07em;
+   text-transform:uppercase;color:var(--muted-foreground);
+   padding:0 9px 6px 0;border-bottom:1px solid var(--border)}
+td{padding:6px 9px 6px 0;border-bottom:1px solid var(--border);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.m{font-family:var(--mono);font-size:8.2pt;white-space:nowrap}
+tr.sec td{background:var(--secondary);font-weight:600;font-size:8pt;
+          letter-spacing:.06em;text-transform:uppercase;color:var(--primary)}
+
+.pil{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:20px;
+     font-size:7.6pt;font-weight:600;background:var(--secondary);color:var(--primary)}
+.pil.ok{background:#dcf0e6;color:#1c6b4c}
+.pil.no{background:#f6e6e0;color:var(--alerta)}
+.pil.medio{background:#fdf3e3;color:#8a5a1a}
+.nota{border-left:2.5px solid var(--ring);padding:2px 0 2px 13px;
+      color:var(--muted-foreground);font-size:9pt;margin:12px 0}
+.nota b{color:var(--foreground)}
+.nota.aviso{border-left-color:var(--alerta)}
+.orden{font-family:var(--mono);font-size:8.4pt;background:#fbfdfb;
+       border:1px solid var(--border);border-radius:9px;padding:11px 13px;
+       line-height:1.75;margin:8px 0}
+.orden .sh{color:var(--muted-foreground)}
+.pie{padding-top:9px;border-top:1px solid var(--border);font-size:7.8pt;
+     color:var(--muted-foreground);display:flex;justify-content:space-between}
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════ 1 · PORTADA ═════════════════════════════════ -->
+<section class="hoja">
+  <div class="marca">
+    <div class="logo"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></div>
+    <div>
+      <div class="sobre" style="margin:0">TFM · Mercado eléctrico</div>
+      <b>Pulso Energía</b>
+    </div>
+  </div>
+
+  <div class="sobre">Estado a 1 de septiembre de 2026</div>
+  <h1>Estudio de batería</h1>
+  <p class="entrada">Qué está hecho, dónde vive cada cosa y cómo se abre.</p>
+
+  <div class="rej r3" style="margin-bottom:16px">
+    <div class="tarjeta plana">
+      <div class="sobre">Funcionando</div>
+      <p style="margin:0;font-size:9pt">El motor de optimización, las doce tablas, la curva
+         de precio a veinte años, el API y la pantalla conectada a él.</p>
+    </div>
+    <div class="tarjeta plana">
+      <div class="sobre">A medias</div>
+      <p style="margin:0;font-size:9pt">La pantalla lee la curva real del servidor, pero el
+         despacho que dibuja todavía lo calcula el navegador.</p>
+    </div>
+    <div class="tarjeta plana">
+      <div class="sobre">Sin empezar</div>
+      <p style="margin:0;font-size:9pt">La identificación del usuario, la búsqueda del
+         tamaño óptimo y probar sin subir ficheros.</p>
+    </div>
+  </div>
+
+  <h3>Lo que se puede hacer hoy, de punta a punta</h3>
+  <table>
+    <tr><th style="width:33%">Paso</th><th style="width:13%">Estado</th><th>Con qué</th></tr>
+    <tr><td>Subir curva de consumo y generación</td><td><span class="pil ok">Hecho</span></td>
+        <td class="m">cargar_curvas.py · POST /api/bat/curvas</td></tr>
+    <tr><td>Validar que el fichero es lo que dice</td><td><span class="pil ok">Hecho</span></td>
+        <td>Cambio de hora, bisiestos, unidad, solar que no genere de noche</td></tr>
+    <tr><td>Publicar la curva de precio</td><td><span class="pil ok">Hecho</span></td>
+        <td class="m">cron_diario.py · a diario a las 11:45</td></tr>
+    <tr><td>Optimizar la batería</td><td><span class="pil ok">Hecho</span></td>
+        <td class="m">caso.py ejecutar · HiGHS, 20 escenarios</td></tr>
+    <tr><td>Guardar y consultar resultados</td><td><span class="pil ok">Hecho</span></td>
+        <td class="m">app_case_run · _result_annual · _dispatch</td></tr>
+    <tr><td>Comprobar que la cadena es correcta</td><td><span class="pil ok">Hecho</span></td>
+        <td class="m">comprobar.py --base · 18 comprobaciones</td></tr>
+    <tr><td>Verlo en una pantalla</td><td><span class="pil medio">A medias</span></td>
+        <td>Lee la curva real; el despacho lo calcula el navegador</td></tr>
+    <tr><td>Saber quién es el usuario</td><td><span class="pil no">No</span></td>
+        <td>Llega un correo por parámetro y se cree</td></tr>
+  </table>
+
+  <div class="nota">
+    <b>El resultado de la última pasada.</b> Fábrica de 350 MWh al año con 250 kWp de
+    fotovoltaica: la batería de <b>50 kW / 4 h</b> sale con un VAN de <b>+2.544 €</b> y
+    positiva en el <b>100 % de los escenarios</b>. Las de 100 y 200 kW salen negativas.
+    El diagnóstico está en los ciclos: la pequeña trabaja 1,0 al día y la grande 0,7.
+  </div>
+
+  <div class="pie"><span>Pulso Energía · Estudio de batería</span><span class="mono">1</span></div>
+</section>
+
+
+<!-- ═══════════════════════════ 2 · CÓMO SE ABRE ════════════════════════════ -->
+<section class="hoja">
+  <div class="sobre">Acceso</div>
+  <h2>Cómo se abre cada cosa</h2>
+
+  <h3>La pantalla del estudio</h3>
+  <p>Se sirve <b>desde el propio API</b>, no como fichero suelto. Abierta con
+     <code>file://</code> el navegador la trata como otro origen y bloquea todas las
+     llamadas: se ve la página y no se ve un solo dato.</p>
+  <div class="orden">
+    <span class="sh">$</span> cd /home/ubuntu/scripts<br>
+    <span class="sh">$</span> uvicorn production.api.main:app --host 127.0.0.1 --port 8000<br><br>
+    <span class="sh">#</span> y en el navegador:<br>
+    http://127.0.0.1:8000/bateria/estudio_bateria_dev.html
+  </div>
+
+  <table>
+    <tr><th style="width:44%">Ruta</th><th>Qué es</th></tr>
+    <tr><td class="m">/bateria/estudio_bateria_dev.html</td>
+        <td><b>La buena.</b> Mes navegable, balance de energía, detalle económico</td></tr>
+    <tr><td class="m">/bateria/estudio_bateria.html</td>
+        <td>Versión mínima. Los resultados son fijos, solo enseña el flujo</td></tr>
+    <tr><td class="m">/plantillas/plantilla_consumo.csv</td>
+        <td>Las cuatro plantillas de ejemplo, también en <code>.xlsx</code></td></tr>
+    <tr><td class="m">/api/docs</td><td>La documentación del API, generada sola</td></tr>
+    <tr><td class="m">/</td><td>El panel de predicciones de siempre, intacto</td></tr>
+  </table>
+
+  <h3>El API</h3>
+  <table>
+    <tr><th style="width:9%">Verbo</th><th style="width:35%">Ruta</th><th>Qué hace</th></tr>
+    <tr><td class="m">GET</td><td class="m">/api/bat/estado</td>
+        <td>Qué curva de precio hay publicada</td></tr>
+    <tr><td class="m">GET</td><td class="m">/api/bat/curva</td>
+        <td>Los percentiles P10/P50/P90 de un tramo. Máximo 400 días</td></tr>
+    <tr><td class="m">GET</td><td class="m">/api/bat/instalaciones</td>
+        <td>Lo que el usuario ya tiene guardado</td></tr>
+    <tr><td class="m">POST</td><td class="m">/api/bat/curvas</td>
+        <td>Subir consumo y generación</td></tr>
+    <tr><td class="m">POST</td><td class="m">/api/bat/estudio</td>
+        <td>Lanzar el cálculo. Devuelve un identificador de tarea</td></tr>
+    <tr><td class="m">GET</td><td class="m">/api/bat/estudio/{tarea}</td>
+        <td>Por qué escenario va, y el resultado al terminar</td></tr>
+    <tr><td class="m">GET</td><td class="m">/api/bat/despacho/{run_id}</td>
+        <td>El despacho hora a hora. Máximo 62 días</td></tr>
+  </table>
+
+  <div class="nota">
+    <b>El estudio devuelve una tarea, no un resultado.</b> Tarda unos cuatro minutos:
+    veinte escenarios sobre 7.426 días. Eso no cabe en una petición HTTP — el navegador y
+    el nginx de delante cortan mucho antes. El cálculo va por detrás y la pantalla
+    pregunta cómo va.
+  </div>
+
+  <div class="nota aviso">
+    <b>Falta <code>python-multipart</code> en el servidor.</b> Sin él, la subida de
+    ficheros contesta un 501 y todo lo demás sigue funcionando:
+    <code>pip install python-multipart</code>
+  </div>
+
+  <div class="pie"><span>Cómo se abre cada cosa</span><span class="mono">2</span></div>
+</section>
+
+
+<!-- ═══════════════════════════ 3 · LAS TABLAS ══════════════════════════════ -->
+<section class="hoja">
+  <div class="sobre">Base de datos · <span class="mono">tfm_energia</span></div>
+  <h2>Dónde vive cada dato</h2>
+  <p class="entrada">Doce tablas nuevas, todas con el prefijo <code>app_</code> para que se
+     distingan de las del pipeline de datos. Se crean con
+     <code>production/app/sql/crear_tablas_bess.sql</code>, que es idempotente.</p>
+
+  <table>
+    <tr><th style="width:36%">Tabla</th><th style="width:16%">Filas hoy</th><th>Qué guarda</th></tr>
+
+    <tr class="sec"><td colspan="3">Quién</td></tr>
+    <tr><td class="m">app_user</td><td class="m">1</td>
+        <td>Correo. Todo lo demás cuelga de aquí</td></tr>
+
+    <tr class="sec"><td colspan="3">Lo que el usuario aporta</td></tr>
+    <tr><td class="m">app_battery_model</td><td class="m">5</td>
+        <td>La ficha: potencia, duración, rendimiento, ciclos, precio</td></tr>
+    <tr><td class="m">app_consump_inst</td><td class="m">3</td>
+        <td>La instalación de consumo: MWh al año, peajes, potencia contratada</td></tr>
+    <tr><td class="m">app_consump_shape</td><td class="m">576 por curva</td>
+        <td>La forma horaria: 12 meses × laborable/finde × 24 h</td></tr>
+    <tr><td class="m">app_gen_inst</td><td class="m">4</td>
+        <td>La generación: tecnología, kWp, degradación, límite de vertido</td></tr>
+    <tr><td class="m">app_gen_shape</td><td class="m">576 por curva</td>
+        <td>Ídem para la generación</td></tr>
+
+    <tr class="sec"><td colspan="3">Lo que pone el sistema</td></tr>
+    <tr><td class="m">app_curve</td><td class="m">1 · siempre 1</td>
+        <td>La curva de precio publicada. Un índice único impide que haya dos</td></tr>
+    <tr><td class="m">app_curve_hourly</td><td class="m">178.224</td>
+        <td>Los percentiles P10/P50/P90 hora a hora, hasta 2046</td></tr>
+
+    <tr class="sec"><td colspan="3">El estudio y su resultado</td></tr>
+    <tr><td class="m">app_study_case</td><td class="m">7</td>
+        <td>El caso: qué batería, qué instalaciones, qué periodo, qué política</td></tr>
+    <tr><td class="m">app_case_run</td><td class="m">7</td>
+        <td><b>La tarjeta de resultado.</b> VAN, ciclos, ahorro, cobertura del CAPEX</td></tr>
+    <tr><td class="m">app_case_result_annual</td><td class="m">21 por estudio</td>
+        <td>Año a año, con su banda de percentiles</td></tr>
+    <tr><td class="m">app_case_dispatch</td><td class="m">534.672 por estudio</td>
+        <td>Hora a hora: precio, carga, descarga, estado de carga, red</td></tr>
+  </table>
+
+  <h3>Dos cosas del esquema que hay que saber</h3>
+
+  <p><b>La curva se pisa, no se acumula.</b> Hay una fila en <code>app_curve</code> y un
+     índice único sobre una expresión constante que impide que se cuele otra. Guardar una
+     al día serían 65 millones de filas al año sin aportar nada: las anclas del escenario
+     son medias del año en curso y entre dos días no se mueven. Por eso
+     <code>app_case_run</code> <b>copia</b> la fecha y el hash de la matriz al ejecutar, en
+     vez de referenciar una fila que va a cambiar.</p>
+
+  <p><b>El eje de horas va sin zona horaria.</b> <code>app_curve_hourly.datetime</code> y
+     <code>app_case_dispatch.datetime</code> son <code>TIMESTAMP</code> a secas, porque la
+     curva vive en una rejilla nominal de 24 h/día. Con <code>TIMESTAMPTZ</code>, el
+     domingo de marzo en que las 02:00 no existen, Postgres mete las 02:00 y las 03:00 en
+     la misma marca y revienta la clave primaria. <code>spot_price</code> y
+     <code>predictions</code> sí son instantes reales y sí llevan zona.</p>
+
+  <div class="pie"><span>Dónde vive cada dato</span><span class="mono">3</span></div>
+</section>
+
+
+<!-- ═══════════════════════════ 4 · LOS SCRIPTS ═════════════════════════════ -->
+<section class="hoja">
+  <div class="sobre">Código</div>
+  <h2>Qué script usar para qué</h2>
+
+  <table>
+    <tr><th style="width:44%">Fichero</th><th>Para qué</th></tr>
+
+    <tr class="sec"><td colspan="2">La curva de precio · corre sola</td></tr>
+    <tr><td class="m">production/curva/cron_diario.py</td>
+        <td>La cadena diaria: matriz y después curva. Si la matriz falla, la curva
+            <b>no</b> se republica</td></tr>
+    <tr><td class="m">production/curva/generar_curva.py</td>
+        <td>Publica el <code>.npy</code> y escribe la base</td></tr>
+    <tr><td class="m">production/curva/ver_curva.py</td>
+        <td>Dibujarla sin base ni modelos, solo desde el artefacto</td></tr>
+
+    <tr class="sec"><td colspan="2">El estudio</td></tr>
+    <tr><td class="m">production/app/cargar_curvas.py</td>
+        <td>Subir las dos curvas. Todo lo demás sale del fichero</td></tr>
+    <tr><td class="m">production/app/cargar_perfil.py</td>
+        <td>El lector: tres formatos, cambio de hora, bisiestos, unidades</td></tr>
+    <tr><td class="m">production/app/caso.py</td>
+        <td>Dar de alta, crear el caso y ejecutarlo</td></tr>
+    <tr><td class="m">production/app/optimiza_bateria.py</td>
+        <td>El motor. Programación lineal con HiGHS</td></tr>
+    <tr><td class="m">production/app/comprobar.py</td>
+        <td><b>Antes de fiarse de nada.</b> 18 comprobaciones de la cadena entera</td></tr>
+
+    <tr class="sec"><td colspan="2">La web</td></tr>
+    <tr><td class="m">production/api/main.py</td>
+        <td>El servidor. Sirve el API, la pantalla y las plantillas</td></tr>
+    <tr><td class="m">production/api/bateria.py</td>
+        <td>Los siete endpoints del estudio</td></tr>
+    <tr><td class="m">docs/web/estudio_bateria_dev.html</td>
+        <td><b>La pantalla.</b> Fichero suelto, no toca nada de lo que ya hay</td></tr>
+  </table>
+
+  <h3>Un estudio completo, desde cero</h3>
+  <div class="orden">
+    <span class="sh">$</span> export TFM_EMAIL=<span class="sh">"tu@correo"</span><br><br>
+    <span class="sh">#</span> 1 · las curvas. El anual y los kWp se leen del fichero<br>
+    <span class="sh">$</span> python production/app/cargar_curvas.py \<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;--consumo mi_consumo.xlsx --generacion mi_fv.csv<br><br>
+    <span class="sh">#</span> 2 · la batería<br>
+    <span class="sh">$</span> python production/app/caso.py bateria --code BAT50 \<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;--nombre <span class="sh">"LFP 50 kW"</span> --potencia 0.05 --duracion 4<br><br>
+    <span class="sh">#</span> 3 · el caso y su ejecución<br>
+    <span class="sh">$</span> python production/app/caso.py crear --code EST1 --modo autoconsumo \<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;--bateria BAT50 --consumo CONSUMO --generacion GENERACION \<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;--desde 2027-01-01 --hasta 2046-12-31<br>
+    <span class="sh">$</span> python production/app/caso.py ejecutar --code EST1 --escenarios 20<br><br>
+    <span class="sh">#</span> y para ver lo que hay<br>
+    <span class="sh">$</span> python production/app/caso.py listar
+  </div>
+
+  <div class="nota">
+    <b>Antes de creerse un número, correr esto.</b> Comprueba el esquema contra el código,
+    que la curva cuadre con su artefacto, que el balance energético se cumpla hora a hora y
+    que el óptimo coincida con dos casos resueltos a mano.
+    <div class="orden" style="margin:8px 0 0">
+      <span class="sh">$</span> python production/app/comprobar.py --base</div>
+  </div>
+
+  <div class="pie"><span>Qué script usar para qué</span><span class="mono">4</span></div>
+</section>
+
+
+<!-- ═══════════════════════════ 5 · EL USUARIO ══════════════════════════════ -->
+<section class="hoja">
+  <div class="sobre">Pendiente · lo más urgente</div>
+  <h2>La conexión con el usuario</h2>
+  <p class="entrada">Todo está preparado para funcionar por usuario. Lo que no hay es forma
+     de saber quién es.</p>
+
+  <h3>Lo que ya está bien</h3>
+  <p>Las seis tablas que el usuario alimenta cuelgan de <code>app_user</code> con
+     <code>ON DELETE CASCADE</code>, y los códigos son únicos <b>por usuario</b>: dos
+     personas pueden tener una instalación llamada <code>FABRICA</code> sin pisarse. Las
+     consultas del API ya filtran por <code>user_id</code>. El modelo de datos no hay que
+     tocarlo.</p>
+
+  <h3>Lo que falta, y es un agujero</h3>
+  <p>El usuario llega en un parámetro <code>email</code> y el servidor <b>se lo cree</b>.
+     Ahora mismo, sabiendo el correo de alguien se pueden leer y escribir sus
+     instalaciones. Para el TFM y la demo vale; para enseñárselo a nadie más, no.</p>
+
+  <table>
+    <tr><th style="width:30%">Qué hace falta</th><th>Por qué</th></tr>
+    <tr><td>Login de verdad</td>
+        <td>Que el <code>user_id</code> salga de una sesión firmada, no de la URL</td></tr>
+    <tr><td>Cada consulta filtrada</td>
+        <td>Ya lo están, pero hoy filtran por lo que el cliente dice ser</td></tr>
+    <tr><td>Cuota por usuario</td>
+        <td>Cada estudio son cuatro minutos de CPU y medio millón de filas. Sin límite,
+            uno solo puede tumbar el servicio</td></tr>
+    <tr><td>Limpieza de despachos</td>
+        <td>534.672 filas por estudio. Guardar todos para siempre no se sostiene:
+            o se borran los viejos, o se guarda solo un escenario</td></tr>
+  </table>
+
+  <div class="nota aviso">
+    <b>La web de Pulso Energía ya tiene login.</b> Lo razonable no es montar otro, sino que
+    el API confíe en el que hay: que la sesión de la web llegue al servidor y de ahí salga
+    el correo, en vez de que lo ponga el cliente.
+  </div>
+
+  <h3>Y lo demás que quedó apuntado</h3>
+  <table>
+    <tr><th style="width:34%">Qué</th><th>Dónde está el detalle</th></tr>
+    <tr><td><b>Buscar el tamaño óptimo</b></td>
+        <td>El VAN es unimodal, así que basta una búsqueda ternaria: diez resoluciones en
+            vez de un barrido. <code>docs/web/pendiente.md</code></td></tr>
+    <tr><td><b>Probar sin subir ficheros</b></td>
+        <td>Batería sola contra el mercado, o perfiles tipo. Con el aviso de que un perfil
+            tipo no sirve para decidir una inversión</td></tr>
+    <tr><td>Que el despacho venga del servidor</td>
+        <td>Hoy la pantalla lo calcula en el navegador con una heurística. El endpoint
+            <code>/api/bat/despacho</code> ya existe: falta que la pantalla lo use</td></tr>
+    <tr><td>El informe completo</td>
+        <td>El botón imprime la pantalla. El informe de verdad lo tiene que generar el
+            servidor</td></tr>
+  </table>
+
+  <div class="nota">
+    <b>Un aviso que no conviene perder.</b> En las pruebas, una instalación fotovoltaica
+    quedó cargada desde el fichero del <b>consumo</b>. Generaba 0,395 a medianoche. No
+    falló nada: el estudio corrió y devolvió un VAN con dos decimales, describiendo un
+    sitio que no existe. Con el perfil corregido la recomendación pasó de
+    <i>«no sale a ninguna talla»</i> a <i>«sale, y en el 100 % de los escenarios»</i>.
+    Los casos <code>EST-01</code> y <code>DIM-50/100/200</code> —sin la R— están
+    calculados con ese perfil malo y <b>no deben citarse</b>.
+  </div>
+
+  <div class="pie"><span>La conexión con el usuario</span><span class="mono">5</span></div>
+</section>
+
+</body>
+</html>

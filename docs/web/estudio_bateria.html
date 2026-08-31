@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pulso Energía · Estudio de batería</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   VENTANA PARALELA · no toca nada de lo que ya hay.
+   Es un fichero suelto: se abre solo, se prueba solo y luego se enchufa.
+
+   Los tokens estan copiados de la web en produccion, no estimados a ojo, asi que al
+   integrarlo basta con borrar el bloque :root y heredar el del sitio.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root{
+  --background:#f3f6f2; --foreground:#17322b;
+  --primary:#173f35;    --primary-foreground:#f7faf7;
+  --secondary:#e4ece8;  --secondary-foreground:#17322b;
+  --muted:#e9eeeb;      --muted-foreground:#697a74;
+  --border:#d8e0dc;     --ring:#43a99f;
+  --acento:#258160;     --alerta:#924831;
+  --radius:.85rem;
+  --sombra:0 20px 60px rgba(18,48,40,.07);
+  --sans:'Geist',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'Geist Mono',ui-monospace,'SF Mono',Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--background); color:var(--foreground);
+  font-family:var(--sans); font-size:15px; line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+.marco{max-width:960px;margin:0 auto;padding:32px 22px 80px}
+
+/* ── cabecera ───────────────────────────────────────────────────────────── */
+.cab{display:flex;align-items:center;gap:13px;margin-bottom:30px}
+.logo{width:44px;height:44px;border-radius:13px;background:var(--primary);
+      display:grid;place-items:center;flex:none}
+.logo svg{width:21px;height:21px;fill:#7fe3bd}
+.sobre{font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;
+       color:var(--muted-foreground)}
+.cab b{font-size:19px;font-weight:600;display:block;line-height:1.2}
+
+/* ── pasos ──────────────────────────────────────────────────────────────── */
+.pasos{display:flex;align-items:center;gap:9px;margin-bottom:26px;flex-wrap:wrap}
+.paso{display:flex;align-items:center;gap:9px;padding:7px 15px 7px 9px;
+      background:#fff;border:1px solid var(--border);border-radius:24px;
+      font-size:13.5px;color:var(--muted-foreground);transition:.18s}
+.paso .n{width:22px;height:22px;border-radius:50%;background:var(--muted);
+        display:grid;place-items:center;font-size:11.5px;font-weight:600;
+        font-family:var(--mono);color:var(--muted-foreground)}
+.paso.activo{background:var(--primary);border-color:var(--primary);
+             color:var(--primary-foreground)}
+.paso.activo .n{background:rgba(255,255,255,.17);color:#fff}
+.paso.hecho{border-color:#bcdccc;background:#eef7f2;color:#1c6b4c}
+.paso.hecho .n{background:#cfeadd;color:#1c6b4c}
+.raya{flex:1;height:1px;background:var(--border);min-width:14px}
+
+/* ── tarjetas ───────────────────────────────────────────────────────────── */
+.tarjeta{background:#fff;border:1px solid var(--border);border-radius:var(--radius);
+         padding:24px;box-shadow:var(--sombra);margin-bottom:18px}
+.tarjeta.plana{box-shadow:none}
+.tarjeta.suave{background:var(--secondary);border-color:#cfdcd6;box-shadow:none}
+.cabtar{display:flex;justify-content:space-between;align-items:flex-start;
+        gap:14px;margin-bottom:20px}
+.cabtar h2{margin:0;font-size:19px;font-weight:600;letter-spacing:-.01em}
+.cabtar p{margin:3px 0 0;font-size:13.5px;color:var(--muted-foreground)}
+
+.rej{display:grid;gap:14px}
+.r2{grid-template-columns:1fr 1fr}
+.r3{grid-template-columns:repeat(3,1fr)}
+.r4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:720px){.r2,.r3,.r4{grid-template-columns:1fr}}
+
+/* ── botones ────────────────────────────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
+     font-family:inherit;font-size:14px;font-weight:500;padding:11px 20px;
+     border-radius:11px;border:1px solid transparent;cursor:pointer;
+     transition:.15s;text-decoration:none}
+.btn:disabled{cursor:not-allowed}
+.p1{background:var(--primary);color:var(--primary-foreground)}
+.p1:hover:not(:disabled){background:#0f2e26}
+.p1:disabled{background:var(--muted);color:#a8b5b0;border-color:var(--border)}
+.p2{background:#fff;color:var(--primary);border-color:var(--border)}
+.p2:hover{border-color:#b9cbc3;background:#fbfdfb}
+.p3{background:transparent;color:var(--muted-foreground);border-color:var(--border)}
+.p3:hover{background:#fff}
+.enlace{background:none;border:none;color:var(--acento);font:inherit;font-size:13.5px;
+        font-weight:500;cursor:pointer;padding:0;text-decoration:none}
+.enlace:hover{text-decoration:underline}
+
+/* ── zona de subida ─────────────────────────────────────────────────────── */
+.suelta{border:1.5px dashed #c3d2cb;border-radius:var(--radius);background:#fbfdfb;
+        padding:26px 20px;text-align:center;cursor:pointer;transition:.18s}
+.suelta:hover,.suelta.encima{border-color:var(--acento);background:#f2f9f5}
+.suelta .ico{width:42px;height:42px;border-radius:12px;background:var(--secondary);
+             display:grid;place-items:center;margin:0 auto 12px}
+.suelta .ico svg{width:19px;height:19px;fill:none;stroke:var(--acento);
+                 stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.suelta b{display:block;font-size:15px;font-weight:600;margin-bottom:3px}
+.suelta small{color:var(--muted-foreground);font-size:12.8px;display:block;
+              margin-bottom:14px}
+input[type=file]{display:none}
+
+/* ── ficha del fichero leido ────────────────────────────────────────────── */
+.ficha{border:1px solid var(--border);border-radius:var(--radius);background:#fff;
+       padding:18px 20px}
+.ficha.mal{border-color:#e8cfc5;background:#fdf9f7}
+.ficha .arriba{display:flex;justify-content:space-between;align-items:center;
+               gap:10px;margin-bottom:12px}
+.ficha .nom{font-weight:600;font-size:14.5px;word-break:break-all}
+.pil{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:20px;
+     font-size:12px;font-weight:500;background:var(--secondary);color:var(--primary);
+     white-space:nowrap}
+.pil.ok{background:#dcf0e6;color:#1c6b4c}
+.pil.mal{background:#f6e6e0;color:var(--alerta)}
+.pil.gris{background:var(--muted);color:var(--muted-foreground)}
+.pt{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.dato{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+      padding:7px 0;border-bottom:1px solid var(--border);font-size:13.5px}
+.dato:last-of-type{border-bottom:none}
+.dato em{font-style:normal;color:var(--muted-foreground)}
+.dato b{font-family:var(--mono);font-weight:500}
+.motivo{color:var(--alerta);font-size:13.5px;margin:0 0 14px}
+
+/* ── campos ─────────────────────────────────────────────────────────────── */
+.campo label{display:block;font-size:11px;font-weight:600;letter-spacing:.11em;
+             text-transform:uppercase;color:var(--muted-foreground);margin-bottom:7px}
+.caja{display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+      border:1px solid var(--border);border-radius:11px;background:#fff;padding:10px 14px}
+.caja input{border:none;outline:none;font-family:var(--mono);font-size:20px;
+            font-weight:500;width:100%;background:none;color:inherit}
+.caja span{color:var(--muted-foreground);font-size:13px;white-space:nowrap}
+.caja:focus-within{border-color:var(--ring);box-shadow:0 0 0 3px rgba(67,169,159,.13)}
+.grupo{display:flex;gap:6px}
+.grupo .btn{flex:1;padding:10px 0}
+
+/* ── resultado ──────────────────────────────────────────────────────────── */
+.kpi{background:#fff;border:1px solid var(--border);border-radius:var(--radius);
+     padding:17px 19px}
+.kpi .et{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+         color:var(--muted-foreground);margin-bottom:7px}
+.kpi .vl{font-family:var(--mono);font-size:29px;font-weight:500;line-height:1;
+         letter-spacing:-.025em}
+.kpi .un{font-size:12.5px;color:var(--muted-foreground);margin-top:6px}
+.kpi.destaca{background:var(--primary);border-color:var(--primary)}
+.kpi.destaca .et{color:#93b3a8}
+.kpi.destaca .vl{color:#fff}
+.kpi.destaca .un{color:#a8c4b9}
+
+.barra{height:6px;background:var(--muted);border-radius:4px;overflow:hidden;margin:14px 0}
+.barra i{display:block;height:100%;background:var(--acento);width:0;transition:width .4s}
+
+.nota{border-left:2.5px solid var(--ring);padding:3px 0 3px 15px;
+      color:var(--muted-foreground);font-size:13.5px;margin:16px 0}
+.nota b{color:var(--foreground)}
+.nota.aviso{border-left-color:var(--alerta)}
+.oculto{display:none}
+.pieza{margin-top:auto}
+.acciones{display:flex;justify-content:space-between;align-items:center;
+          margin-top:20px;gap:12px;flex-wrap:wrap}
+svg.perfil{width:100%;height:auto;display:block}
+.integra{margin-top:46px;padding:16px 18px;border:1px dashed #c3d2cb;
+         border-radius:var(--radius);font-size:12.8px;color:var(--muted-foreground);
+         background:#fbfdfb}
+.integra b{color:var(--foreground)}
+.integra code{font-family:var(--mono);font-size:12px;background:var(--muted);
+              padding:1px 5px;border-radius:5px}
+
+/* ── el informe ─────────────────────────────────────────────────────────── */
+/* `.cabinf` declara `display:flex` mas abajo y con la misma especificidad gana,
+   asi que la cabecera del informe se colaba en pantalla. El `!important` aqui no
+   es pereza: es que esta regla tiene que ganar siempre. */
+.solo-papel{display:none !important}
+@media print{
+  @page{ size:A4; margin:16mm 14mm }
+  body{background:#fff;font-size:11pt}
+  .marco{max-width:none;padding:0}
+  /* fuera todo lo que es navegacion: en papel no se pulsa nada */
+  .pasos,.acciones,.integra,#s1,#s2,#cargando,.nota{display:none}
+  /* `revert` volveria al valor del navegador y tiraria tambien el flex de la
+     cabecera, que quedaria apilada. Se dice lo que se quiere en cada caso. */
+  .solo-papel{display:block !important}
+  .cabinf.solo-papel{display:flex !important}
+  .tarjeta{box-shadow:none;break-inside:avoid}
+  .kpi{break-inside:avoid}
+  .r4{grid-template-columns:repeat(4,1fr)}
+  /* los fondos de las tarjetas y del KPI destacado tienen que imprimirse */
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+.cabinf{display:flex;justify-content:space-between;align-items:flex-end;
+        border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:20px}
+.cabinf h2{margin:0;font-size:20px;font-weight:600}
+.cabinf .meta{font-size:12px;color:var(--muted-foreground);text-align:right;
+              font-family:var(--mono);line-height:1.7}
+.fichainf{margin-top:22px;font-size:12px;color:var(--muted-foreground)}
+.fichainf .dato{font-size:12px}
+</style>
+</head>
+<body>
+<div class="marco">
+
+  <div class="cab">
+    <div class="logo"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></div>
+    <div>
+      <div class="sobre">TFM · Mercado eléctrico</div>
+      <b>Estudio de batería</b>
+    </div>
+  </div>
+
+  <div class="pasos">
+    <div class="paso activo" id="p1"><span class="n">1</span> Curvas</div>
+    <div class="raya"></div>
+    <div class="paso" id="p2"><span class="n">2</span> Batería</div>
+    <div class="raya"></div>
+    <div class="paso" id="p3"><span class="n">3</span> Resultado</div>
+  </div>
+
+
+  <!-- ══════════════════════ PASO 1 · CURVAS ══════════════════════════════ -->
+  <section id="s1">
+    <div class="tarjeta">
+      <div class="cabtar">
+        <div>
+          <h2>Sube tus curvas</h2>
+          <p>Un año completo, hora a hora. El resto se lee del propio fichero.</p>
+        </div>
+        <span class="pil gris"><span class="pt"></span>Paso 1 de 3</span>
+      </div>
+
+      <div class="rej r2">
+        <div>
+          <div class="suelta" id="z-con" data-tipo="consumo">
+            <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L8 8m4-4 4 4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></div>
+            <b>Curva de consumo</b>
+            <small>Arrastra el fichero o pulsa para elegirlo</small>
+            <span class="btn p2">Elegir fichero</span>
+            <input type="file" id="f-con" accept=".csv,.txt,.xlsx,.xls">
+          </div>
+          <div id="ficha-con"></div>
+        </div>
+        <div>
+          <div class="suelta" id="z-gen" data-tipo="generacion">
+            <div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg></div>
+            <b>Curva de generación</b>
+            <small>Opcional, si hay fotovoltaica</small>
+            <span class="btn p2">Elegir fichero</span>
+            <input type="file" id="f-gen" accept=".csv,.txt,.xlsx,.xls">
+          </div>
+          <div id="ficha-gen"></div>
+        </div>
+      </div>
+
+      <div class="acciones">
+        <div style="display:flex;gap:16px;flex-wrap:wrap">
+          <a class="enlace" href="../plantillas/plantilla_consumo.csv" download>↓ Plantilla de consumo</a>
+          <a class="enlace" href="../plantillas/plantilla_generacion.csv" download>↓ Plantilla de generación</a>
+        </div>
+        <button class="btn p1" id="ir2" disabled>Continuar</button>
+      </div>
+    </div>
+
+    <div id="grafico-perfiles" class="oculto">
+      <div class="tarjeta plana">
+        <div class="cabtar" style="margin-bottom:14px">
+          <div><h2 style="font-size:15px">El día medio de tus curvas</h2>
+          <p>Si la generación no baja a cero de noche, los ficheros están cruzados.</p></div>
+        </div>
+        <svg class="perfil" id="svg-perfil" viewBox="0 0 700 190"></svg>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════ PASO 2 · BATERÍA ═════════════════════════════ -->
+  <section id="s2" class="oculto">
+    <div class="tarjeta">
+      <div class="cabtar">
+        <div>
+          <h2>¿Qué batería te planteas?</h2>
+          <p>Si no lo sabes, deja los valores que vienen puestos.</p>
+        </div>
+        <span class="pil gris"><span class="pt"></span>Paso 2 de 3</span>
+      </div>
+
+      <div class="rej r3">
+        <div class="campo">
+          <label>Potencia</label>
+          <div class="caja"><input id="b-pot" type="number" value="100" min="5" step="5"><span>kW</span></div>
+        </div>
+        <div class="campo">
+          <label>Duración</label>
+          <div class="grupo" id="b-dur">
+            <button class="btn p3" data-h="2">2 h</button>
+            <button class="btn p1" data-h="4">4 h</button>
+            <button class="btn p3" data-h="6">6 h</button>
+          </div>
+        </div>
+        <div class="campo">
+          <label>Precio</label>
+          <div class="caja"><input id="b-capex" type="number" value="200000" min="20000" step="10000"><span>€/MWh</span></div>
+        </div>
+      </div>
+
+      <div class="tarjeta suave" style="margin:18px 0 0">
+        <div class="sobre" style="margin-bottom:10px">Con eso, la batería queda así</div>
+        <div class="rej r3" style="gap:20px">
+          <div class="dato" style="border:none;padding:0"><em>Energía</em><b id="k-e">0,40 MWh</b></div>
+          <div class="dato" style="border:none;padding:0"><em>Útil</em><b id="k-u">0,36 MWh</b></div>
+          <div class="dato" style="border:none;padding:0"><em>Coste total</em><b id="k-c">80.000 €</b></div>
+        </div>
+      </div>
+
+      <div class="nota"><b>El precio es por MWh instalado, no total.</b> El coste de arriba
+        es el que se paga.</div>
+
+      <div class="acciones">
+        <button class="btn p3" onclick="ir(1)">← Atrás</button>
+        <button class="btn p1" id="ir3">Calcular estudio →</button>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════ PASO 3 · RESULTADO ═══════════════════════════ -->
+  <section id="s3" class="oculto">
+
+    <div class="tarjeta" id="cargando">
+      <div class="cabtar">
+        <div><h2>Calculando tu estudio</h2>
+        <p id="txt-carga">Preparando los datos…</p></div>
+        <span class="pil gris"><span class="pt"></span>≈ 4 minutos</span>
+      </div>
+      <div class="barra"><i id="barra"></i></div>
+      <div class="nota">Puedes cerrar esta pestaña: el cálculo sigue en el servidor y el
+        resultado queda guardado.</div>
+    </div>
+
+    <div id="resultado" class="oculto">
+
+      <!-- cabecera que SOLO sale en el papel: en pantalla ya esta la del sitio -->
+      <div class="cabinf solo-papel">
+        <div>
+          <div class="sobre">Pulso Energía · TFM</div>
+          <h2>Estudio de batería</h2>
+        </div>
+        <div class="meta" id="inf-meta"></div>
+      </div>
+
+      <div class="rej r4" style="margin-bottom:18px">
+        <div class="kpi destaca">
+          <div class="et">Sale a cuenta en</div>
+          <div class="vl" id="r-pct">100 %</div>
+          <div class="un">de los 20 escenarios</div>
+        </div>
+        <div class="kpi">
+          <div class="et">Ahorro a vida completa</div>
+          <div class="vl" id="r-ahorro">164.010</div>
+          <div class="un">euros</div>
+        </div>
+        <div class="kpi">
+          <div class="et">Valor actual neto</div>
+          <div class="vl" id="r-van">+2.544</div>
+          <div class="un" id="r-banda">euros · banda 1.769 a 3.219</div>
+        </div>
+        <div class="kpi">
+          <div class="et">Uso diario</div>
+          <div class="vl" id="r-ciclos">1,0</div>
+          <div class="un" id="r-vida">ciclos al día · vida 7,8 años</div>
+        </div>
+      </div>
+
+      <div class="tarjeta plana">
+        <div class="cabtar" style="margin-bottom:6px">
+          <div><h2 style="font-size:15px">Qué hace la batería en un día medio</h2>
+          <p>Verde carga, rojo descarga. La línea es el precio.</p></div>
+        </div>
+        <svg class="perfil" id="svg-despacho" viewBox="0 0 700 200"></svg>
+      </div>
+
+      <div class="nota"><b>El número grande es en cuántos escenarios sale bien, no el valor
+        actual neto.</b> Un VAN mediano positivo con un 45 % de escenarios buenos es una
+        inversión que falla más de la mitad de las veces.</div>
+
+      <!-- los supuestos, tambien solo en el papel: un informe sin ellos no vale de nada
+           dentro de seis meses, cuando nadie recuerde con que se calculo -->
+      <div class="fichainf solo-papel">
+        <div class="sobre" style="margin-bottom:8px">Con qué se ha calculado</div>
+        <div class="dato"><em>Batería</em><b id="inf-bat"></b></div>
+        <div class="dato"><em>Consumo</em><b id="inf-con"></b></div>
+        <div class="dato"><em>Generación</em><b id="inf-gen"></b></div>
+        <div class="dato"><em>Curva de precio</em><b id="inf-curva"></b></div>
+        <div class="dato"><em>Tasa de descuento · mantenimiento</em><b>7 % · 1,5 % del CAPEX</b></div>
+      </div>
+
+      <div class="acciones">
+        <button class="btn p3" onclick="ir(2)">← Cambiar la batería</button>
+        <button class="btn p2" id="informe">Descargar informe</button>
+      </div>
+    </div>
+  </section>
+
+
+  <div class="integra">
+    <b>Ventana paralela.</b> Fichero suelto, no toca nada de lo que ya hay. Para integrarlo:
+    borrar el bloque <code>:root</code> y heredar los tokens del sitio, y sustituir las tres
+    funciones marcadas con <code>// SERVIDOR</code> por las llamadas reales
+    (<code>cargar_curvas.py --json</code> y <code>caso.py ejecutar</code>). La lectura del
+    fichero en el navegador es solo para la vista previa: el que manda es el servidor.
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   Prototipo. Lee el CSV en el navegador SOLO para la vista previa inmediata --
+   el fichero se sube igualmente y el servidor lo vuelve a leer, que es el que manda.
+   Hacer la vista previa aqui evita una ida y vuelta de red para decirle al usuario
+   "esto son 8.760 horas de 2027", que es justo lo que quiere saber al instante.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const S = { consumo:null, generacion:null, dur:4, rechazada:{} };
+const num = (v,d=1)=>v.toLocaleString('es-ES',{minimumFractionDigits:d,maximumFractionDigits:d});
+const ent = v=>v.toLocaleString('es-ES',{maximumFractionDigits:0});
+
+/* ── lectura del fichero ────────────────────────────────────────────────── */
+function separador(linea){
+  const c=(linea.match(/;/g)||[]).length, k=(linea.match(/,/g)||[]).length;
+  return c>k ? ';' : ',';
+}
+function aNumero(t,sep){
+  if(t==null) return NaN;
+  t=String(t).trim();
+  if(!t) return NaN;
+  // un CSV español trae 1.234,56 -- si el separador es ';' la coma es decimal
+  if(sep===';') t=t.replace(/\./g,'').replace(',','.');
+  return parseFloat(t);
+}
+
+function leerCSV(texto){
+  const lineas = texto.split(/\r?\n/).filter(l=>l.trim());
+  if(lineas.length<24) throw new Error('el fichero tiene muy pocas filas');
+  const sep = separador(lineas[0]);
+  const cab = lineas[0].split(sep).map(c=>c.trim().toLowerCase());
+
+  const iFecha = cab.findIndex(c=>/fecha|date|dia|day/.test(c));
+  const iHora  = cab.findIndex(c=>/^(hora|hour|h)$/.test(c));
+  // la columna de valor: la que lleva la unidad en el nombre, o la ultima numerica
+  let iVal = cab.findIndex(c=>/kwh|mwh|valor|value|consumo|generacion|energia/.test(c));
+  if(iVal<0) iVal = cab.length-1;
+
+  // unidad: se LEE del encabezado y no se adivina. 40 por hora son 40 kWh en una pyme
+  // y 40 MWh en una fabrica, y por la magnitud no se distinguen.
+  const nomVal = cab[iVal]||'';
+  let factor = null;                       // a MWh
+  if(/kwh/.test(nomVal)) factor = 0.001;
+  else if(/mwh/.test(nomVal)) factor = 1;
+
+  // formato ANCHO: columnas h1..h24
+  const cols = cab.map((c,i)=>({c,i})).filter(o=>/^(h|hora|hour)?_?\d{1,2}$/.test(o.c));
+  const filas = [];
+  if(cols.length>=20){
+    const iF = iFecha>=0 ? iFecha : 0;
+    for(let n=1;n<lineas.length;n++){
+      const p = lineas[n].split(sep);
+      const f = (p[iF]||'').trim();
+      for(const o of cols){
+        const v = aNumero(p[o.i],sep);
+        // una celda VACIA es una hora que no existe, no un cero: las descargas de
+        // distribuidora traen H25 siempre puesta y solo tiene valor el domingo de octubre
+        if(!isNaN(v)) filas.push({f, h:parseInt(o.c.match(/\d+/)[0]), v});
+      }
+    }
+  } else {
+    if(iFecha<0) throw new Error('no encuentro la columna de fecha');
+    for(let n=1;n<lineas.length;n++){
+      const p = lineas[n].split(sep);
+      const v = aNumero(p[iVal],sep);
+      if(isNaN(v)) continue;
+      let f=(p[iFecha]||'').trim(), h;
+      if(iHora>=0){ h=parseInt(p[iHora]); }
+      else { const m=f.match(/[T ](\d{1,2}):/); h=m?parseInt(m[1])+1:NaN; f=f.split(/[T ]/)[0]; }
+      if(!isNaN(h)) filas.push({f,h,v});
+    }
+  }
+  if(!filas.length) throw new Error('no he podido leer ninguna fila de datos');
+
+  const dias = [...new Set(filas.map(r=>r.f))].sort();
+  const total = filas.reduce((a,r)=>a+r.v,0);
+  const porHora = Array(25).fill(0), cuenta = Array(25).fill(0);
+  for(const r of filas){ if(r.h>=1&&r.h<=25){ porHora[r.h]+=r.v; cuenta[r.h]++; } }
+  const media = porHora.map((s,i)=>cuenta[i]?s/cuenta[i]:0);
+
+  return { filas:filas.length, dias:dias.length, desde:dias[0], hasta:dias[dias.length-1],
+           total, pico:Math.max(...filas.map(r=>r.v)), media, factor, nomVal };
+}
+
+/* ── revision · los mismos criterios que el servidor ────────────────────── */
+function revisar(d, tipo){
+  const mal=[];
+  if(d.dias<300) mal.push(`Solo ${d.dias} días. Hace falta un año completo: los meses que falten se rellenan con la media de los demás.`);
+  if(d.total<=0) mal.push('La curva suma cero: probablemente la columna de valores no es la que se ha leído.');
+  if(tipo==='generacion'){
+    const noche = d.media.slice(1,6).reduce((a,b)=>a+b,0)/5;
+    const mediaTot = d.media.slice(1,25).reduce((a,b)=>a+b,0)/24;
+    if(mediaTot>0 && noche/mediaTot>0.02)
+      mal.push(`Genera ${num(noche/mediaTot,2)} de su media entre las 0:00 y las 4:00, y una fotovoltaica da cero. ¿Es este el fichero de generación?`);
+  }
+  if(d.factor===null) mal.push('El encabezado no dice si son kWh o MWh, y no se adivina. Renombra la columna a algo como «consumo_kwh».');
+  return mal;
+}
+
+/* ── pintar la ficha ────────────────────────────────────────────────────── */
+function ficha(tipo, nombre, d, mal){
+  const anual = d.total*(d.factor||0.001)/(d.dias/365.25);
+  const pico  = d.pico*(d.factor||0.001)*1000;
+  const ok = mal.length===0;
+  let h = `<div class="ficha ${ok?'':'mal'}">
+    <div class="arriba"><span class="nom">${nombre}</span>
+      <span class="pil ${ok?'ok':'mal'}"><span class="pt"></span>${ok?'Correcta':'No se puede usar'}</span></div>`;
+  if(!ok) h += mal.map(m=>`<p class="motivo">${m}</p>`).join('');
+  h += `<div class="dato"><em>Periodo</em><b>${d.desde} → ${d.hasta}</b></div>
+        <div class="dato"><em>Días</em><b>${d.dias}</b></div>
+        <div class="dato"><em>${tipo==='consumo'?'Consumo':'Generación'} anual</em><b>${num(anual)} MWh</b></div>
+        <div class="dato"><em>Punta</em><b>${num(pico)} kW</b></div>`;
+  if(tipo==='generacion' && ok)
+    h += `<div class="dato"><em>Equivale a</em><b>${num(anual/1.6)} kWp</b></div>`;
+  if(!ok) h += `<div style="margin-top:14px"><button class="btn p3" data-forzar="${tipo}"
+        style="font-size:13px;padding:8px 14px">Usarlo igualmente</button></div>`;
+  return h+'</div>';
+}
+
+/* ── el grafico del dia medio ───────────────────────────────────────────── */
+function perfil(){
+  const c=S.consumo, g=S.generacion;
+  if(!c) return;
+  const W=700,H=190,ml=42,mr=14,mt=14,mb=26;
+  const serie = d => d ? d.media.slice(1,25).map(v=>v*(d.factor||0.001)*1000) : null;
+  const sc=serie(c), sg=serie(g);
+  const max=Math.max(...(sc||[0]), ...(sg||[0]), 1)*1.12;
+  const X=i=>ml+i*(W-ml-mr)/23, Y=v=>H-mb-(v/max)*(H-mt-mb);
+  const linea=s=>s.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ');
+  let s=`<style>.ejx{font:10px var(--sans);fill:#697a74}.gr{stroke:#e4ece8;stroke-width:1}</style>`;
+  for(let k=0;k<=3;k++){ const v=max*k/3;
+    s+=`<line class="gr" x1="${ml}" y1="${Y(v)}" x2="${W-mr}" y2="${Y(v)}"/>
+        <text class="ejx" x="4" y="${Y(v)+3.5}">${ent(v)}</text>`; }
+  for(let i=0;i<24;i+=3) s+=`<text class="ejx" x="${X(i)}" y="${H-8}" text-anchor="middle">${i}h</text>`;
+  if(sg) s+=`<path d="${linea(sg)}" fill="none" stroke="#f0a830" stroke-width="2.2" stroke-linejoin="round"/>`;
+  s+=`<path d="${linea(sc)}" fill="none" stroke="#173f35" stroke-width="2.2" stroke-linejoin="round"/>`;
+  s+=`<text class="ejx" x="${W-mr}" y="${mt}" text-anchor="end" fill="#173f35">consumo (kW)</text>`;
+  if(sg) s+=`<text class="ejx" x="${W-mr}" y="${mt+14}" text-anchor="end" fill="#c8871a">generación (kW)</text>`;
+  document.getElementById('svg-perfil').innerHTML=s;
+  document.getElementById('grafico-perfiles').classList.remove('oculto');
+}
+
+/* ── enganches de subida ────────────────────────────────────────────────── */
+function engancha(idZona, idInput, tipo, idFicha){
+  const z=document.getElementById(idZona), inp=document.getElementById(idInput);
+  z.onclick=()=>inp.click();
+  z.ondragover=e=>{e.preventDefault();z.classList.add('encima')};
+  z.ondragleave=()=>z.classList.remove('encima');
+  z.ondrop=e=>{e.preventDefault();z.classList.remove('encima');
+               if(e.dataTransfer.files[0]) tomar(e.dataTransfer.files[0])};
+  inp.onchange=()=>inp.files[0]&&tomar(inp.files[0]);
+
+  function tomar(file){
+    const caja=document.getElementById(idFicha);
+    if(!/\.(csv|txt)$/i.test(file.name)){
+      // SERVIDOR · el .xlsx no se lee en el navegador: se sube y responde el servidor
+      caja.innerHTML=`<div class="ficha"><div class="arriba">
+        <span class="nom">${file.name}</span>
+        <span class="pil gris"><span class="pt"></span>Subiendo…</span></div>
+        <p style="margin:0;font-size:13.5px;color:var(--muted-foreground)">
+        Los Excel los lee el servidor. Aquí se enseñará su respuesta.</p></div>`;
+      return;
+    }
+    const fr=new FileReader();
+    fr.onload=()=>{
+      let d,mal;
+      try{ d=leerCSV(fr.result); mal=revisar(d,tipo); }
+      catch(err){
+        caja.innerHTML=`<div class="ficha mal"><div class="arriba">
+          <span class="nom">${file.name}</span>
+          <span class="pil mal"><span class="pt"></span>No se puede leer</span></div>
+          <p class="motivo">${err.message}</p></div>`;
+        S[tipo]=null; S.rechazada[tipo]=true; revisarPaso(); return;
+      }
+      caja.innerHTML=ficha(tipo,file.name,d,mal);
+      S[tipo]= mal.length? null : d;
+      S.rechazada[tipo] = mal.length>0;
+      // "usarlo igualmente": el usuario puede tener razon -- hay instalaciones raras --
+      // pero entonces el dato malo entra porque alguien lo decidio, no porque nadie miro
+      const bf = caja.querySelector('[data-forzar]');
+      if(bf) bf.onclick = e=>{
+        e.stopPropagation();
+        S[tipo]=d; S.rechazada[tipo]=false;
+        caja.querySelector('.ficha').classList.remove('mal');
+        caja.querySelector('.pil').className='pil gris';
+        caja.querySelector('.pil').innerHTML='<span class="pt"></span>Aceptada a mano';
+        bf.remove(); perfil(); revisarPaso();
+      };
+      perfil(); revisarPaso();
+    };
+    fr.readAsText(file,'utf-8');
+  }
+}
+engancha('z-con','f-con','consumo','ficha-con');
+engancha('z-gen','f-gen','generacion','ficha-gen');
+
+function revisarPaso(){
+  // La generacion es OPCIONAL, pero una generacion RECHAZADA no es lo mismo que no haberla
+  // subido: si se dejara continuar, el estudio saldria sin ella y sin decirlo. Un
+  // resultado que cambia en silencio segun lo que el servidor haya podido leer es peor
+  // que un boton apagado.
+  const rechazada = Object.values(S.rechazada).some(Boolean);
+  const btn = document.getElementById('ir2');
+  btn.disabled = !S.consumo || rechazada;
+  btn.textContent = rechazada ? 'Corrige el fichero para seguir' : 'Continuar';
+}
+
+/* ── navegacion ─────────────────────────────────────────────────────────── */
+function ir(n){
+  for(const i of [1,2,3]){
+    document.getElementById('s'+i).classList.toggle('oculto', i!==n);
+    const p=document.getElementById('p'+i);
+    p.classList.toggle('activo', i===n);
+    p.classList.toggle('hecho', i<n);
+  }
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+document.getElementById('ir2').onclick=()=>ir(2);
+
+/* ── ficha de la bateria ────────────────────────────────────────────────── */
+function bateria(){
+  const kw=+document.getElementById('b-pot').value||0;
+  const cx=+document.getElementById('b-capex').value||0;
+  const E=kw/1000*S.dur, util=E*0.9;
+  document.getElementById('k-e').textContent=num(E,2)+' MWh';
+  document.getElementById('k-u').textContent=num(util,2)+' MWh';
+  document.getElementById('k-c').textContent=ent(E*cx)+' €';
+}
+document.getElementById('b-pot').oninput=bateria;
+document.getElementById('b-capex').oninput=bateria;
+document.querySelectorAll('#b-dur .btn').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#b-dur .btn').forEach(x=>x.className='btn p3');
+  b.className='btn p1'; S.dur=+b.dataset.h; bateria();
+});
+bateria();
+
+/* ── el calculo ─────────────────────────────────────────────────────────── */
+document.getElementById('ir3').onclick=()=>{
+  ir(3);
+  document.getElementById('cargando').classList.remove('oculto');
+  document.getElementById('resultado').classList.add('oculto');
+  // SERVIDOR · aqui va `caso.py ejecutar`. Mientras tanto, el progreso simulado.
+  let n=0; const total=20;
+  const t=setInterval(()=>{
+    n++;
+    document.getElementById('barra').style.width=(n/total*100)+'%';
+    document.getElementById('txt-carga').textContent=
+      `Escenario ${n} de ${total} · optimizando 7.426 días`;
+    if(n>=total){ clearInterval(t); setTimeout(mostrar,350); }
+  },110);
+};
+
+function mostrar(){
+  document.getElementById('cargando').classList.add('oculto');
+  document.getElementById('resultado').classList.remove('oculto');
+  despacho();
+  rellenarInforme();
+}
+
+/* ── el informe ─────────────────────────────────────────────────────────────
+   Se imprime la propia pantalla con una hoja de estilos de impresion. Sale un PDF
+   decente con un clic, sin librerias y sin ida y vuelta al servidor.
+
+   SERVIDOR · el informe COMPLETO -- las 534.672 filas de despacho, el año a año, el
+   barrido de tamaños -- tiene que generarlo el servidor, que es quien los tiene. Esto
+   cubre lo que el usuario quiere en el momento: llevarse la pantalla que esta viendo.  */
+function rellenarInforme(){
+  const kw = +document.getElementById('b-pot').value || 0;
+  const cx = +document.getElementById('b-capex').value || 0;
+  const E  = kw/1000*S.dur;
+  const f  = new Date();
+  const fecha = f.toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+
+  document.getElementById('inf-meta').innerHTML =
+    `${fecha}<br>${f.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}`;
+  document.getElementById('inf-bat').textContent =
+    `${ent(kw)} kW · ${S.dur} h · ${num(E,2)} MWh · ${ent(E*cx)} €`;
+
+  const linea = (d,tipo) => {
+    if(!d) return tipo==='generacion' ? 'sin instalación' : '—';
+    const anual = d.total*(d.factor||0.001)/(d.dias/365.25);
+    return `${num(anual)} MWh/año · ${d.dias} días · ${d.desde} → ${d.hasta}`;
+  };
+  document.getElementById('inf-con').textContent = linea(S.consumo,'consumo');
+  document.getElementById('inf-gen').textContent = linea(S.generacion,'generacion');
+  // SERVIDOR · sale de `app_case_run.curve_generated_at`. La curva se pisa cada mañana,
+  // asi que sin esta linea dos informes de dias distintos no se pueden comparar y nadie
+  // se entera.
+  document.getElementById('inf-curva').textContent = 'publicada el 31-08-2026 · 20 escenarios';
+}
+
+document.getElementById('informe').onclick = ()=>{
+  rellenarInforme();
+  window.print();
+};
+
+/* ── el despacho de un dia medio ────────────────────────────────────────── */
+function despacho(){
+  // SERVIDOR · esto vendra de `app_case_dispatch`. La forma es la de un dia real:
+  // carga al mediodia con el excedente solar, descarga en el pico de tarde.
+  const precio=[62,58,55,53,52,54,61,72,78,70,55,38,24,19,22,35,54,73,88,95,90,82,74,68];
+  const carga =[0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0];
+  const desc  =[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0];
+  const W=700,H=200,ml=42,mr=14,mt=16,mb=26;
+  const max=Math.max(...precio)*1.1;
+  const X=i=>ml+i*(W-ml-mr)/23, Y=v=>H-mb-(v/max)*(H-mt-mb);
+  const an=(W-ml-mr)/23;
+  let s=`<style>.ejx{font:10px var(--sans);fill:#697a74}.gr{stroke:#e4ece8;stroke-width:1}</style>`;
+  // las bandas cubren TODO el alto: proporcionales al precio se vuelven invisibles
+  // justo cuando el precio se va a cero, que es cuando mas carga
+  precio.forEach((_,i)=>{
+    if(carga[i]) s+=`<rect x="${X(i)-an/2}" y="${mt}" width="${an}" height="${H-mt-mb}" fill="#258160" opacity=".16"/>`;
+    if(desc[i])  s+=`<rect x="${X(i)-an/2}" y="${mt}" width="${an}" height="${H-mt-mb}" fill="#924831" opacity=".16"/>`;
+  });
+  for(let k=0;k<=3;k++){ const v=max*k/3;
+    s+=`<line class="gr" x1="${ml}" y1="${Y(v)}" x2="${W-mr}" y2="${Y(v)}"/>
+        <text class="ejx" x="4" y="${Y(v)+3.5}">${ent(v)}</text>`; }
+  for(let i=0;i<24;i+=3) s+=`<text class="ejx" x="${X(i)}" y="${H-8}" text-anchor="middle">${i}h</text>`;
+  s+=`<path d="${precio.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ')}"
+       fill="none" stroke="#173f35" stroke-width="2.2" stroke-linejoin="round"/>`;
+  s+=`<text class="ejx" x="${W-mr}" y="${mt}" text-anchor="end">precio €/MWh</text>`;
+  document.getElementById('svg-despacho').innerHTML=s;
+}
+</script>
+</body>
+</html>
