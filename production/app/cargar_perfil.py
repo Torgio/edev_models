@@ -96,6 +96,32 @@ def _leer_crudo(ruta: Path, hoja=None) -> pd.DataFrame:
                        engine="python", on_bad_lines="skip")
 
 
+def _candidatos(ruta: Path, hoja=None):
+    """Las hojas que pueden traer la curva, en orden de preferencia.
+
+    Un Excel de verdad casi nunca trae la curva en la primera hoja: trae una portada, unas
+    instrucciones o un resumen, y la curva detras. Coger la hoja 0 a ciegas es lo que hace
+    que el cargador falle con un fichero perfectamente valido, y el mensaje que sale --
+    "no reconozco las columnas: ['instrucciones']" -- no le dice al usuario que el problema
+    es la hoja.
+
+    Se prueban todas y se queda la primera que `_a_largo` sepa leer. Van antes las que se
+    llaman como una curva, y a igualdad de nombre las mas grandes: una hoja de portada tiene
+    diez filas y una curva horaria tiene ocho mil.
+    """
+    if ruta.suffix.lower() not in (".xlsx", ".xls", ".xlsm"):
+        yield None, _leer_crudo(ruta)
+        return
+    if hoja is not None:
+        yield hoja, pd.read_excel(ruta, sheet_name=hoja)
+        return
+    todas = pd.read_excel(ruta, sheet_name=None)
+    pinta = re.compile(r"curva|datos|horaria|consumo|generacion|perfil|hora")
+    for nombre, d in sorted(todas.items(),
+                            key=lambda kv: (not pinta.search(_norm(kv[0])), -len(kv[1]))):
+        yield nombre, d
+
+
 def _a_largo(d: pd.DataFrame, verbose=True) -> pd.DataFrame:
     """De cualquier formato a (fecha, hora, valor). Reconoce tres familias.
 
@@ -116,8 +142,17 @@ def _a_largo(d: pd.DataFrame, verbose=True) -> pd.DataFrame:
                        var_name="_h", value_name="valor")
         largo["hora"] = largo._h.map(lambda c: int(re.findall(r"\d+", c)[0]))
         largo = largo.rename(columns={fecha: "fecha"})[["fecha", "hora", "valor"]]
+        # UNA CELDA VACIA ES UNA HORA QUE NO EXISTE, no un cero.
+        # Las descargas de distribuidora traen la columna H25 SIEMPRE puesta, vacia salvo el
+        # domingo de octubre. Si esas celdas se conservan, los 365 dias tienen 25 filas y el
+        # dia siguiente se le aplica a todos el mapeo del cambio de hora. Quitarlas aqui es
+        # lo unico que distingue "no hay hora 25" de "la hora 25 valio cero".
+        n0 = len(largo)
+        largo = largo.dropna(subset=["valor"])
         if verbose:
-            print(f"  formato ANCHO: {len(horas)} columnas de hora")
+            print(f"  formato ANCHO: {len(horas)} columnas de hora"
+                  + (f" · {n0 - len(largo)} celdas vacias descartadas"
+                     if n0 != len(largo) else ""))
         return largo
 
     # ── LARGO con fecha y hora separadas ──────────────────────────────────────
@@ -178,9 +213,22 @@ def cargar(ruta, hoja=None, unidad="auto", verbose=True) -> pd.DataFrame:
     se avisa y se deja el valor sin tocar. Ver `_unidad_del_encabezado`.
     """
     ruta = Path(ruta)
-    _crudo = _leer_crudo(ruta, hoja)
+    _crudo = d = None
+    fallidas = []
+    for _nombre, _cand in _candidatos(ruta, hoja):
+        try:
+            d = _a_largo(_cand, verbose)
+            _crudo = _cand
+            if _nombre is not None and verbose:
+                print(f"  hoja '{_nombre}'")
+            break
+        except ValueError as e:
+            fallidas.append(f"'{_nombre}': {e}")
+    if d is None:
+        salto = chr(10) + "    "
+        raise ValueError("ninguna hoja del fichero parece una curva horaria:"
+                         + salto + salto.join(fallidas))
     _uni_cab = _unidad_del_encabezado(_crudo.columns)
-    d = _a_largo(_crudo, verbose)
     d["fecha"] = _a_fecha(d.fecha).dt.normalize()
     d["hora"] = pd.to_numeric(d.hora, errors="coerce")
     d["valor"] = pd.to_numeric(d.valor, errors="coerce")
@@ -189,22 +237,43 @@ def cargar(ruta, hoja=None, unidad="auto", verbose=True) -> pd.DataFrame:
     # ── la hora 1..24 del sector electrico español, y los dos dias raros ──────
     h0, h1 = int(d.hora.min()), int(d.hora.max())
     if h0 == 1:
-        n_por_dia = d.groupby("fecha").hora.transform("size")
+        # CUANTAS HORAS TIENE UN DIA LO DICE EL CALENDARIO, no el numero de filas.
+        #
+        # Contar filas parece lo natural y se equivoca en los dos sentidos. Un Excel con la
+        # columna H25 siempre puesta da 25 filas los 365 dias y les aplica a todos el mapeo
+        # de octubre -- desplazando el dia entero una hora. Y un fichero al que le falten
+        # horas por un fallo de medida da 23 y se le aplica el de marzo.
+        #
+        # El calendario no se equivoca: se le pregunta a `Europe/Madrid` cuanto dura cada
+        # dia. El recuento de filas queda para AVISAR de lo que no cuadra, que es para lo
+        # unico que sirve.
+        unicos = pd.DatetimeIndex(sorted(d.fecha.unique()))
+        ini = unicos.tz_localize("Europe/Madrid", nonexistent="shift_forward")
+        fin = (unicos + pd.Timedelta(days=1)).tz_localize("Europe/Madrid",
+                                                          nonexistent="shift_forward")
+        n_cal = pd.Series(((fin - ini).total_seconds() / 3600).round().astype(int),
+                          index=unicos)
+        n_por_dia = d.fecha.map(n_cal).to_numpy()
         h = d.hora.to_numpy()
         # 24 h: h-1 · 25 h (octubre): 2A y 2B caen las dos en la 2:00 · 23 h (marzo): no hay 2:00
         d["hora"] = np.select(
             [n_por_dia == 25, n_por_dia == 23],
             [np.where(h <= 3, h - 1, h - 2), np.where(h <= 2, h - 1, h)],
             default=h - 1)
-        raros = d.assign(n=n_por_dia).query("n != 24").fecha.unique()
         if verbose:
             print(f"  horas numeradas 1..{h1} (convencion española): se pasa a 0..23")
-            for f_ in raros:
-                n_ = int((d.fecha == f_).sum())
+            filas = d.groupby("fecha").hora.transform("size").to_numpy()
+            for f_ in unicos[n_cal.to_numpy() != 24]:
+                n_ = int(n_cal[f_])
                 que = ("cambio de hora de octubre, 2A y 2B a la misma hora" if n_ == 25
-                       else "cambio de hora de marzo, no existe la 2:00" if n_ == 23
-                       else "dia incompleto en el fichero")
-                print(f"     {pd.Timestamp(f_):%d-%m-%Y}: {n_} horas · {que}")
+                       else "cambio de hora de marzo, no existe la 2:00")
+                print(f"     {f_:%d-%m-%Y}: el calendario tiene {n_} horas · {que}")
+            desajuste = d.assign(n=filas, cal=n_por_dia).query("n != cal")
+            for f_, g in list(desajuste.groupby("fecha"))[:5]:
+                print(f"     AVISO {pd.Timestamp(f_):%d-%m-%Y}: el fichero trae "
+                      f"{len(g)} horas y el calendario dice {int(g.cal.iloc[0])}")
+            if len(desajuste.fecha.unique()) > 5:
+                print(f"     ... y {len(desajuste.fecha.unique()) - 5} dias mas")
     elif verbose:
         print(f"  horas numeradas {h0}..{h1}")
     # cualquier hora que se salga de 0..23 es un error de formato, no un dato

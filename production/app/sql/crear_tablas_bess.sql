@@ -332,7 +332,11 @@ CREATE TABLE IF NOT EXISTS app_case_result_annual (
 CREATE TABLE IF NOT EXISTS app_case_dispatch (
     run_id              INTEGER NOT NULL REFERENCES app_case_run ON DELETE CASCADE,
     scenario            SMALLINT NOT NULL,      -- 0 en el tramo historico
-    datetime            TIMESTAMPTZ NOT NULL,
+    -- SIN ZONA, igual que app_curve_hourly: el despacho vive en la misma rejilla nominal de
+    -- 24 h/dia que la curva. Con TIMESTAMPTZ, el domingo de marzo las 02:00 y las 03:00
+    -- colapsan en la misma marca y chocan contra la clave primaria. Aqui ademas era peor que
+    -- un error: el INSERT llevaba ON CONFLICT DO NOTHING y perdia esas horas en silencio.
+    datetime            TIMESTAMP NOT NULL,
     price               REAL NOT NULL,
     charge_mw           REAL NOT NULL,
     discharge_mw        REAL NOT NULL,

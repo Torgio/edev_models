@@ -139,6 +139,19 @@ def cmd_instalacion(cur, uid, a, es_consumo: bool):
         auditar(s)
     f = a_forma(s)
 
+    # UNA PLANTA FOTOVOLTAICA NO GENERA DE NOCHE.
+    # Suena obvio y por eso no se comprueba, que es como una instalacion de estas pruebas
+    # acabo registrada desde el fichero del CONSUMO: el perfil "solar" daba 0,40 pu a
+    # medianoche. No fallo nada -- el estudio corrio, guardo resultados y devolvio un VAN con
+    # dos decimales. Solo que describia un sitio que no existe, y con la generacion repartida
+    # por la noche el hueco que la bateria explota se aplana y sale ciclando la tercera parte.
+    if not es_consumo and a.tecnologia == "fv":
+        noche = float(f[f.hora.isin([0, 1, 2, 3, 4])].pu.mean())
+        if noche > 0.02:
+            print(f"  AVISO: el perfil genera {noche:.3f} pu de media entre las 0:00 y las")
+            print(f"  4:00, y una fotovoltaica da CERO. Casi seguro que el fichero no es de")
+            print(f"  generacion solar -- comprueba que no has subido el del consumo.")
+
     if es_consumo:
         cur.execute(
             "INSERT INTO app_consump_inst (user_id, code, name, annual_mwh, growth_pct, "
@@ -427,14 +440,16 @@ def cmd_ejecutar(con, cur, uid, a):
 
     # ── guardar ─────────────────────────────────────────────────────────────
     n_hist = int((origen != "simulado").sum())
-    cur.execute(
-        "INSERT INTO app_case_run (case_id, curve_generated_at, curve_matrix_hash, "
-        "run_at, split_date, "
-        "days_historical, days_simulated, n_scenarios, solver, solver_seconds, "
-        "margin_total_mean, margin_annual_mean, savings_vs_no_batt, cycles_per_day, "
-        "life_years, npv_p10, npv_p50, npv_p90, npv_positive_pct, capex_coverage_pct, "
-        "notes) VALUES (%s,%s,%s, now(), %s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
-        "RETURNING run_id",
+    # Los nombres y los valores van EMPAREJADOS y el INSERT se genera de aqui. Escribir los
+    # `%s` a mano en veinte columnas es como se colo el descuadre anterior: entro una columna
+    # y no su hueco, y psycopg2 solo dijo "not all arguments converted", que no señala nada.
+    # `run_at` no esta porque la tabla lo pone sola con DEFAULT now().
+    COLS = ("case_id", "curve_generated_at", "curve_matrix_hash", "split_date",
+            "days_historical", "days_simulated", "n_scenarios", "solver", "solver_seconds",
+            "margin_total_mean", "margin_annual_mean", "savings_vs_no_batt",
+            "cycles_per_day", "life_years", "npv_p10", "npv_p50", "npv_p90",
+            "npv_positive_pct", "capex_coverage_pct", "notes")
+    vals = (
         (int(c.case_id), curva_gen, curva_hash, split, n_hist, len(dias) - n_hist, ns,
          "highs-milp" if b.power_min_pct > 0 else "highs-lp", seg,
          float(margen.sum(axis=1).mean()),
@@ -448,6 +463,10 @@ def cmd_ejecutar(con, cur, uid, a):
          float((vans > 0).mean() * 100) if len(vans) else None,
          float(bruto_vida / capex * 100),
          a.notas))
+    assert len(COLS) == len(vals), (
+        f"INSERT descuadrado: {len(COLS)} columnas, {len(vals)} valores")
+    cur.execute(f"INSERT INTO app_case_run ({', '.join(COLS)}) "
+                f"VALUES ({', '.join(['%s'] * len(vals))}) RETURNING run_id", vals)
     rid = cur.fetchone()[0]
 
     filas = []
