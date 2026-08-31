@@ -1,0 +1,43 @@
+{
+  "modelo_id": "sarimax_horario",
+  "familia": "estadistico",
+  "autor": "Samuel",
+  "libreria": "statsmodels==0.14.6, pmdarima==2.1.1",
+  "python": "3.13",
+  "entrenado_desde": "2020-01-01",
+  "entrenado_hasta": "2024-12-31",
+  "semilla": 42,
+  "features": [
+    "month",
+    "pt_entsoe_lag24h",
+    "pt_entsoe_lag168h",
+    "it_nord_entsoe_lag24h",
+    "cap_baleares_prev_mw",
+    "ree_gccgas_mw_lag168h",
+    "ree_gcoal_mw_lag24h",
+    "ree_ntc_exppt",
+    "ree_gcoal_mw_lag168h",
+    "coal_antracita_mw_lag24h",
+    "biomass_mw_lag24h",
+    "coal_antracita_mw_lag168h",
+    "pumping_cons_mw_lag24h",
+    "pumping_cons_mw_lag168h",
+    "gen_renovables_prev_mw",
+    "waste_mw_lag24h",
+    "demanda_mercado_prev_mw",
+    "gen_wind_prev_mw",
+    "ree_ntc_impma",
+    "gen_peninsular_mw_lag24h",
+    "entsoe_load_lag24h",
+    "gen_solar_pv_prev_mw"
+  ],
+  "features_dudosas": [
+    "cap_baleares_prev_mw",
+    "demanda_mercado_prev_mw",
+    "gen_renovables_prev_mw",
+    "gen_solar_pv_prev_mw",
+    "gen_wind_prev_mw",
+    "ree_ntc_exppt",
+    "ree_ntc_impma"
+  ]
+}

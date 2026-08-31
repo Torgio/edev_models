@@ -83,13 +83,29 @@ def buscar_orden(
     return auto.order, auto.seasonal_order
 
 
+def recortar_historia(y_train: pd.Series, exog: pd.DataFrame | None = None):
+    """Deja solo las ultimas `SARIMA_MAX_HORAS_TRAIN` horas, si esta configurado."""
+    tope = config.SARIMA_MAX_HORAS_TRAIN
+    if not tope or len(y_train) <= tope:
+        return y_train, exog
+    log.info("recortando train de %d a %d horas (SARIMA_MAX_HORAS_TRAIN)", len(y_train), tope)
+    return y_train.iloc[-tope:], (exog.iloc[-tope:] if exog is not None else None)
+
+
 def ajustar(
     y_train: pd.Series,
     order,
     seasonal_order,
     exog: pd.DataFrame | None = None,
 ):
-    """Ajusta el modelo sobre TODO train (hasta 31-dic-2024) con el orden ya elegido."""
+    """Ajusta el modelo sobre train con el orden ya elegido.
+
+    `low_memory=True` no es un detalle: sin el, statsmodels guarda las matrices del
+    filtro de Kalman para cada una de las ~44.000 horas y el proceso muere por OOM
+    (ver SARIMA_LOW_MEMORY en ajustes.py).
+    """
+    y_train, exog = recortar_historia(y_train, exog)
+
     modelo = SARIMAX(
         y_train,
         exog=exog,
@@ -98,9 +114,31 @@ def ajustar(
         enforce_stationarity=False,
         enforce_invertibility=False,
     )
-    log.info("ajustando SARIMAX%s%s sobre %d horas%s", order, seasonal_order, len(y_train),
-             f" con {exog.shape[1]} exogenas" if exog is not None else " sin exogenas")
-    return modelo.fit(disp=False)
+    log.info("ajustando SARIMAX%s%s sobre %d horas%s (k_states=%d, low_memory=%s)",
+             order, seasonal_order, len(y_train),
+             f" con {exog.shape[1]} exogenas" if exog is not None else " sin exogenas",
+             modelo.k_states, config.SARIMA_LOW_MEMORY)
+
+    fit = modelo.fit(disp=False, low_memory=config.SARIMA_LOW_MEMORY)
+
+    if not config.SARIMA_LOW_MEMORY or not config.SARIMA_VENTANA_ESTADO:
+        return fit
+
+    # Con low_memory los parametros son correctos pero no se ha guardado el estado
+    # del filtro, y sin estado `extend()` no puede continuar la serie. Se recupera
+    # re-filtrando solo la ventana final con esos mismos parametros: barato, y el
+    # estado de un modelo con m=24 ya ha convergido de sobra en 30 dias.
+    v = min(config.SARIMA_VENTANA_ESTADO, len(y_train))
+    log.info("reconstruyendo el estado del filtro sobre las ultimas %d horas", v)
+    ventana = SARIMAX(
+        y_train.iloc[-v:],
+        exog=exog.iloc[-v:] if exog is not None else None,
+        order=order,
+        seasonal_order=seasonal_order,
+        enforce_stationarity=False,
+        enforce_invertibility=False,
+    )
+    return ventana.filter(fit.params)
 
 
 def predecir(
@@ -129,19 +167,22 @@ def predecir(
         pred = fit.forecast(steps=len(y_objetivo), **kwargs)
         return pd.Series(np.asarray(pred), index=y_objetivo.index)
 
-    # bloques24: cada dia se predice entero y despues se le da el dia observado
+    # bloques24: cada dia se predice entero y despues se le da el dia observado.
+    #
+    # `extend()` y no `append()`: append re-filtra TODA la serie acumulada en cada
+    # iteracion, asi que la memoria crece dia a dia (medido: 2 GB en 30 dias, y el
+    # OOM killer esperando). extend continua desde el estado y solo procesa el bloque
+    # nuevo, con memoria constante. Las predicciones son identicas.
     bloques = []
     current_fit = fit
     for ini in range(0, len(y_objetivo), 24):
         bloque = y_objetivo.iloc[ini:ini + 24]
-        if exog_objetivo is not None:
-            exog_bloque = exog_objetivo.iloc[ini:ini + 24]
-            pred = current_fit.forecast(steps=len(bloque), exog=exog_bloque)
-            current_fit = current_fit.append(bloque, exog=exog_bloque, refit=False)
-        else:
-            pred = current_fit.forecast(steps=len(bloque))
-            current_fit = current_fit.append(bloque, refit=False)
+        exog_bloque = exog_objetivo.iloc[ini:ini + 24] if exog_objetivo is not None else None
+
+        pred = current_fit.forecast(steps=len(bloque), exog=exog_bloque)
         bloques.append(pd.Series(np.asarray(pred), index=bloque.index))
+
+        current_fit = current_fit.extend(bloque, exog=exog_bloque)
         if (ini // 24 + 1) % 50 == 0:
             log.info("  %d/%d dias", ini // 24 + 1, len(y_objetivo) // 24)
     return pd.concat(bloques)
@@ -166,9 +207,10 @@ def entrenar_y_predecir(
 
 
 # ---------------------------------------------------------------------------
-def ejecutar(forzar: bool = False, estrategia: str | None = None) -> pd.Series:
+def ejecutar(forzar: bool = False, estrategia: str | None = None,
+             modo: str | None = None) -> pd.Series:
     """Prepara los datos, busca orden (cacheado), ajusta, predice y compara con el naive."""
-    datos = preparacion.preparar_datos(forzar)
+    datos = preparacion.preparar_datos(modo, forzar)
     estrategia = estrategia or config.ESTRATEGIA_SARIMA
 
     # El orden se cachea aparte: es lo caro, y no cambia al probar otra estrategia
@@ -180,10 +222,11 @@ def ejecutar(forzar: bool = False, estrategia: str | None = None) -> pd.Series:
     fit = ajustar(datos["y_train"], order, seasonal_order)
     pred = predecir(fit, datos["y_val"], estrategia=estrategia)
 
-    artifacts.guardar(pred, "pred_sarima")
+    modelo_id = entrega.id_con_modo(MODELO_ID, datos["modo"])
+    artifacts.guardar(pred, f"pred_{modelo_id}")
     log.info("SARIMA listo (estrategia=%s)", estrategia)
     entrega.guardar_entregable(
-        MODELO_ID,
+        modelo_id,
         modelo=fit,
         pred=pred,
         features=[],                      # SARIMA sin exogenas: solo usa el historico del precio
@@ -195,6 +238,8 @@ def ejecutar(forzar: bool = False, estrategia: str | None = None) -> pd.Series:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--seleccion", choices=config.MODOS_SELECCION, default=None,
+                        help=f"modo de seleccion de features (por defecto {config.MODO_SELECCION})")
     parser.add_argument("--forzar", action="store_true",
                         help="rehace tratamiento y busqueda de orden en vez de leerlos de artifacts/")
     parser.add_argument("--estrategia", choices=config.ESTRATEGIAS, default=None,
@@ -204,7 +249,7 @@ def main() -> int:
     config.preparar_entorno()
     log_ = config.configurar_logging("sarima")
     try:
-        ejecutar(args.forzar, args.estrategia)
+        ejecutar(args.forzar, args.estrategia, args.seleccion)
     except Exception:
         log_.exception("SARIMA ha fallado")
         return 1

@@ -1,17 +1,20 @@
-"""Preparacion de datos comun a los cuatro modelos.
+"""Preparacion de datos comun a los cuatro modelos, con cuatro modos de seleccion.
 
-Encadena las tres etapas previas a cualquier entrenamiento:
+Encadena lo previo a cualquier entrenamiento:
 
-    carga + split  ->  seleccion (Spearman + SFS)  ->  tratamiento  ->  (escalado)
+    matriz_nucleo.csv -> split (UTC) -> seleccion de features -> (escalado)
 
-Antes esto vivia dentro de `run_pipeline.py`, asi que un modelo solo se podia
-entrenar a traves del orquestador. Al moverlo aqui, cada script de `models/` lo
-llama por su cuenta y se ejecuta solo:
+La seleccion tiene cuatro modos, elegibles con `--seleccion` en cualquier modelo:
 
-    python -m tfm_horario.models.elasticnet
+    ambos     Spearman y despues SFS sobre los supervivientes  (por defecto)
+    spearman  solo el filtro de correlacion
+    sfs       solo seleccion secuencial, sobre las 128 features de la matriz
+    ninguna   sin seleccion, las 128 features
 
-Cada paso se cachea en disco (ver `artifacts.py`), de modo que el primer modelo
-que se lance paga el SFS y los tres siguientes lo reutilizan en segundos.
+Cada modo cachea aparte (`datos_<modo>.pkl`, `sfs_solo.pkl` vs
+`sfs_tras_spearman.pkl`), asi que se pueden lanzar los cuatro seguidos sin que se
+pisen y sin recalcular lo que compartan. Ya no hay etapa de tratamiento de nulos:
+la matriz llega depurada.
 """
 
 from __future__ import annotations
@@ -23,83 +26,109 @@ from . import ajustes as config, artifacts, data, selection
 log = logging.getLogger(__name__)
 
 
+def _validar(modo: str) -> str:
+    if modo not in config.MODOS_SELECCION:
+        raise ValueError(f"modo de seleccion {modo!r}; opciones: {config.MODOS_SELECCION}")
+    return modo
+
+
 def preparar_splits(forzar: bool = False) -> dict:
-    """Carga el dataset de la BBDD y lo parte en train / validation."""
+    """Lee la matriz y la parte en train / validation. Comun a los cuatro modos."""
     splits = artifacts.cachear("splits", lambda: data.cargar_splits(), forzar)
     log.info("train %s | val %s", splits["X_train"].shape, splits["X_val"].shape)
     return splits
 
 
-def preparar_seleccion(forzar: bool = False):
-    """Spearman + SFS sobre train. Es la etapa cara del pipeline (el SFS entrena
-    O(n_features^2) x n_splits random forests), por eso se cachea con especial
-    interes: solo se recalcula con --forzar."""
-    splits = preparar_splits()
-    X_train, y_train = splits["X_train"], splits["y_train"]
-
-    result = artifacts.cachear(
+def _spearman(X_train, y_train, forzar: bool):
+    """Filtro de correlacion. Barato (segundos) y comun a los modos que lo usan."""
+    return artifacts.cachear(
         "spearman",
         lambda: selection.select_features_spearman(X_train, y_train),
         forzar,
     )
-    X_train_sel = X_train[result["selected"]]
 
-    result_sfs = artifacts.cachear(
-        "sfs",
-        lambda: selection.select_features_sfs(X_train_sel, y_train),
+
+def _sfs(X_train, y_train, candidatas: list[str], clave: str, forzar: bool):
+    """Seleccion secuencial sobre `candidatas`. Es la etapa cara del pipeline."""
+    log.info("SFS (%s) sobre %d candidatas", clave, len(candidatas))
+    resultado = artifacts.cachear(
+        clave,
+        lambda: selection.select_features_sfs(X_train[candidatas], y_train),
         forzar,
     )
-    selected_sfs = result_sfs["selected"]
-
-    # Diagnostico de colinealidad por log (antes eran dos heatmaps)
-    for etiqueta, cols in (("Spearman", result["selected"]), ("Spearman+SFS", selected_sfs)):
-        corr = selection.matriz_correlacion(X_train, cols)
-        log.info("%s -> %d features | %s", etiqueta, len(cols), selection.resumen_colinealidad(corr))
-        log.info("pares mas correlados tras %s:\n%s", etiqueta,
-                 selection.pares_mas_correlados(corr, top_n=10).to_string())
-
-    return splits, result, selected_sfs
+    return resultado["selected"]
 
 
-def preparar_datos(forzar: bool = False) -> dict:
-    """Devuelve X/y de train y validation ya tratados y listos para modelar.
+def seleccionar(modo: str | None = None, forzar: bool = False) -> list[str]:
+    """Devuelve la lista de features del modo pedido.
 
-    `forzar` recalcula el tratamiento; la seleccion cacheada se reutiliza (para
-    rehacerla, `--forzar` desde `run_pipeline.py --etapa seleccion`).
+    Es la unica funcion que hay que mirar para entender que hace cada modo.
     """
-    def _construir():
-        splits, result, selected_sfs = preparar_seleccion()
+    modo = _validar(modo or config.MODO_SELECCION)
+    splits = preparar_splits()
+    X_train, y_train = splits["X_train"], splits["y_train"]
+    todas = X_train.columns.tolist()
 
-        trat = artifacts.cachear(
-            "tratamiento",
-            lambda: data.TratamientoHorario(selected_sfs).fit(splits["X_train"], result["target_corr"]),
-            forzar,
-        )
+    if modo == "ninguna":
+        log.info("SELECCION 'ninguna': las %d features de la matriz, sin filtrar", len(todas))
+        return todas
+
+    if modo == "spearman":
+        features = _spearman(X_train, y_train, forzar)["selected"]
+        log.info("SELECCION 'spearman': %d de %d features", len(features), len(todas))
+
+    elif modo == "sfs":
+        # Sin pre-filtro: el SFS arranca con las 128 columnas. Es el modo mas caro.
+        log.warning("SELECCION 'sfs': sin pre-filtro de Spearman, el SFS parte de %d "
+                    "candidatas. Es el modo mas lento con diferencia.", len(todas))
+        features = _sfs(X_train, y_train, todas, "sfs_solo", forzar)
+        log.info("SELECCION 'sfs': %d de %d features", len(features), len(todas))
+
+    else:   # ambos
+        supervivientes = _spearman(X_train, y_train, forzar)["selected"]
+        features = _sfs(X_train, y_train, supervivientes, "sfs_tras_spearman", forzar)
+        log.info("SELECCION 'ambos': %d -> %d (Spearman) -> %d (SFS)",
+                 len(todas), len(supervivientes), len(features))
+
+    _diagnostico_colinealidad(X_train, features, modo)
+    return features
+
+
+def _diagnostico_colinealidad(X_train, features: list[str], modo: str) -> None:
+    """Redundancia que queda entre las features elegidas (antes eran heatmaps)."""
+    corr = selection.matriz_correlacion(X_train, features)
+    log.info("colinealidad tras '%s': %s", modo, selection.resumen_colinealidad(corr))
+    log.info("pares mas correlados:\n%s", selection.pares_mas_correlados(corr, top_n=10).to_string())
+
+
+def preparar_datos(modo: str | None = None, forzar: bool = False) -> dict:
+    """X/y de train y validation, listos para modelar, con el modo pedido."""
+    modo = _validar(modo or config.MODO_SELECCION)
+
+    def _construir():
+        splits = preparar_splits()
+        features = seleccionar(modo, forzar)
 
         datos = {
-            "X_train": trat.transform(splits["X_train"]),
-            "X_val": trat.transform(splits["X_val"]),
+            "modo": modo,
+            "features": features,
+            "X_train": data.aplicar_features(splits["X_train"], features, "train"),
+            "X_val": data.aplicar_features(splits["X_val"], features, "val"),
             "y_train": data.preparar_target(splits["y_train"]),
             "y_val": data.preparar_target(splits["y_val"]),
         }
-        # El indice tiene que casar exactamente: SARIMAX no perdona un desalineo
         for split in ("train", "val"):
-            X, y = datos[f"X_{split}"], datos[f"y_{split}"]
-            comunes = X.index.intersection(y.index)
-            datos[f"X_{split}"] = X.loc[comunes]
-            datos[f"y_{split}"] = y.loc[comunes]
-            log.info("%s tratado: X %s, y %d horas", split, datos[f"X_{split}"].shape, len(comunes))
+            log.info("%s: X %s, y %d horas", split, datos[f"X_{split}"].shape, len(datos[f"y_{split}"]))
         return datos
 
-    return artifacts.cachear("datos_tratados", _construir, forzar)
+    return artifacts.cachear(f"datos_{modo}", _construir, forzar)
 
 
-def preparar_escalados(forzar: bool = False):
-    """Lo mismo que `preparar_datos`, mas las X escaladas que necesitan Ridge y
-    ElasticNet. El scaler se ajusta solo con train.
+def preparar_escalados(modo: str | None = None, forzar: bool = False):
+    """Lo mismo, mas las X escaladas que necesitan Ridge y ElasticNet.
 
-    Devuelve (datos, X_train_escalado, X_val_escalado).
+    El scaler se ajusta solo con train. Devuelve (datos, X_train_esc, X_val_esc).
     """
-    datos = preparar_datos(forzar)
+    datos = preparar_datos(modo, forzar)
     _, X_train_scaled, X_val_scaled = data.escalar(datos["X_train"], datos["X_val"])
     return datos, X_train_scaled, X_val_scaled

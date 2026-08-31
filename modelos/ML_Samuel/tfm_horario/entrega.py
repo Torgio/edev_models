@@ -82,6 +82,16 @@ def _control_de_sanidad(pred: pd.Series) -> None:
              pred.min(), pred.mean(), pred.max())
 
 
+def id_con_modo(base: str, modo: str) -> str:
+    """`ridge_horario` con el modo por defecto; `ridge_horario_spearman` con otro.
+
+    Cada modo produce un modelo distinto y merece su propia entrada en el
+    leaderboard: si los cuatro escribieran en la misma carpeta se pisarian, y el
+    revisor no podria saber cual se entreno con que seleccion.
+    """
+    return base if modo == config.MODO_SELECCION else f"{base}_{modo}"
+
+
 def guardar_entregable(
     modelo_id: str,
     modelo,
@@ -93,8 +103,9 @@ def guardar_entregable(
     p90: pd.Series | None = None,
 ) -> Path:
     """Escribe los tres ficheros y devuelve la carpeta del entregable."""
-    if modelo_id not in config.MODELOS:
-        raise ValueError(f"modelo_id {modelo_id!r} no esta en ajustes.MODELOS")
+    base = next((b for b in config.MODELOS if modelo_id == b or modelo_id.startswith(f"{b}_")), None)
+    if base is None:
+        raise ValueError(f"modelo_id {modelo_id!r} no deriva de ninguno de {list(config.MODELOS)}")
 
     config.preparar_entorno()
     destino = config.ENTREGABLES_DIR / modelo_id
@@ -122,7 +133,7 @@ def guardar_entregable(
     # --- metadata.json -------------------------------------------------------
     metadata = {
         "modelo_id": modelo_id,
-        "familia": config.MODELOS[modelo_id],
+        "familia": config.MODELOS[base],
         "autor": config.AUTOR,
         "libreria": ", ".join(librerias),
         "python": ".".join(platform.python_version_tuple()[:2]),
@@ -158,10 +169,15 @@ def verificar_entregables() -> pd.DataFrame:
     """Repasa lo que hay en `entregables/` antes de abrir el PR.
 
     Comprueba los tres ficheros, el numero de filas y que la primera y ultima hora
-    sean las de 2025. Es la ultima red antes de subirlo.
+    sean las de 2025. Se repasa lo que HAYA en entregables/, incluidas las variantes
+    por modo de seleccion (`ridge_horario_spearman`, etc.). Es la ultima red antes
+    de subirlo.
     """
     filas = []
-    for modelo_id in config.MODELOS:
+    if not config.ENTREGABLES_DIR.exists():
+        return pd.DataFrame()
+    presentes = sorted(p.name for p in config.ENTREGABLES_DIR.iterdir() if p.is_dir())
+    for modelo_id in presentes or list(config.MODELOS):
         carpeta = config.ENTREGABLES_DIR / modelo_id
         ruta_csv = carpeta / "pred_val_2025.csv"
         fila = {
