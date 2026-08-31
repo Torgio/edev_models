@@ -22,8 +22,10 @@ Uso:
     )
 """
 
+import re
 import sys
 import warnings
+from decimal import Decimal
 from pathlib import Path
 
 import numpy as np
@@ -634,6 +636,106 @@ def buscar_documentacion(pregunta: str, k: int = 3) -> dict:
             {"fuente": f, "nota": n, "titulo": t, "texto": txt, "similitud": round(1 - d, 3)}
             for f, n, t, txt, d in filas
         ],
+    }
+
+
+# Tablas a las que el rol de Postgres `asistente_solo_lectura` tiene GRANT SELECT (y nada mas --
+# ni INSERT/UPDATE/DELETE, ni ninguna otra tabla de la base compartida). Ver
+# sql/registro_cambios_bd.md para el alta del rol, 31-ago-2026. Esta lista en Python es una
+# segunda barrera solo para dar un mensaje de error claro -- la barrera REAL es el GRANT de
+# Postgres, que ya se probo que bloquea todo lo demas aunque este chequeo tuviera un fallo.
+_SQL_TABLAS_PERMITIDAS = {"spot_price", "era5_weather_agg", "esios_capacity_installed",
+                          "predictions", "documentacion_embeddings"}
+_SQL_PALABRAS_PROHIBIDAS = re.compile(
+    r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|COPY|CALL|EXECUTE|VACUUM|MERGE)\b",
+    re.IGNORECASE)
+
+
+def consulta_sql_lectura(sql: str) -> dict:
+    """Ejecuta una consulta SQL de SOLO LECTURA escrita por el propio modelo de lenguaje, contra
+    un rol de Postgres (`asistente_solo_lectura`) que SOLO puede hacer SELECT sobre 5 tablas --
+    no puede escribir nada, ni ver ninguna otra tabla de la base compartida del equipo, aunque
+    esta funcion tuviera un fallo (verificado con una prueba real de INSERT, que Postgres
+    rechazo con "permission denied").
+
+    USAR ESTA HERRAMIENTA COMO ULTIMO RECURSO -- solo cuando la pregunta pide datos en crudo
+    (tabla/grafica) que ninguna otra herramienta ya cubre. Es MENOS FIABLE que las demas: el SQL
+    se genera al vuelo y no ha sido probado de antemano por una persona, a diferencia de cada una
+    de las otras funciones de este modulo. SIEMPRE avisa en la respuesta que esta tabla/numero
+    sale de una consulta generada dinamicamente, no de una herramienta pre-verificada.
+
+    Tablas disponibles y sus columnas:
+      spot_price(datetime timestamptz, es_esios, es_entsoe, es_omie, pt_entsoe, pt_omie,
+        fr_entsoe, de_lu_entsoe, it_nord_entsoe, ch_entsoe, be_entsoe, nl_entsoe, at_entsoe,
+        pl_entsoe, cz_entsoe -- todos los precios en EUR/MWh, uno por pais/fuente)
+      era5_weather_agg(ts timestamp SIN zona horaria -- UTC naive, t2m_mean, wind10_mean,
+        wind100_mean, ssrd_mean, tcc_mean, d2m_mean, wind_gust10_mean, tp_mean, msl_mean --
+        meteorologia agregada horaria)
+      esios_capacity_installed(date, total_mw, total_renewable_mw, wind_mw, solar_pv_mw,
+        nuclear_mw, coal_mw, ccgt_mw, hydro_mw, battery_hybrid_mw, ... -- capacidad instalada
+        por tecnologia, MW, una fila por dia)
+      predictions(datetime timestamptz, pred_date, model, prediction, seed, matrix,
+        matrix_hash, source -- predicciones ya calculadas por los distintos modelos del equipo)
+      documentacion_embeddings(id, fuente, numero, titulo, texto -- NO selecciones la columna
+        `embedding`, es un vector de 384 numeros, inutil en una tabla/grafica)
+
+    Reglas duras (si no se cumplen, se devuelve un error explicando cual):
+      - Debe ser una unica sentencia SELECT (o WITH ... SELECT), nada de INSERT/UPDATE/DELETE/DDL.
+      - Sin punto y coma extra (una sola sentencia).
+      - Si no lleva LIMIT, se le añade LIMIT 200 automaticamente; el maximo es 500 filas.
+
+    Args:
+        sql: La consulta SELECT completa, en SQL de Postgres.
+    """
+    sql_limpio = sql.strip().rstrip(";")
+
+    if ";" in sql_limpio:
+        return {"error": "Solo se permite UNA sentencia por consulta (se encontro un ';' de mas "
+                          "en medio de la consulta)."}
+    if not re.match(r"^\s*(SELECT|WITH)\b", sql_limpio, re.IGNORECASE):
+        return {"error": "Solo se permiten consultas que empiecen por SELECT o WITH (solo lectura)."}
+    if _SQL_PALABRAS_PROHIBIDAS.search(sql_limpio):
+        return {"error": "La consulta contiene una palabra no permitida en modo solo-lectura "
+                          "(nada de INSERT/UPDATE/DELETE/DDL/COPY/etc.)."}
+
+    limite_existente = re.search(r"\bLIMIT\s+(\d+)\b", sql_limpio, re.IGNORECASE)
+    if limite_existente is None:
+        sql_limpio += " LIMIT 200"
+    elif int(limite_existente.group(1)) > 500:
+        sql_limpio = sql_limpio[:limite_existente.start()] + "LIMIT 500" + sql_limpio[limite_existente.end():]
+
+    from config import load_config_asistente_solo_lectura
+    try:
+        conn = psycopg2.connect(**load_config_asistente_solo_lectura())
+    except KeyError as e:
+        return {"error": f"Falta configurar el rol de solo lectura en credentials.json: {e}"}
+
+    try:
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("SET statement_timeout = '10s'")
+        cur.execute(sql_limpio)
+        columnas = [d.name for d in cur.description] if cur.description else []
+        filas = cur.fetchmany(500)
+    except psycopg2.Error as e:
+        return {"error": f"Error de Postgres al ejecutar la consulta: {e}", "sql_ejecutado": sql_limpio}
+    finally:
+        conn.close()
+
+    def _json_seguro(v):
+        if isinstance(v, (Decimal,)):
+            return float(v)
+        if isinstance(v, (pd.Timestamp,)) or hasattr(v, "isoformat"):
+            return str(v)
+        return v
+
+    return {
+        "etiqueta": "CONSULTA SQL GENERADA DINAMICAMENTE -- verificar antes de tomarla como dato "
+                    "firme, no es una herramienta pre-probada como las demas",
+        "sql_ejecutado": sql_limpio,
+        "columnas": columnas,
+        "filas": [dict(zip(columnas, [_json_seguro(v) for v in fila])) for fila in filas],
+        "n_filas": len(filas),
     }
 
 

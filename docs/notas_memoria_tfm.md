@@ -1465,3 +1465,35 @@ Además, no existía ninguna herramienta que devolviera el precio hora a hora **
 había percentiles (para patrones históricos) y una lista de horas negativas (solo esas). Se añadió
 `precio_tabla_horaria`, y ya se probó con la pregunta exacta que falló en la demo ("una tabla con
 los precios de hoy por hora"): responde con la tabla completa del día y un resumen correcto.
+
+## 43. El asistente ya puede escribir su propio SQL — con un perímetro de seguridad real, no solo confiado
+
+Hasta ahora, si una pregunta no encajaba en ninguna de las funciones ya programadas, el asistente
+simplemente no podía responderla (así pasó dos veces: horas negativas y precios de hoy). Añadir
+una función nueva cada vez que aparece un hueco no escala a "cualquier pregunta imaginable". Se
+planteó la alternativa — darle al modelo de lenguaje una herramienta de SQL genérico, que él mismo
+escriba — y se decidió con el equipo, entre tres opciones, ir por la versión acotada: SQL de solo
+lectura, limitado a las 5 tablas que el asistente ya usa.
+
+**La parte importante no es el código, es el perímetro.** Las credenciales normales del proyecto
+son del usuario `postgres` — superusuario, acceso total a la base compartida. Dejar que un LLM
+escriba SQL al vuelo con esas credenciales sería peligroso: un error en la consulta (no
+malicia, simplemente un fallo) podría tocar cualquier tabla de cualquier compañero. Se creó un
+rol nuevo de Postgres, `asistente_solo_lectura`, que **solo puede hacer SELECT sobre 5 tablas** y
+nada más — documentado con el comando exacto en `sql/registro_cambios_bd.md` (entrada 3), como
+corresponde a cualquier cambio sobre la base compartida.
+
+**Verificado con pruebas reales, no dado por hecho:** un `INSERT` con este rol lo rechaza
+Postgres directamente ("permission denied"), y un `SELECT` sobre una tabla fuera de la lista
+(`ttf_m1`, de otro compañero) también. Es decir, aunque el código Python que revisa la consulta
+antes de ejecutarla tuviera un fallo, el límite real lo pone el permiso de la base de datos, no
+una validación que se pueda saltar con una consulta rara.
+
+**Con una advertencia explícita en cada respuesta**: a diferencia de las otras 9 herramientas
+(cada una escrita y probada por una persona de antemano), el SQL de esta se genera al vuelo, sin
+revisión previa — el asistente tiene instrucción de decir siempre que ese dato concreto viene de
+una "consulta generada dinámicamente", y de usarla solo como último recurso cuando ninguna otra
+herramienta ya cubre la pregunta. Probado con una pregunta real que ninguna función existente
+cubría ("compárame el precio de España y Portugal hora a hora"): generó el SQL correcto y de paso
+encontró un dato real — ese día concreto los dos mercados fueron idénticos hora a hora (sin
+desacoplamiento MIBEL).

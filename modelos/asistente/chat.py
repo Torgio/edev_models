@@ -126,6 +126,12 @@ numeros reales usa `code_execution` para dibujar un grafico simple con matplotli
 ejes con nombre, nada de colores decorativos) -- nunca dibujes con datos que no vengan de una
 herramienta.
 
+Si la pregunta pide datos en crudo (tabla o grafica) que ninguna herramienta anterior cubre, usa
+`consulta_sql_lectura` como ULTIMO RECURSO -- nunca antes de comprobar si alguna de las otras
+herramientas ya sirve. A diferencia de las demas, el SQL lo escribes tu al vuelo: SIEMPRE avisa en
+la respuesta que ese dato sale de una consulta generada dinamicamente, no de una herramienta
+pre-verificada, y revisa que la consulta tenga sentido para la pregunta antes de darla por buena.
+
 Responde en español, con los numeros que las herramientas devuelven -- nunca inventes una cifra
 que no venga de una llamada a herramienta."""
 
@@ -278,6 +284,37 @@ def prediccion_d_mas_1() -> str:
 
 
 @beta_tool
+def consulta_sql_lectura(sql: str) -> str:
+    """ULTIMO RECURSO -- ejecuta una consulta SELECT (Postgres) contra un rol de SOLO LECTURA
+    limitado a 5 tablas (no puede escribir nada, ni ver el resto de la base compartida). Usala
+    solo cuando la pregunta pide datos en crudo (tabla o grafica) que ninguna otra herramienta ya
+    cubre. Es MENOS fiable que las demas herramientas: el SQL lo escribes tu mismo al vuelo, sin
+    que nadie lo haya probado antes -- SIEMPRE di en la respuesta que el resultado viene de una
+    consulta generada dinamicamente, no de una herramienta pre-verificada, y revisa que el SQL
+    tenga sentido antes de confiar en el numero.
+
+    Tablas y columnas disponibles:
+      spot_price(datetime timestamptz, es_esios, es_entsoe, es_omie, pt_entsoe, pt_omie,
+        fr_entsoe, de_lu_entsoe, it_nord_entsoe, ch_entsoe, be_entsoe, nl_entsoe, at_entsoe,
+        pl_entsoe, cz_entsoe) -- precios EUR/MWh por pais/fuente
+      era5_weather_agg(ts timestamp SIN zona -- UTC naive, t2m_mean, wind10_mean, wind100_mean,
+        ssrd_mean, tcc_mean, d2m_mean, wind_gust10_mean, tp_mean, msl_mean)
+      esios_capacity_installed(date, total_mw, total_renewable_mw, wind_mw, solar_pv_mw,
+        nuclear_mw, coal_mw, ccgt_mw, hydro_mw, battery_hybrid_mw, ...)
+      predictions(datetime timestamptz, pred_date, model, prediction, seed, matrix, matrix_hash,
+        source)
+      documentacion_embeddings(id, fuente, numero, titulo, texto) -- no selecciones `embedding`
+
+    Reglas duras: una unica sentencia SELECT/WITH, sin punto y coma extra, nada de
+    INSERT/UPDATE/DELETE/DDL. Si no pones LIMIT se añade LIMIT 200 automaticamente (maximo 500).
+
+    Args:
+        sql: La consulta SELECT completa, en SQL de Postgres.
+    """
+    return json.dumps(_h.consulta_sql_lectura(sql), ensure_ascii=False)
+
+
+@beta_tool
 def buscar_documentacion(pregunta: str) -> str:
     """Busqueda semantica sobre la documentacion del proyecto (decisiones de diseño, hallazgos,
     metodologia -- notas_memoria_tfm.md y columnas_pendientes_equipo.md). Usa esta herramienta
@@ -293,7 +330,7 @@ def buscar_documentacion(pregunta: str) -> str:
 CODE_EXECUTION = {"type": "code_execution_20260521", "name": "code_execution"}
 TOOLS = [precio_historico_percentiles, precio_tabla_horaria, precio_negativos, precio_horas_negativas,
          simular_bateria, simular_autoconsumo_solar, precio_futuro_curva, extrapolar_consumo_cliente,
-         prediccion_d_mas_1, buscar_documentacion]
+         prediccion_d_mas_1, buscar_documentacion, consulta_sql_lectura]
 
 
 def preguntar_con_imagenes(pregunta: str, modelo: str = MODELO_POR_DEFECTO) -> dict:
