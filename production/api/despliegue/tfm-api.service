@@ -1,0 +1,48 @@
+# Servicio del API del TFM. Se instala en /etc/systemd/system/tfm-api.service
+#
+#     sudo cp production/api/despliegue/tfm-api.service /etc/systemd/system/
+#     sudo systemctl daemon-reload
+#     sudo systemctl enable --now tfm-api
+#     systemctl status tfm-api
+#
+# PUERTO 8010, NO 8000. El 8000 lo ocupa `pulso-api` desde el 31 de agosto, y arrancar
+# aqui en el 8000 se lo lleva por delante -- ya paso una vez.
+#
+# Escucha SOLO en 127.0.0.1: quien lo publica es el nginx, que ademas pone la
+# contraseña. Atarlo a 0.0.0.0 lo dejaria accesible por IP saltandose el nginx y con
+# el, la autenticacion.
+
+[Unit]
+Description=TFM Energia · API de predicciones y estudio de bateria
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/scripts
+Environment=PYTHONUNBUFFERED=1
+Environment=TFM_EMAIL=acjg.sgs@outlook.com
+ExecStart=/home/ubuntu/tfm-env/bin/python -m uvicorn production.api.main:app \
+          --host 127.0.0.1 --port 8010 --workers 1 \
+          --limit-concurrency 16 --timeout-keep-alive 5
+
+# UN SOLO TRABAJADOR, y es a proposito. El registro de tareas en curso vive en memoria
+# del proceso (`TAREAS` en bateria.py): con dos trabajadores, la peticion que pregunta
+# "como va mi estudio" puede caer en el que no lo esta ejecutando y responder 404.
+# Para escalar habria que sacar ese registro a la base o a un Redis.
+
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/home/ubuntu/scripts/logs/api.log
+StandardError=append:/home/ubuntu/scripts/logs/api.log
+
+# el proceso no necesita escribir fuera de lo suyo
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/scripts/logs /home/ubuntu/scripts/data
+
+[Install]
+WantedBy=multi-user.target
