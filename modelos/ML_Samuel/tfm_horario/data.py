@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -30,73 +31,133 @@ log = logging.getLogger(__name__)
 # ===========================================================================
 # 1. CARGA Y SPLIT
 # ===========================================================================
-def cargar_dataset(solo_filas_validas: bool | None = None, pdbc: str | None = None) -> pd.DataFrame:
-    """Construye el dataset horario desde la BBDD.
+def cargar_dataset(ruta: Path | str | None = None) -> pd.DataFrame:
+    """Lee `matriz_nucleo.csv`, la matriz depurada del equipo.
 
-    El import va dentro de la funcion a proposito: `preparar_entorno()` tiene que
-    haber metido MODELOS_DIR en sys.path antes.
+    Sustituye a la carga desde Postgres: ya no se construye el dataset aqui, viene
+    hecho de `construir_matriz.py` + `depurar_matriz.py` + `auditoria_frontera.py`.
+    Este modulo solo lo valida, lo indexa por la hora objetivo y lo parte.
+
+    El indice es `ts` en UTC (la hora objetivo). Se comprueban las tres cosas que
+    Nucleo.txt promete -- 133 columnas, 0 nulos y rejilla horaria continua -- porque
+    si alguna deja de cumplirse conviene enterarse ANTES de entrenar, no al final.
     """
     config.preparar_entorno()
-    from construir_dataset_horario import construir_dataset_horario
+    ruta = Path(ruta) if ruta is not None else config.RUTA_MATRIZ
+    if not ruta.exists():
+        raise FileNotFoundError(
+            f"No encuentro matriz_nucleo.csv en {ruta}.\n"
+            "Comprueba la ruta o exporta TFM_RUTA_MATRIZ=/ruta/a/matriz_nucleo.csv"
+        )
 
-    dataset = construir_dataset_horario(
-        solo_filas_validas=config.SOLO_FILAS_VALIDAS if solo_filas_validas is None else solo_filas_validas,
-        pdbc=config.PDBC if pdbc is None else pdbc,
-    )
-    log.info("dataset: %d filas (horas) x %d columnas", dataset.shape[0], dataset.shape[1])
+    dataset = pd.read_csv(ruta)
+    log.info("matriz leida de %s: %d filas x %d columnas", ruta, *dataset.shape)
+
+    if dataset.shape[1] != config.COLUMNAS_ESPERADAS:
+        log.warning("la matriz tiene %d columnas y se esperaban %d: puede haber cambiado",
+                    dataset.shape[1], config.COLUMNAS_ESPERADAS)
+
+    if config.COL_TIMESTAMP not in dataset.columns:
+        raise ValueError(f"la matriz no trae la columna {config.COL_TIMESTAMP!r}")
+
+    ts = pd.to_datetime(dataset[config.COL_TIMESTAMP], utc=True)
+    dataset = dataset.set_index(pd.DatetimeIndex(ts, name="ts")).sort_index()
+
+    duplicadas = dataset.index[dataset.index.duplicated()]
+    if len(duplicadas):
+        log.warning("%d timestamps duplicados (se conserva el primero): %s",
+                    len(duplicadas), list(duplicadas[:5]))
+        dataset = dataset[~dataset.index.duplicated(keep="first")]
+
+    nulos = int(dataset.isna().sum().sum())
+    log.info("nulos en la matriz: %d %s", nulos, "(como promete Nucleo.txt)" if nulos == 0 else "(!)")
+
+    dataset = _completar_rejilla(dataset)
+    log.info("rango: %s -> %s (%d horas)", dataset.index.min(), dataset.index.max(), len(dataset))
+    return dataset
+
+
+def _completar_rejilla(dataset: pd.DataFrame) -> pd.DataFrame:
+    """Rellena las horas UTC que falten para que el indice sea una rejilla continua.
+
+    Hace falta por dos motivos:
+
+    1. statsmodels necesita un DatetimeIndex con `freq`, y pandas se niega a
+       ponerlo si hay un solo hueco ("Inferred frequency None does not conform").
+    2. `pred_val_2025.csv` debe tener 8760 filas exactas.
+
+    Por que faltan horas: la matriz parece construirse por dia LOCAL x 24 slots, y
+    eso no cubre las 8760 horas UTC del año. En el cambio de hora de marzo el dia
+    local tiene 23 horas y en el de octubre 25, asi que la correspondencia
+    "24 slots por dia" se descuadra justo en esas dos fechas. De ahi que validation
+    saliera con 8759 filas en vez de 8760.
+
+    Se rellenan solo huecos PEQUEÑOS. Si faltan muchas horas no es el cambio de
+    hora, es que la matriz esta incompleta, y entonces el pipeline para: rellenar
+    cientos de horas por interpolacion falsearia el entrenamiento en silencio.
+    """
+    completa = pd.date_range(dataset.index.min(), dataset.index.max(), freq=config.FREQ, tz="UTC")
+    faltan = completa.difference(dataset.index)
+    if not len(faltan):
+        return dataset
+
+    if len(faltan) > config.MAX_HORAS_A_RELLENAR:
+        raise ValueError(
+            f"faltan {len(faltan)} horas en la matriz (mas de {config.MAX_HORAS_A_RELLENAR}). "
+            f"Primeras: {list(faltan[:5])}. No se rellenan: revisa construir_matriz.py "
+            "o sube MAX_HORAS_A_RELLENAR en ajustes.py si sabes que es correcto."
+        )
+
+    log.warning("faltan %d horas en la rejilla UTC; se interpolan. Son: %s",
+                len(faltan), [str(t) for t in faltan])
+
+    dataset = dataset.reindex(completa)
+    numericas = dataset.select_dtypes(include=[np.number]).columns
+    dataset[numericas] = dataset[numericas].interpolate(limit_direction="both")
+    otras = [c for c in dataset.columns if c not in numericas]
+    if otras:
+        dataset[otras] = dataset[otras].ffill().bfill()
+    dataset.index.name = "ts"
     return dataset
 
 
 def columnas_con_fuga(columnas) -> list[str]:
-    """Columnas que Prod.txt prohibe: se refieren al dia objetivo y su fuente publica
-    despues de las 11:00 de la vispera.
+    """Columnas prohibidas por la frontera de informacion de Prod.txt.
 
-    Son dos grupos (el porque, en el bloque FILTRO DE FUGA de ajustes.py):
-      - ERA5 sin desfase: reanalisis del propio dia objetivo. Sus *_lag24h/_lag168h si valen.
-      - `PELIGRO_mismodia_*`: PDBC del propio D+1, resultado de la misma subasta.
-
-    La lista de columnas de clima se lee de `construir_dataset_maestro`, que es la
-    fuente de verdad; si no se puede importar, se usa el fallback de ajustes.py.
+    Por defecto, ninguna: la matriz ya paso `auditoria_frontera.py` y en su
+    convencion el sufijo `_D` es el dia en que se predice, no el dia objetivo (el
+    razonamiento completo esta en el bloque FRONTERA DE INFORMACION de ajustes.py).
+    Si esa lectura resultara equivocada, se rellenan `COLUMNAS_PROHIBIDAS` /
+    `PREFIJOS_PROHIBIDOS` en ajustes.py y este filtro las quita sin tocar nada mas.
     """
-    try:
-        config.preparar_entorno()
-        from construir_dataset_maestro import COLS_CLIMA
-        clima = tuple(COLS_CLIMA)
-    except Exception:                                   # noqa: BLE001
-        clima = config.CLIMA_FALLBACK
-        log.warning("no se pudo importar COLS_CLIMA; se usa CLIMA_FALLBACK (%d columnas)", len(clima))
-
-    prohibidas = []
-    for c in columnas:
-        if c.startswith(config.PREFIJOS_PROHIBIDOS):
-            prohibidas.append(c)
-        elif c in clima and not c.endswith(config.SUFIJOS_DE_LAG):
-            prohibidas.append(c)                        # ERA5 del dia objetivo
-    return prohibidas
+    return sorted({
+        c for c in columnas
+        if c in config.COLUMNAS_PROHIBIDAS
+        or (config.PREFIJOS_PROHIBIDOS and c.startswith(config.PREFIJOS_PROHIBIDOS))
+    })
 
 
 def filtrar_fuga(X: pd.DataFrame) -> pd.DataFrame:
-    """Aplica `columnas_con_fuga` y deja constancia en el log de que se ha quitado."""
+    """Aplica `columnas_con_fuga` y deja constancia en el log."""
     fuera = columnas_con_fuga(X.columns)
     if fuera:
-        log.warning("FILTRO DE FUGA: se descartan %d columnas -> %s", len(fuera), fuera)
+        log.warning("FRONTERA: se descartan %d columnas -> %s", len(fuera), fuera)
     else:
-        log.info("FILTRO DE FUGA: ninguna columna prohibida en el dataset")
+        log.info("FRONTERA: sin columnas prohibidas "
+                 "(la matriz ya paso auditoria_frontera.py; ver ajustes.py)")
     return X.drop(columns=fuera)
 
 
 def features_dudosas(columnas) -> list[str]:
-    """Features que un revisor deberia mirar dos veces, para `metadata.json`.
+    """Las que se declaran en metadata.json para que el revisor las mire.
 
-    Criterio: las que describen la hora objetivo SIN desfase y no son de calendario.
-    Son legitimas segun el constructor (previsiones day-ahead publicadas antes del
-    cierre, commodities de D-1), pero es justo la categoria sobre la que avisa
-    Prod.txt, asi que se declaran en vez de esconderlas.
+    No se descartan. Son las `*_meteo` (prevision del dia objetivo, real solo desde
+    2024-04 segun Nucleo.txt) y los testigos de publicacion del PBF. El detalle,
+    en ajustes.py.
     """
-    calendario = {"hora", "dow", "month", "is_weekend"}
     return sorted(
         c for c in columnas
-        if c not in calendario and not c.endswith(config.SUFIJOS_DE_LAG)
+        if c.endswith(config.SUFIJOS_DUDOSOS) or c in config.DUDOSAS_EXPLICITAS
     )
 
 
@@ -132,20 +193,41 @@ def rejilla_val_2025() -> pd.DatetimeIndex:
 
 
 def preparar_xy(df: pd.DataFrame, target: str = config.TARGET):
-    """Separa el target del resto de features.
+    """Separa el objetivo de las features y descarta las columnas de control.
 
-    En el dataset horario la fila YA ES la hora objetivo, asi que no hay columnas
-    price_h00..price_h23 que descartar: solo hay que sacar `precio`.
-
-    OJO: las columnas *_lag24h / *_lag168h (incluida precio_propio_lag24h) NO son fuga
-    -- son datos que ya habian ocurrido cuando se cerro el mercado del dia anterior.
-    Y `hora` es una feature mas, no una columna distinta por hora.
+    `fecha_pred`, `fecha_objetivo`, `ts` y `split` identifican la fila; meterlas
+    como features seria darle al modelo la fecha como predictor. `hora` SI se queda:
+    es control y feature a la vez, y es la variable que mas explica el perfil
+    horario del precio.
     """
     if target not in df.columns:
-        raise ValueError(f"{target!r} no esta en el dataset: {list(df.columns)[:10]}...")
+        raise ValueError(f"{target!r} no esta en la matriz. Columnas: {list(df.columns)[:8]}...")
+
     y = df[target].rename(target)
-    X = df.drop(columns=[target])
+    sobran = [c for c in (*config.COLUMNAS_CONTROL, target) if c in df.columns]
+    X = df.drop(columns=sobran)
+    log.info("features: %d (se apartan %s)", X.shape[1], sobran)
     return X, y
+
+
+def comprobar_split_de_la_matriz(dataset: pd.DataFrame, train, val) -> None:
+    """La matriz trae su propia columna `split`. Se compara con el corte de Prod.txt.
+
+    No se usa la suya: las fronteras las fija Prod.txt (train <= 2024, validation
+    2025 en UTC) y el CSV de entrega exige 8760 filas exactas. Pero si discrepan,
+    conviene saberlo antes de entrenar.
+    """
+    if "split" not in dataset.columns:
+        return
+    valores = dataset["split"].astype(str)
+    for nombre, trozo in (("train", train), ("validation", val)):
+        if not len(trozo):
+            continue
+        reparto = valores.reindex(trozo.index).value_counts().to_dict()
+        log.info("%s segun la columna `split` de la matriz: %s", nombre, reparto)
+        if len(reparto) > 1:
+            log.warning("el corte de Prod.txt no coincide con la columna `split` en %s: "
+                        "manda Prod.txt, pero revisalo", nombre)
 
 
 def cargar_splits(incluir_test: bool = False):
@@ -156,6 +238,7 @@ def cargar_splits(incluir_test: bool = False):
     """
     dataset = cargar_dataset()
     train_raw, val_raw, test_raw = dividir_train_val_test_tfm(dataset)
+    comprobar_split_de_la_matriz(dataset, train_raw, val_raw)
 
     for nombre, split in (("train", train_raw), ("val", val_raw), ("test", test_raw)):
         if len(split):
@@ -192,159 +275,80 @@ def cargar_splits(incluir_test: bool = False):
 # ===========================================================================
 # 2. TRATAMIENTO
 # ===========================================================================
-# En el notebook `aplicar_tratamiento` era una funcion que cerraba sobre variables
-# globales (selected_sfs, cols_a_dropear, cols_imputar, cols_con_missing) calculadas
-# a mano mas arriba. Aqui es un objeto `TratamientoHorario` que se AJUSTA con train
-# y guarda esa receta dentro, asi que:
-#   - se puede serializar y reusar el dia que se abra el test,
-#   - es imposible que val/test reciban un preprocesado distinto al de train,
-#   - no hay estado global que se pise entre ejecuciones.
+# Aqui vivia TratamientoHorario: interpolacion de huecos, deteccion de columnas con
+# mucho missing, drop, imputacion bfill/ffill... Todo eso sobra desde que la entrada
+# es matriz_nucleo.csv, que llega con 0 nulos y el apagon de abril-2025 ya imputado y
+# marcado (`imputado_apagon`, `ventana_pisa_apagon`) por `depurar_matriz.py`.
+#
+# Lo unico que queda es lo que los modelos SI necesitan: quedarse con las features
+# elegidas, dejar el indice como lo quiere statsmodels, y comprobar que la promesa
+# de "0 nulos" se sigue cumpliendo en vez de darla por buena.
 # ===========================================================================
-def rellenar_gaps(df_or_series, limit: int = config.GAP_LIMIT_HORAS, freq: str = config.FREQ):
-    """Rellena huecos cortos con interpolate sobre una rejilla HORARIA regular.
-
-    `limit` se cuenta en horas: limit=6 rellena huecos de hasta 6h; un hueco mas
-    largo se deja como NaN a proposito, para que se vea (era un dia entero de datos
-    perdidos, no un parpadeo).
-    """
-    full_idx = pd.date_range(df_or_series.index.min(), df_or_series.index.max(), freq=freq)
-    out = df_or_series.reindex(full_idx)
-    out = out.interpolate(limit=limit)
-    out.index.freq = freq
-    return out
-
-
 def normalizar_indice(obj):
     """Quita la tz del indice.
 
-    El dataset horario viene en UTC. statsmodels/pmdarima quieren un DatetimeIndex
-    regular con freq: sobre UTC (sin cambios de hora) quitar la tz NO altera el
-    espaciado y evita los warnings de "no supported index". Si convirtieramos a
-    Europe/Madrid antes de quitar la tz, los dias de DST tendrian 23 o 25 horas y
-    el freq='h' se romperia.
+    La matriz viene en UTC. statsmodels/pmdarima quieren un DatetimeIndex regular
+    con freq: sobre UTC (sin cambios de hora) quitar la tz NO altera el espaciado y
+    evita los warnings de "no supported index". Si convirtieramos a Europe/Madrid
+    antes de quitar la tz, los dias de DST tendrian 23 o 25 horas y freq='h' se
+    romperia.
     """
     obj = obj.copy()
     idx = pd.DatetimeIndex(obj.index)
     if idx.tz is not None:
         idx = idx.tz_convert("UTC").tz_localize(None)
     obj.index = idx
+
+    # freq solo si el indice ES realmente regular. Asignarlo a ciegas revienta con
+    # "Inferred frequency None does not conform to passed frequency h" en cuanto
+    # falta una hora, y el mensaje no dice cual falta. La rejilla se completa antes,
+    # en cargar_dataset(); aqui solo se etiqueta lo que ya deberia estar bien.
+    try:
+        obj.index.freq = config.FREQ
+    except ValueError:
+        log.warning("el indice no es una rejilla horaria continua: se deja sin freq. "
+                    "statsmodels puede quejarse; revisa el aviso de huecos de cargar_dataset()")
     return obj
 
 
-def preparar_target(y: pd.Series) -> pd.Series:
-    """Mismo tratamiento de indice y huecos que reciben las features."""
-    y = rellenar_gaps(y.sort_index())
-    y = normalizar_indice(y)
-    return rellenar_gaps(y.sort_index())
+def verificar_sin_nulos(obj, etiqueta: str) -> None:
+    """La matriz promete 0 nulos. Si deja de cumplirse hay que enterarse aqui.
 
-
-def _cola_nan(s: pd.Series) -> int:
-    return int(s.isna()[::-1].cumprod().sum())
-
-
-def _cabeza_nan(s: pd.Series) -> int:
-    return int(s.isna().cumprod().sum())
-
-
-class TratamientoHorario:
-    """Receta de tratamiento ajustada SOLO con train y aplicada igual a val y test.
-
-    fit(X_train, target_corr) calcula:
-      cols_a_dropear     -- columnas con mucho missing que se eliminan
-      cols_imputar       -- columnas con mucho missing que se conservan e imputan
-      cols_con_missing   -- resto de columnas con algun NaN residual
-      columnas_finales   -- orden de columnas de salida
+    No se imputa nada a proposito: un NaN en esta matriz significa que algo ha
+    cambiado aguas arriba (`construir_matriz.py` / `depurar_matriz.py`), y taparlo
+    con un ffill esconderia el problema en vez de resolverlo.
     """
+    nulos = int(np.asarray(obj.isna()).sum())
+    if nulos:
+        columnas = (obj.columns[obj.isna().any()].tolist()
+                    if isinstance(obj, pd.DataFrame) else [getattr(obj, "name", etiqueta)])
+        raise ValueError(
+            f"{etiqueta}: {nulos} nulos en una matriz que deberia traer 0. "
+            f"Columnas afectadas: {columnas[:10]}. Revisa depurar_matriz.py antes de entrenar."
+        )
 
-    def __init__(
-        self,
-        selected: list[str],
-        missing_pct_alto: float = config.MISSING_PCT_ALTO,
-        umbral_corr: float = config.UMBRAL_CORR_DROP,
-    ):
-        self.selected = list(selected)
-        self.missing_pct_alto = missing_pct_alto
-        self.umbral_corr = umbral_corr
-        self.cols_a_dropear: list[str] = []
-        self.cols_imputar: list[str] = []
-        self.cols_con_missing: list[str] = []
-        self.columnas_finales: list[str] = []
-        self.diagnostico_missing: pd.DataFrame | None = None
-        self._ajustado = False
 
-    # -- ajuste ------------------------------------------------------------
-    def fit(self, X_raw: pd.DataFrame, target_corr: pd.Series) -> "TratamientoHorario":
-        X = rellenar_gaps(X_raw[self.selected].copy())
+def aplicar_features(X: pd.DataFrame, features: list[str], etiqueta: str = "X") -> pd.DataFrame:
+    """Deja X con las features elegidas, en el mismo orden, y el indice normalizado.
 
-        missing_pct = X.isna().mean().sort_values(ascending=False)
-        high_missing = missing_pct[missing_pct > self.missing_pct_alto]
-        corr_abs = target_corr.abs()
+    Es lo que garantiza que validation reciba exactamente el mismo tratamiento que
+    train: mismas columnas y mismo orden, que es de lo que se encargaba la receta
+    de TratamientoHorario.
+    """
+    faltan = [c for c in features if c not in X.columns]
+    if faltan:
+        raise ValueError(f"{etiqueta}: faltan features seleccionadas -> {faltan[:10]}")
 
-        self.diagnostico_missing = pd.DataFrame({
-            "missing_pct": high_missing,
-            "target_corr": target_corr.reindex(high_missing.index),
-        })
+    X = normalizar_indice(X[list(features)])
+    verificar_sin_nulos(X, etiqueta)
+    return X
 
-        # ------------------------------------------------------------------
-        # OJO / REVISAR: esta condicion es la MISMA que en el notebook (celda 18),
-        # que dropea cuando |rho| > umbral. El comentario original decia
-        # "dropeamos las que tienen mucho missing Y correlacion DEBIL", que seria
-        # `< umbral`. Se mantiene el comportamiento del notebook para no cambiar
-        # resultados sin querer; si la intencion era la del comentario, invierte
-        # el operador aqui y vuelve a lanzar el pipeline con --forzar.
-        # ------------------------------------------------------------------
-        self.cols_a_dropear = [
-            c for c in high_missing.index
-            if corr_abs.get(c, 0) > self.umbral_corr and c in X.columns
-        ]
-        X = X.drop(columns=self.cols_a_dropear)
-        log.info("se dropean (%d): %s", len(self.cols_a_dropear), self.cols_a_dropear)
 
-        # Las que tienen mucho missing pero sobreviven al drop se imputan
-        self.cols_imputar = [c for c in high_missing.index if c in X.columns]
-        for col in self.cols_imputar:
-            log.info(
-                "%s: train %dh al inicio / %dh al final",
-                col, _cabeza_nan(X[col]), _cola_nan(X[col]),
-            )
-            X[col] = X[col].bfill().ffill()
-
-        # Resto de NaN residuales (interpolate no puede rellenar los iniciales)
-        self.cols_con_missing = X.columns[X.isna().any()].tolist()
-        for col in self.cols_con_missing:
-            X[col] = X[col].bfill().ffill()
-
-        self.columnas_finales = X.columns.tolist()
-        self._ajustado = True
-
-        log.info("NaN restantes en train: %d", int(X.isna().sum().sum()))
-        log.info("Inf en train: %d", int(np.isinf(X.select_dtypes(include=[np.number])).sum().sum()))
-        return self
-
-    # -- aplicacion --------------------------------------------------------
-    def transform(self, X_raw: pd.DataFrame) -> pd.DataFrame:
-        if not self._ajustado:
-            raise RuntimeError("Llama a fit() con train antes de transform().")
-
-        X = X_raw[self.selected].copy()
-        X = rellenar_gaps(X)
-        X = X.drop(columns=[c for c in self.cols_a_dropear if c in X.columns])
-        for col in self.cols_imputar + self.cols_con_missing:
-            if col in X.columns:
-                X[col] = X[col].bfill().ffill()
-
-        X = X[self.columnas_finales]
-        X = normalizar_indice(X)
-        X = rellenar_gaps(X.sort_index())
-
-        restantes = int(X.isna().sum().sum())
-        if restantes:
-            log.warning("Quedan %d NaN tras el tratamiento", restantes)
-        return X
-
-    def fit_transform(self, X_raw: pd.DataFrame, target_corr: pd.Series) -> pd.DataFrame:
-        self.fit(X_raw, target_corr)
-        return self.transform(X_raw)
+def preparar_target(y: pd.Series) -> pd.Series:
+    """Mismo tratamiento de indice que reciben las features."""
+    y = normalizar_indice(y.sort_index())
+    verificar_sin_nulos(y, "target")
+    return y
 
 
 def escalar(X_train: pd.DataFrame, *otros: pd.DataFrame):
