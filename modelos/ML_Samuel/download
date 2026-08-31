@@ -1,0 +1,5 @@
+# Salidas de trabajo: NO van al PR (Prod.txt solo pide entregables/)
+salidas/
+__pycache__/
+*.pyc
+.venv/

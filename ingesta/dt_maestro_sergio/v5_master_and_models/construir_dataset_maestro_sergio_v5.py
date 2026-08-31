@@ -157,6 +157,14 @@ MODELO_END = pd.Timestamp("2026-07-31").date()   # ultimo dia predicho (D+1)
 # `scripts/construir_matriz_produccion.py`, y solo mientras construye la matriz del dia.
 EXIGIR_TARGET = True
 
+# La base del dataset horario sale del pivot de `spot_price`: solo hay fila donde hay
+# precio. Para predecir manana hace falta la fila de manana, que por definicion no lo
+# tiene. Con esto la base se extiende con los dias de calendario que falten hasta
+# MODELO_END; el resto de bloques entra con `how="left"` y las rellena con lo que si
+# existe -- previsiones de D+1, capacidad disponible y lags de dias anteriores.
+# Por defecto False: el comportamiento de siempre.
+ESPINA_CALENDARIO = False
+
 # ── Inicio efectivo por cobertura de fuentes (23-ago-2026) ─────────────────────────────────
 # El dataset no arranca en DATASET_START si alguna fuente EXIGIDA no llega hasta ahi. Se
 # calcula el primer dia en que TODAS las tablas de esta lista tienen dato y se recorta ahi.
@@ -2260,6 +2268,21 @@ def construir_dataset_horario(incluir_clima: bool = False,
         # ── base: el target, precio de cada (D+1, hora) ────────────────────────────────────
         precio = _largo_horario(conn, "spot_price", ["es_esios"], "precio")
         base = precio.rename(columns={"fecha": "fecha_objetivo", "es_esios": "target_price"})
+
+        if ESPINA_CALENDARIO:
+            # Los dias que faltan hasta MODELO_END, con target a NaN. 24 horas por dia: el
+            # cambio de hora se resuelve mas abajo, donde ya se hace para el resto.
+            ultimo = pd.to_datetime(base["fecha_objetivo"]).max()
+            faltan = pd.date_range(ultimo + pd.Timedelta(days=1),
+                                   pd.Timestamp(MODELO_END), freq="D")
+            if len(faltan):
+                extra = pd.DataFrame({
+                    "fecha_objetivo": np.repeat(faltan.date, 24),
+                    "hora": np.tile(np.arange(24), len(faltan)),
+                    "target_price": np.nan})
+                base = pd.concat([base, extra], ignore_index=True)
+                print(f"[espina] {len(faltan)} dias sin precio anadidos por calendario: "
+                      f"{faltan[0].date()} -> {faltan[-1].date()}")
 
         # ── exogenas horarias que DESCRIBEN D+1 (publicadas antes del cierre) ──────────────
         if DEMANDA_REAL != "ambas":

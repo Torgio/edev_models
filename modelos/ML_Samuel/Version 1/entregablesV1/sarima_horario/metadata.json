@@ -1,0 +1,12 @@
+{
+  "modelo_id": "sarima_horario",
+  "familia": "estadistico",
+  "autor": "Samuel",
+  "libreria": "statsmodels==0.14.6, pmdarima==2.1.1",
+  "python": "3.13",
+  "entrenado_desde": "2020-01-01",
+  "entrenado_hasta": "2024-12-31",
+  "semilla": 42,
+  "features": [],
+  "features_dudosas": []
+}
