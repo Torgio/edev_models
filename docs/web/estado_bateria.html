@@ -137,6 +137,25 @@ tr.sec td{background:var(--secondary);font-weight:600;font-size:8pt;
         <td>Llega un correo por parámetro y se cree</td></tr>
   </table>
 
+  <h3>Lo que corre solo, todos los días</h3>
+  <p style="margin-bottom:8px">Nadie lanza nada a mano. El estudio de batería se apoya en
+     esta cadena, y por eso importa el orden: la curva se construye sobre la matriz, y la
+     matriz sobre lo que trajo la ingesta de madrugada.</p>
+  <table>
+    <tr><th style="width:14%">Hora</th><th style="width:36%">Qué</th><th>Sobre qué se apoya</th></tr>
+    <tr><td class="m">madrugada</td><td>Ingesta</td>
+        <td>Precios, ESIOS, ENTSO-E, MIBGAS, ERA5, tensores ECMWF</td></tr>
+    <tr><td class="m">11:15</td><td>Reconstruir la matriz</td>
+        <td>Lo que trajo la ingesta</td></tr>
+    <tr><td class="m">11:30</td><td>Predicción de D+1</td>
+        <td>La matriz. Doce modelos, incluido el ensemble de once</td></tr>
+    <tr><td class="m">11:45</td><td>Curva a 20 años</td>
+        <td>La misma matriz. 50 escenarios, 178.224 horas</td></tr>
+  </table>
+  <p style="margin-top:8px;font-size:9pt" class="tenue">Si la matriz falla, la curva
+     <b>no</b> se republica: más vale una curva de ayer con su fecha bien puesta que una de
+     hoy construida sobre datos de la semana pasada, que miente y no lo parece.</p>
+
   <div class="nota">
     <b>El resultado de la última pasada.</b> Fábrica de 350 MWh al año con 250 kWp de
     fotovoltaica: la batería de <b>50 kW / 4 h</b> sale con un VAN de <b>+2.544 €</b> y
@@ -353,10 +372,15 @@ tr.sec td{background:var(--secondary);font-weight:600;font-size:8pt;
 
   <h3>Lo que ya está bien</h3>
   <p>Las seis tablas que el usuario alimenta cuelgan de <code>app_user</code> con
-     <code>ON DELETE CASCADE</code>, y los códigos son únicos <b>por usuario</b>: dos
-     personas pueden tener una instalación llamada <code>FABRICA</code> sin pisarse. Las
-     consultas del API ya filtran por <code>user_id</code>. El modelo de datos no hay que
-     tocarlo.</p>
+     <code>ON DELETE CASCADE</code>, y los códigos llevan
+     <code>UNIQUE (user_id, code)</code>: dos personas pueden tener una instalación llamada
+     <code>FABRICA</code> sin pisarse, y volver a subir la misma actualiza la suya en vez de
+     crear una duplicada. Las consultas del API ya filtran por <code>user_id</code>. El
+     modelo de datos no hay que tocarlo.</p>
+
+  <p>Desde la consola, el usuario se identifica con una variable de entorno, y si no existe
+     se crea la primera vez:</p>
+  <div class="orden"><span class="sh">$</span> export TFM_EMAIL=tu@correo.es</div>
 
   <h3>Lo que falta, y es un agujero</h3>
   <p>El usuario llega en un parámetro <code>email</code> y el servidor <b>se lo cree</b>.
