@@ -1410,3 +1410,58 @@ un escenario futuro). Para el cálculo de "vida" hace falta además lo que qued�
 simulador. Es una pieza grande que toca tres cosas a la vez (curva a futuro + optimización de
 despacho + degradación), así que antes de construirla conviene acotar el alcance con el equipo en
 vez de improvisarlo.
+
+## 41. Actualización de `main`: nuestro modelo ya está integrado, y es el mejor de los siete — con un bug de checkout que lo escondía
+
+Al traer los últimos cambios de `main` (hotfix de SARIMA, manejo de los dos días del cambio de
+hora, reselección de representantes tras reentrenar con ECMWF) aparecieron dos scripts nuevos de
+despliegue: `scripts/desplegar_modelos.py` (copia a `production/models` el representante de cada
+familia de redes, por MAE de validación, vaciando la carpeta antes para que no quede un modelo
+viejo con nombre nuevo) y `scripts/modelos_equipo.py` — este último carga los modelos de
+compañeros con el mismo contrato que usa el ensemble del equipo (`predecir(T, m)`).
+
+**Buena noticia, verificada, no solo anunciada**: `scripts/modelos_equipo.py` ya carga nuestro
+`lgbm_nucleo` (el export nativo que hicimos para poder subirlo sin pasar por Keras) y lo evalúa
+junto a los seis modelos de Magdalena. Corriendo `--evaluar` sobre los 365 días de validación,
+**nuestro modelo queda primero de los siete**:
+
+| Modelo | Autor | MAE |
+|---|---|---|
+| **lgbm_nucleo__s0** | **Willy** | **12,917** |
+| xgboost__s2 | Magdalena | 13,024 |
+| lightgbm__s1 | Magdalena | 13,048 |
+| lightgbm__s0 | Magdalena | 13,150 |
+| lightgbm__s2 | Magdalena | 13,192 |
+| xgboost__s0 | Magdalena | 13,301 |
+| xgboost__s1 | Magdalena | 13,343 |
+| naive (precio de D) | — | 19,946 |
+
+**Pero al primer intento `--evaluar` no arrancaba** — LightGBM abortaba el proceso entero con
+"Model format error, expect a tree here", sin traza útil. Causa: el equipo ya había diagnosticado
+y documentado este mismo problema en `.gitattributes` (fechado ayer) — los `.txt` de LightGBM se
+guardan en su formato de texto nativo, y con `core.autocrlf=true` (el valor por defecto de git en
+Windows) un `checkout` les mete `CRLF`, que el parser de LightGBM no tolera. La regla `-text` ya
+cubre `modelos/**/*.txt`, pero **solo protege checkouts nuevos** — los archivos que ya estaban en
+disco de antes (nuestro propio `modelo.txt`, y los tres `.txt` de Magdalena) seguían con el `CRLF`
+viejo. Corregido localmente quitando los `\r` sueltos y verificado con `git diff`/`git hash-object`
+que el contenido coincide exactamente con lo que hay en git — no hizo falta commitear nada, era
+puramente un artefacto del checkout, no un problema del repositorio. Vale la pena que el equipo
+sepa que esto le puede pasar a cualquiera en Windows: si un `.txt` de modelo "no carga" sin motivo
+aparente, mirar primero si tiene `CRLF` (`file archivo.txt`) antes de sospechar del modelo.
+
+## 42. Otro hueco real en el asistente: "los precios de hoy por hora" tampoco se podía responder
+
+Mismo patrón que la nota 40 (la lista de horas negativas): no era el modelo de lenguaje
+"negándose" a algo que sabía, era que la herramienta de consulta tenía un bug que la dejaba sin
+datos que devolver. Encontrado: la función que trae precio real entre dos fechas construía la
+consulta SQL con `BETWEEN fecha_desde AND fecha_hasta`, y en Postgres una fecha sin hora se
+interpreta como su medianoche — así que el día `hasta` casi entero quedaba fuera del rango (y
+preguntar por un solo día, `desde == hasta`, devolvía prácticamente 0 filas). Confirmado con una
+prueba directa: pedir 5 días completos devolvía 97 horas de las 120 esperadas. Corregido en las
+tres consultas que compartían el mismo patrón, usando "el día `hasta` completo" como límite en vez
+de su medianoche.
+
+Además, no existía ninguna herramienta que devolviera el precio hora a hora **sin resumir** — solo
+había percentiles (para patrones históricos) y una lista de horas negativas (solo esas). Se añadió
+`precio_tabla_horaria`, y ya se probó con la pregunta exacta que falló en la demo ("una tabla con
+los precios de hoy por hora"): responde con la tabla completa del día y un resumen correcto.

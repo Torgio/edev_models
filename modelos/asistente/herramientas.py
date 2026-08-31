@@ -97,19 +97,65 @@ def precio_historico_percentiles(hora: int | None = None, mes: int | None = None
 
 
 def precio_historico_serie(desde: str, hasta: str) -> pd.DataFrame:
-    """Serie horaria de precio REAL entre dos fechas (inclusive). Para backtests y graficas --
-    no para fechas futuras (usar prediccion_d_mas_1 para eso, solo cubre mañana)."""
+    """Serie horaria de precio REAL entre dos fechas (ambas inclusive, dia natural completo en
+    hora de Madrid). Para backtests y graficas -- no para fechas futuras (usar prediccion_d_mas_1
+    para eso, solo cubre mañana).
+
+    BUG ENCONTRADO Y CORREGIDO (31-ago-2026): un `BETWEEN %(desde)s AND %(hasta)s` sobre fechas
+    sin hora compara contra la MEDIANOCHE de `hasta`, no contra el final de ese dia -- asi que el
+    dia `hasta` completo se perdia (y una consulta de un solo dia, `desde == hasta`, devolvia
+    practicamente 0 filas). Se detecto porque una pregunta tan simple como "la tabla de precios
+    de HOY" no se podia responder aunque el dato SI estuviera en la base. Corregido con un limite
+    superior explicito de "hasta + 1 dia", en hora de Madrid (no UTC, para que "hoy" signifique
+    el dia natural peninsular, igual que el resto de herramientas de este modulo)."""
     conn = _conectar()
     try:
         df = pd.read_sql(
             "SELECT datetime, es_esios AS precio FROM spot_price "
-            "WHERE datetime BETWEEN %(desde)s AND %(hasta)s ORDER BY datetime",
+            "WHERE datetime >= (%(desde)s::date)::timestamp AT TIME ZONE 'Europe/Madrid' "
+            "AND datetime < (%(hasta)s::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Europe/Madrid' "
+            "ORDER BY datetime",
             conn, params={"desde": desde, "hasta": hasta},
         )
     finally:
         conn.close()
     df["datetime"] = pd.to_datetime(df["datetime"], utc=True)
     return df
+
+
+def precio_tabla_horaria(desde: str, hasta: str) -> dict:
+    """Tabla de precio REAL, hora a hora, sin resumir -- para cuando piden VER los precios en
+    crudo ("los precios de hoy por hora", "la evolucion de esta semana", "el precio de ayer"),
+    en vez de un resumen estadistico. Es el hueco que faltaba: antes de esta funcion, una
+    pregunta tan simple como "una tabla con los precios de hoy" no se podia responder aunque el
+    dato SI estuviera en la base -- solo existian herramientas de resumen (percentiles) o de
+    filtro (solo negativas), ninguna que devolviera el detalle completo de un rango corto.
+
+    No es para fechas futuras -- la unica prediccion real es `prediccion_d_mas_1` (mañana). Si
+    el rango pedido incluye hoy o el futuro, esta funcion solo trae las horas YA publicadas.
+
+    Args:
+        desde: Fecha de inicio, YYYY-MM-DD (dia natural completo en hora de Madrid).
+        hasta: Fecha de fin, YYYY-MM-DD (inclusive). Para "hoy", usa la misma fecha en desde y
+            hasta.
+    """
+    df = precio_historico_serie(desde, hasta)
+    if df.empty:
+        return {"error": f"No hay precio real publicado todavia entre {desde} y {hasta}."}
+    if len(df) > 500:
+        return {"error": f"El rango pedido tiene {len(df)} horas -- demasiadas para tabular en "
+                          f"detalle (limite 500, unas 3 semanas). Usa un rango mas corto, o "
+                          f"precio_historico_percentiles para un resumen de un periodo largo."}
+
+    local = df["datetime"].dt.tz_convert("Europe/Madrid")
+    filas = [{"dia": str(t.date()), "hora": int(t.hour), "precio_eur_mwh": round(float(p), 2)}
+             for t, p in zip(local, df["precio"])]
+    return {
+        "etiqueta": "REFERENCIA HISTORICA (precio real ya ocurrido, no es una prediccion)",
+        "desde": desde, "hasta": hasta,
+        "horas_devueltas": len(filas),
+        "horas": filas,
+    }
 
 
 def precio_negativos(anio: int | None = None) -> dict:
@@ -324,13 +370,18 @@ def simular_autoconsumo_solar(potencia_solar_kwp: float, potencia_bateria_mw: fl
     """
     conn = _conectar()
     try:
+        # mismo bug de limite superior que precio_historico_serie (ver su docstring) -- corregido
+        # igual aqui: "hasta" incluye el dia entero, no solo su medianoche.
         df_precio = pd.read_sql(
             "SELECT datetime, es_esios AS precio FROM spot_price "
-            "WHERE datetime BETWEEN %(desde)s AND %(hasta)s ORDER BY datetime",
+            "WHERE datetime >= (%(desde)s::date)::timestamp AT TIME ZONE 'Europe/Madrid' "
+            "AND datetime < (%(hasta)s::date + INTERVAL '1 day')::timestamp AT TIME ZONE 'Europe/Madrid' "
+            "ORDER BY datetime",
             conn, params={"desde": desde, "hasta": hasta})
         df_sol = pd.read_sql(
             "SELECT ts, ssrd_mean FROM era5_weather_agg "
-            "WHERE ts BETWEEN %(desde)s AND %(hasta)s ORDER BY ts",
+            "WHERE ts >= %(desde)s::date AND ts < (%(hasta)s::date + INTERVAL '1 day') "
+            "ORDER BY ts",
             conn, params={"desde": desde, "hasta": hasta})
     finally:
         conn.close()

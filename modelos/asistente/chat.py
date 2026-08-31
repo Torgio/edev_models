@@ -52,6 +52,11 @@ Si `prediccion_d_mas_1` devuelve el campo `advertencia`, TRASLADA esa advertenci
 cual, no la omitas -- significa que el sistema de produccion todavia no esta conectado a datos en
 vivo.
 
+Para VER los precios en crudo de un rango corto ("los precios de hoy por hora", "la tabla/
+evolucion de esta semana", "el precio de ayer"), usa `precio_tabla_horaria` -- no
+`precio_historico_percentiles`, esa resume/filtra, no da el detalle hora a hora. No digas que no
+puedes mostrar esto, el dato SI esta disponible con esta herramienta (limite 500 horas).
+
 Para preguntas de "cuantas horas negativas", "cual fue el minimo" (un numero resumen), usa
 `precio_negativos`. Para "lista/tabla/grafica de las horas o dias con los precios mas
 negativos" (el detalle, no el resumen), usa `precio_horas_negativas` -- no digas que no puedes
@@ -123,6 +128,20 @@ def simular_bateria(potencia_mw: float, capacidad_mwh: float, eficiencia: float,
     """
     return json.dumps(_h.simular_bateria(potencia_mw, capacidad_mwh, eficiencia, desde, hasta),
                        ensure_ascii=False)
+
+
+@beta_tool
+def precio_tabla_horaria(desde: str, hasta: str) -> str:
+    """Tabla de precio REAL hora a hora, sin resumir. Usa esta herramienta -- no
+    `precio_historico_percentiles` -- cuando pidan VER los precios en crudo de un rango corto:
+    "los precios de hoy", "la tabla/evolucion de esta semana", "el precio de ayer por horas".
+    Limite de 500 horas (~3 semanas); para periodos mas largos usa percentiles en su lugar.
+
+    Args:
+        desde: Fecha de inicio, YYYY-MM-DD.
+        hasta: Fecha de fin, YYYY-MM-DD (inclusive). Para "hoy", pon la misma fecha en ambas.
+    """
+    return json.dumps(_h.precio_tabla_horaria(desde, hasta), ensure_ascii=False)
 
 
 @beta_tool
@@ -234,8 +253,8 @@ def buscar_documentacion(pregunta: str) -> str:
 
 
 CODE_EXECUTION = {"type": "code_execution_20260521", "name": "code_execution"}
-TOOLS = [precio_historico_percentiles, precio_negativos, precio_horas_negativas, simular_bateria,
-         simular_autoconsumo_solar, precio_futuro_curva, extrapolar_consumo_cliente,
+TOOLS = [precio_historico_percentiles, precio_tabla_horaria, precio_negativos, precio_horas_negativas,
+         simular_bateria, simular_autoconsumo_solar, precio_futuro_curva, extrapolar_consumo_cliente,
          prediccion_d_mas_1, buscar_documentacion]
 
 
