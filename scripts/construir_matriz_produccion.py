@@ -28,6 +28,8 @@ reindexa al catalogo exacto de `matriz_nucleo`, en su orden, y si falta alguna s
 """
 from __future__ import annotations
 
+from contextlib import closing
+
 import argparse
 import hashlib
 import json
@@ -80,7 +82,8 @@ def _ultimo_con_precio(verbose=True) -> date:
     from config import load_config
     import psycopg2
     _, db = load_config()
-    with psycopg2.connect(**db) as con, con.cursor() as cur:
+    # `with connect(...)` no cierra: solo cierra la transaccion. Ver curva_precios.
+    with closing(psycopg2.connect(**db)) as con, con.cursor() as cur:
         cur.execute("SELECT MAX(datetime)::date FROM spot_price WHERE es_esios IS NOT NULL")
         d = cur.fetchone()[0]
     if verbose:
