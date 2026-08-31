@@ -324,8 +324,20 @@ def _t_percentiles(ctx):
     if fila is None:
         raise AssertionError("no hay ninguna curva registrada en app_curve")
     gen_db, n_db = fila
-    desfase = abs((pd.Timestamp(gen_db).tz_localize(None)
-                   - pd.Timestamp(meta["generado"]).tz_localize(None)).total_seconds())
+
+    def _utc(x):
+        """A UTC de verdad, venga con zona o sin ella.
+
+        `tz_localize(None)` DESCARTA la zona en vez de convertirla, y aqui las dos fechas
+        vienen en zonas distintas: el `meta.json` guarda UTC y Postgres devuelve la sesion
+        en hora de Madrid. Comparandolas asi salian dos horas de diferencia en verano --
+        el mismo instante, contado dos veces-- y la comprobacion avisaba de que eran
+        publicaciones distintas cuando era exactamente la misma.
+        """
+        t = pd.Timestamp(x)
+        return t.tz_convert("UTC") if t.tzinfo else t.tz_localize("UTC")
+
+    desfase = abs((_utc(gen_db) - _utc(meta["generado"])).total_seconds())
     if desfase > 60:
         raise Aviso(f"el .npy de aqui es de {meta['generado'][:16]} con {len(sims)} "
                     f"escenarios y la curva publicada es de "
