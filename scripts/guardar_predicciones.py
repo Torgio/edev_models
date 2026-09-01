@@ -158,7 +158,7 @@ def backfill(con, matrix="nucleo"):
         print(f"{fuera} descartadas por caer en el hueco del cambio de hora de marzo")
 
 
-def produccion(con, desde, hasta, matriz="produccion", verbose=True):
+def produccion(con, desde, hasta, matriz="produccion", verbose=True, equipo=False):
     """Predice con los modelos ya guardados y lo registra como `source='production'`.
 
     Una sola pasada: se cargan los 8 miembros una vez, se predice el rango entero y el
@@ -170,13 +170,16 @@ def produccion(con, desde, hasta, matriz="produccion", verbose=True):
     simplemente los que han pasado.
     """
     from predecir import cargar
-    p = cargar("ensemble", matriz)
+    # Con `equipo` entran ademas los arboles de Magdalena y Willy. La media de los 11 se
+    # guarda como `ensemble11`, NO como `ensemble`: esa serie ya esta grabada, es la de
+    # las 8 familias y es la que cita la memoria. Pisarla cambiaria el pasado.
+    p = cargar("ensemble_equipo" if equipo else "ensemble", matriz)
     if verbose:
         print(f"{p}\n")
 
     det = p.predecir(desde=desde, hasta=hasta, tramo="todo", detalle=True)
     nombre = {str(m): m.familia for m in p.miembros}
-    semilla = {str(m): m.semilla for m in p.miembros}
+    semilla = {str(m): getattr(m, "semilla_real", m.semilla) for m in p.miembros}
 
     hash_m = p.tensores().meta.get("hash")
 
@@ -191,10 +194,11 @@ def produccion(con, desde, hasta, matriz="produccion", verbose=True):
     media = sum(d.values for d in det.values()) / len(det)
     ens = pd.DataFrame(media, index=next(iter(det.values())).index,
                        columns=next(iter(det.values())).columns)
-    filas = _filas_de_frame(ens, "ensemble", None, matriz, hash_m, "production")
+    etiqueta = "ensemble11" if equipo else "ensemble"
+    filas = _filas_de_frame(ens, etiqueta, None, matriz, hash_m, "production")
     total += insertar(con, filas)
     if verbose:
-        print(f"  {'ensemble':18s} {len(filas):5,} filas")
+        print(f"  {etiqueta:18s} {len(filas):5,} filas")
         print(f"\n{total:,} filas de produccion insertadas o actualizadas")
 
 
@@ -250,6 +254,9 @@ def main():
     ap.add_argument("--desde", help="primer dia objetivo (con --produccion)")
     ap.add_argument("--hasta", help="ultimo dia objetivo (con --produccion)")
     ap.add_argument("--matriz", default="nucleo")
+    ap.add_argument("--equipo", action="store_true",
+                    help="anade los arboles de Magdalena y Willy; la media de "
+                         "los 11 se guarda como 'ensemble11'")
     a = ap.parse_args()
 
     con = conexion()
@@ -266,7 +273,8 @@ def main():
                 cur.execute(DDL)
             con.commit()
             produccion(con, a.desde, a.hasta,
-                       matriz="produccion" if a.matriz == "nucleo" else a.matriz)
+                       matriz="produccion" if a.matriz == "nucleo" else a.matriz,
+                       equipo=a.equipo)
         if a.resumen or not (a.crear_tabla or a.backfill or a.produccion):
             resumen(con)
     finally:

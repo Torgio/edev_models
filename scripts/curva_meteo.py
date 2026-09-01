@@ -30,6 +30,8 @@ años extremos esta infra-muestreada y la banda sale mas estrecha de lo que debe
 """
 from __future__ import annotations
 
+from contextlib import closing
+
 import sys
 from pathlib import Path
 
@@ -46,7 +48,11 @@ VARS = ["ssrd_mean", "wind100_mean", "t2m_mean", "tcc_mean"]
 def meteo_diaria() -> pd.DataFrame:
     """Meteo agregada por dia, cosiendo ERA5 con la prevision ECMWF donde ERA5 no llega."""
     from curva_precios import _con
-    with _con() as con:
+    # `with psycopg2.connect(...)` NO cierra la conexion: en psycopg2 el `with` hace commit o
+    # rollback de la TRANSACCION y deja el socket abierto. Cada llamada a estas funciones filtraba
+    # una conexion, y como el notebook las llama decenas de veces por ejecucion, el servidor acabo
+    # devolviendo "sorry, too many clients already". `closing` si cierra.
+    with closing(_con()) as con:
         e = pd.read_sql(f"SELECT ts, {', '.join(VARS)} FROM era5_weather_agg ORDER BY ts", con)
         f = pd.read_sql(f"SELECT ts, {', '.join(VARS)} FROM ecmwf_forecast_agg ORDER BY ts", con)
     for d in (e, f):
@@ -61,7 +67,7 @@ def meteo_diaria() -> pd.DataFrame:
 def capacidad_diaria() -> pd.DataFrame:
     """GW de solar y eolica instalados, por dia."""
     from curva_precios import _con
-    with _con() as con:
+    with closing(_con()) as con:
         c = pd.read_sql("""SELECT date, solar_pv_mw, COALESCE(autoconsume_solar_pv_mw,0) auto,
                                   wind_mw FROM esios_capacity_installed ORDER BY date""", con)
     c["dia"] = pd.to_datetime(c.date)
@@ -75,7 +81,7 @@ def capacidad_diaria() -> pd.DataFrame:
 def gas_diario() -> pd.Series:
     """Cotizacion diaria del gas MIBGAS, que es quien pone el coste marginal de la tarde."""
     from curva_precios import _con
-    with _con() as con:
+    with closing(_con()) as con:
         g = pd.read_sql("SELECT fecha, gas_mibgas FROM commodities ORDER BY fecha", con)
     return pd.Series(g.gas_mibgas.to_numpy(), index=pd.to_datetime(g.fecha),
                      name="gas").dropna()

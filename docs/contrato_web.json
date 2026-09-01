@@ -1,0 +1,580 @@
+{
+  "generado": "2026-08-31",
+  "curva": {
+    "publicada": "2026-08-31 22:55:52+02:00",
+    "desde": "2026-09-02",
+    "hasta": "2046-12-31",
+    "escenarios": 10,
+    "motor": "fundamental",
+    "nota": "UNA sola curva, se pisa cada dia a las 11:45. El usuario no la elige."
+  },
+  "pantallas": {
+    "bateria": [
+      {
+        "campo": "code",
+        "control": "texto",
+        "destino": "app_battery_model.code",
+        "nota": "identificador corto, unico por usuario"
+      },
+      {
+        "campo": "name",
+        "control": "texto",
+        "destino": "app_battery_model.name"
+      },
+      {
+        "campo": "potencia",
+        "control": "numero",
+        "destino": "app_battery_model.power_mw",
+        "ui": "kW",
+        "factor": 0.001,
+        "rango": [
+          5,
+          100000
+        ],
+        "nota": "la NOMINAL del inversor; todo lo demas va en % de ella"
+      },
+      {
+        "campo": "duracion",
+        "control": "selector",
+        "destino": "app_battery_model.duration_h",
+        "defecto": 4,
+        "ui": "h",
+        "opciones": [
+          1,
+          2,
+          4,
+          6,
+          8
+        ],
+        "nota": "energia = potencia x duracion; 4 h es el estandar de mercado"
+      },
+      {
+        "campo": "carga_max",
+        "control": "numero",
+        "destino": "app_battery_model.charge_max_pct",
+        "obligatorio": false,
+        "defecto": 100,
+        "ui": "% de la nominal",
+        "rango": [
+          10,
+          100
+        ],
+        "nota": "muchos equipos cargan mas despacio de lo que descargan"
+      },
+      {
+        "campo": "descarga_max",
+        "control": "numero",
+        "destino": "app_battery_model.discharge_max_pct",
+        "obligatorio": false,
+        "defecto": 100,
+        "ui": "% de la nominal",
+        "rango": [
+          10,
+          100
+        ]
+      },
+      {
+        "campo": "potencia_minima",
+        "control": "numero",
+        "destino": "app_battery_model.power_min_pct",
+        "obligatorio": false,
+        "defecto": 0,
+        "ui": "% de la nominal",
+        "rango": [
+          0,
+          50
+        ],
+        "nota": "AVISAR: por encima de 0 el problema pasa de LP a MILP y tarda 20-40x"
+      },
+      {
+        "campo": "eficiencia",
+        "control": "numero",
+        "destino": "app_battery_model.efficiency_rt",
+        "obligatorio": false,
+        "defecto": 0.9,
+        "ui": "ida y vuelta, 0-1",
+        "rango": [
+          0.7,
+          0.99
+        ],
+        "nota": "se reparte en dos raices: una al cargar y otra al descargar"
+      },
+      {
+        "campo": "soc_min",
+        "control": "numero",
+        "destino": "app_battery_model.soc_min",
+        "obligatorio": false,
+        "defecto": 0.05,
+        "rango": [
+          0.0,
+          0.3
+        ]
+      },
+      {
+        "campo": "soc_max",
+        "control": "numero",
+        "destino": "app_battery_model.soc_max",
+        "obligatorio": false,
+        "defecto": 0.95,
+        "rango": [
+          0.7,
+          1.0
+        ]
+      },
+      {
+        "campo": "ciclos_vida",
+        "control": "numero",
+        "destino": "app_battery_model.cycle_life",
+        "obligatorio": false,
+        "defecto": 6000,
+        "rango": [
+          1000,
+          15000
+        ],
+        "nota": "a la profundidad de descarga nominal"
+      },
+      {
+        "campo": "degradacion_1000",
+        "control": "numero",
+        "destino": "app_battery_model.degradation_per_1000",
+        "obligatorio": false,
+        "defecto": 3.0,
+        "ui": "% cada 1000 ciclos",
+        "rango": [
+          1.0,
+          6.0
+        ]
+      },
+      {
+        "campo": "degradacion_anual",
+        "control": "numero",
+        "destino": "app_battery_model.degradation_annual",
+        "obligatorio": false,
+        "defecto": 1.5,
+        "ui": "% al año",
+        "rango": [
+          0.0,
+          5.0
+        ]
+      },
+      {
+        "campo": "capex",
+        "control": "numero",
+        "destino": "app_battery_model.capex_eur_mwh",
+        "obligatorio": false,
+        "defecto": 200000,
+        "ui": "EUR por MWh instalado",
+        "rango": [
+          50000,
+          600000
+        ],
+        "nota": "ES POR MWh, no total: una de 0,4 MWh son 80.000 EUR"
+      }
+    ],
+    "consumo": [
+      {
+        "campo": "code",
+        "control": "texto",
+        "destino": "app_consump_inst.code"
+      },
+      {
+        "campo": "name",
+        "control": "texto",
+        "destino": "app_consump_inst.name"
+      },
+      {
+        "campo": "fichero",
+        "control": "fichero",
+        "destino": "app_consump_shape (24 h/dia)",
+        "nota": "Excel o CSV horario; formatos y trampas en la seccion 3"
+      },
+      {
+        "campo": "consumo_anual",
+        "control": "numero",
+        "destino": "app_consump_inst.annual_mwh",
+        "ui": "MWh/año",
+        "rango": [
+          1,
+          500000
+        ],
+        "nota": "el fichero da la FORMA y este numero el TAMAÑO; se pueden separar"
+      },
+      {
+        "campo": "crecimiento",
+        "control": "numero",
+        "destino": "app_consump_inst.growth_pct",
+        "obligatorio": false,
+        "ui": "% al año",
+        "rango": [
+          -5.0,
+          10.0
+        ]
+      },
+      {
+        "campo": "recargo",
+        "control": "numero",
+        "destino": "app_consump_inst.tariff_markup_eur_mwh",
+        "obligatorio": false,
+        "defecto": 70,
+        "ui": "EUR/MWh",
+        "rango": [
+          0,
+          300
+        ],
+        "nota": "peajes y cargos que se suman al spot AL IMPORTAR; manda mucho en el resultado"
+      },
+      {
+        "campo": "precio_excedente",
+        "control": "numero",
+        "destino": "app_consump_inst.export_price_pct",
+        "obligatorio": false,
+        "defecto": 80,
+        "ui": "% del spot",
+        "rango": [
+          0,
+          100
+        ],
+        "nota": "lo que se cobra por lo vertido"
+      },
+      {
+        "campo": "potencia_contratada",
+        "control": "numero",
+        "destino": "app_consump_inst.contracted_power_mw",
+        "obligatorio": false,
+        "ui": "kW",
+        "factor": 0.001,
+        "nota": "opcional: tope de importacion. Vacio = sin tope"
+      }
+    ],
+    "generacion": [
+      {
+        "campo": "code",
+        "control": "texto",
+        "destino": "app_gen_inst.code",
+        "obligatorio": false
+      },
+      {
+        "campo": "name",
+        "control": "texto",
+        "destino": "app_gen_inst.name",
+        "obligatorio": false
+      },
+      {
+        "campo": "fichero",
+        "control": "fichero",
+        "destino": "app_gen_shape (24 h/dia)",
+        "obligatorio": false,
+        "nota": "opcional: sin el se usa un perfil FV sintetico de la latitud"
+      },
+      {
+        "campo": "tecnologia",
+        "control": "selector",
+        "destino": "app_gen_inst.technology",
+        "obligatorio": false,
+        "defecto": "fv",
+        "opciones": [
+          "fv",
+          "eolica",
+          "otra"
+        ]
+      },
+      {
+        "campo": "potencia_pico",
+        "control": "numero",
+        "destino": "app_gen_inst.capacity_mwp",
+        "obligatorio": false,
+        "ui": "kWp",
+        "factor": 0.001,
+        "rango": [
+          1,
+          500000
+        ]
+      },
+      {
+        "campo": "degradacion",
+        "control": "numero",
+        "destino": "app_gen_inst.degradation_pct",
+        "obligatorio": false,
+        "defecto": 0.5,
+        "ui": "% al año",
+        "rango": [
+          0.0,
+          3.0
+        ]
+      },
+      {
+        "campo": "limite_vertido",
+        "control": "numero",
+        "destino": "app_gen_inst.export_limit_mw",
+        "obligatorio": false,
+        "ui": "kW",
+        "factor": 0.001,
+        "nota": "opcional: tope de exportacion. Vacio = sin tope"
+      }
+    ],
+    "caso": [
+      {
+        "campo": "code",
+        "control": "texto",
+        "destino": "app_study_case.code"
+      },
+      {
+        "campo": "name",
+        "control": "texto",
+        "destino": "app_study_case.name"
+      },
+      {
+        "campo": "modo",
+        "control": "selector",
+        "destino": "app_study_case.mode",
+        "defecto": "autoconsumo",
+        "opciones": [
+          "standalone",
+          "autoconsumo"
+        ],
+        "nota": "standalone = solo bateria contra el mercado; autoconsumo = con consumo y/o FV"
+      },
+      {
+        "campo": "bateria",
+        "control": "selector",
+        "destino": "app_study_case.battery_id",
+        "nota": "de las fichas que el usuario ya tiene guardadas"
+      },
+      {
+        "campo": "consumo",
+        "control": "selector",
+        "destino": "app_study_case.consump_id",
+        "obligatorio": false,
+        "nota": "obligatorio si el modo es autoconsumo"
+      },
+      {
+        "campo": "generacion",
+        "control": "selector",
+        "destino": "app_study_case.gen_id",
+        "obligatorio": false
+      },
+      {
+        "campo": "desde",
+        "control": "fecha",
+        "destino": "app_study_case.date_from",
+        "nota": "PUEDE estar en el pasado: asi se contrasta el motor contra lo que paso"
+      },
+      {
+        "campo": "hasta",
+        "control": "fecha",
+        "destino": "app_study_case.date_to"
+      },
+      {
+        "campo": "politica_carga",
+        "control": "selector",
+        "destino": "app_study_case.charge_policy",
+        "obligatorio": false,
+        "defecto": "libre",
+        "opciones": [
+          "libre",
+          "prefiere_excedente",
+          "solo_excedente"
+        ],
+        "nota": "'solo_excedente' impide cargar de red -- es una cota dura, no una preferencia"
+      },
+      {
+        "campo": "ventana",
+        "control": "selector",
+        "destino": "app_study_case.window_days",
+        "obligatorio": false,
+        "defecto": 7,
+        "ui": "dias",
+        "opciones": [
+          1,
+          3,
+          7,
+          14,
+          30
+        ],
+        "nota": "cada cuanto vuelve el estado de carga al minimo; 1 = sin memoria entre dias"
+      },
+      {
+        "campo": "coste_ciclo",
+        "control": "numero",
+        "destino": "app_study_case.cycle_cost_eur_mwh",
+        "obligatorio": false,
+        "ui": "EUR/MWh descargado",
+        "nota": "vacio = se calcula de la ficha de la bateria. Ver seccion 6"
+      },
+      {
+        "campo": "tasa_descuento",
+        "control": "numero",
+        "destino": "app_study_case.discount_rate",
+        "obligatorio": false,
+        "defecto": 0.07,
+        "rango": [
+          0.0,
+          0.25
+        ]
+      },
+      {
+        "campo": "opex",
+        "control": "numero",
+        "destino": "app_study_case.opex_pct",
+        "obligatorio": false,
+        "defecto": 0.015,
+        "ui": "% del CAPEX al año",
+        "rango": [
+          0.0,
+          0.1
+        ]
+      },
+      {
+        "campo": "escenarios",
+        "control": "selector",
+        "destino": "app_case_run.n_scenarios",
+        "obligatorio": false,
+        "defecto": 20,
+        "ui": "escenarios",
+        "opciones": [
+          5,
+          10,
+          20,
+          50
+        ],
+        "nota": "mas escenarios = banda mas fina y mas tiempo; el coste es lineal"
+      }
+    ]
+  },
+  "formatos_de_fichero": [
+    "ancho: fecha + H1..H24 (o H25 en octubre)",
+    "largo: fecha + hora + valor",
+    "largo: una columna de fecha-hora + valor"
+  ],
+  "respuesta": {
+    "resumen": [
+      [
+        "margin_annual_mean",
+        "EUR/año por MW instalado",
+        "app_case_run",
+        "el margen anualizado; comparable entre baterias de distinto tamaño"
+      ],
+      [
+        "savings_vs_no_batt",
+        "EUR",
+        "app_case_run",
+        "SOLO autoconsumo: la factura sin bateria menos la factura con bateria"
+      ],
+      [
+        "cycles_per_day",
+        "ciclos/dia",
+        "app_case_run",
+        "cuanto trabaja de verdad. Por debajo de 0,5 esta sobredimensionada"
+      ],
+      [
+        "life_years",
+        "años",
+        "app_case_run",
+        "vida por ciclos, no por calendario: ciclos_vida / (ciclos_dia x 365)"
+      ],
+      [
+        "npv_p50",
+        "EUR",
+        "app_case_run",
+        "el VAN mediano de los N escenarios"
+      ],
+      [
+        "npv_p10 / npv_p90",
+        "EUR",
+        "app_case_run",
+        "la banda: el peor y el mejor decil"
+      ],
+      [
+        "npv_positive_pct",
+        "%",
+        "app_case_run",
+        "en que fraccion de escenarios el VAN es positivo. ES EL NUMERO QUE IMPORTA"
+      ],
+      [
+        "capex_coverage_pct",
+        "%",
+        "app_case_run",
+        "cuanto del CAPEX cubre el margen bruto de toda la vida"
+      ],
+      [
+        "solver / solver_seconds",
+        "",
+        "app_case_run",
+        "'highs-lp' o 'highs-milp', y lo que tardo"
+      ],
+      [
+        "curve_generated_at",
+        "fecha",
+        "app_case_run",
+        "con que curva se calculo. La curva se pisa: esto es la foto"
+      ]
+    ],
+    "por_año": [
+      [
+        "year, origin, days",
+        "",
+        "historico | modelo | simulado"
+      ],
+      [
+        "margin_mean, margin_p10/p50/p90",
+        "EUR",
+        "el margen del año y su banda"
+      ],
+      [
+        "cycles_per_day",
+        "",
+        "como evoluciona el uso"
+      ],
+      [
+        "energy_charged_mwh / energy_discharged_mwh",
+        "MWh",
+        "energia movida"
+      ],
+      [
+        "grid_import_mwh / grid_export_mwh",
+        "MWh",
+        "intercambio con la red"
+      ]
+    ],
+    "hora_a_hora": [
+      [
+        "datetime, scenario",
+        "",
+        "SIN zona horaria: rejilla nominal de 24 h/dia"
+      ],
+      [
+        "price",
+        "EUR/MWh",
+        "el precio que vio el optimizador esa hora"
+      ],
+      [
+        "charge_mw / discharge_mw",
+        "MW",
+        "el despacho"
+      ],
+      [
+        "soc_mwh",
+        "MWh",
+        "el estado de carga"
+      ],
+      [
+        "grid_import_mwh / grid_export_mwh",
+        "MWh",
+        ""
+      ],
+      [
+        "load_mwh / generation_mwh",
+        "MWh",
+        "consumo y generacion de esa hora"
+      ]
+    ]
+  },
+  "reglas": [
+    "la potencia se enseña en kW y se guarda en MW (factor 0,001)",
+    "el CAPEX es por MWh INSTALADO, no total",
+    "potencia_minima > 0 convierte el problema en MILP: 20-40x mas lento",
+    "modo 'autoconsumo' exige consumo o generacion; 'standalone' no admite ninguno",
+    "si el encabezado del fichero no dice la unidad, hay que preguntarla",
+    "el numero que va grande es npv_positive_pct, no npv_p50"
+  ]
+}

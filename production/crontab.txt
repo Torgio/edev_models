@@ -1,0 +1,86 @@
+# =====================================================================================
+#  Cron de produccion · TFM Energia UCM
+#
+#  Esto NO es el crontab entero: son las lineas que hay que AÑADIR o CORREGIR sobre el que
+#  ya esta instalado. Las de ingesta (spot, ESIOS, ENTSO-E, MIBGAS, ERA5, tensores...) ya
+#  estan puestas y no se tocan.
+#
+#      crontab -e        pegar
+#      crontab -l        comprobar
+#      tail -f /home/ubuntu/scripts/logs/cron_curva.log
+# =====================================================================================
+
+
+# ── AÑADIR · 11:45 · republicar la curva de 20 años ─────────────────────────────────
+#
+# La cadena de la mañana queda asi:
+#
+#     11:15  construir_matriz_produccion    reconstruye la matriz desde la base
+#     11:30  guardar_predicciones           la prediccion de D+1
+#     11:45  cron_diario --solo-curva       la curva de 20 años
+#
+# `--solo-curva` porque la matriz de las 11:15 ya esta fresca: reconstruirla otra vez seria
+# tirar 45 segundos. Y a las 11:45 para no solapar con la prediccion, que carga once modelos
+# y no conviene que compitan por la CPU.
+#
+# Tarda unos 20 segundos. Publica el `.npy` con los 50 escenarios y reescribe `app_curve` y
+# las 178.224 filas de `app_curve_hourly` -- UNA sola curva, se pisa la anterior.
+#
+45 11 * * * cd /home/ubuntu/scripts && /home/ubuntu/tfm-env/bin/python -u production/curva/cron_diario.py --solo-curva --escenarios 50 >> /home/ubuntu/scripts/logs/cron_curva.log 2>&1
+
+
+# ── CORREGIR · 11:30 · a la prediccion le falta --equipo ────────────────────────────
+#
+# Sin esa bandera solo se guardan nuestros ocho modelos. No entran los tres arboles de
+# Magdalena y Willy ni el `ensemble11`, que es el que mejor sale en test: 11,623 de MAE
+# frente a 12,126 del ensemble de ocho.
+#
+# NECESITA xgboost en el entorno del servidor:
+#     /home/ubuntu/tfm-env/bin/pip install "xgboost>=3.4"
+#
+30 11 * * * cd /home/ubuntu/scripts && /home/ubuntu/tfm-env/bin/python -u scripts/guardar_predicciones.py --produccion --equipo --desde $(date -d tomorrow +\%Y-\%m-\%d) --hasta $(date -d tomorrow +\%Y-\%m-\%d) >> /home/ubuntu/scripts/logs/cron_prediccion.log 2>&1
+
+
+# ── REVISAR · el cupo de Open-Meteo esta en conflicto ───────────────────────────────
+#
+# Los dos comparten el mismo cupo diario de 10.000 unidades:
+#
+#     02:30  ecmwf_tensor_historico     --cupo 9900     <- se lo lleva casi todo
+#     06:00  ecmwf_forecast_historico                   <- se queda con 100
+#
+# Cada tramo de `ecmwf_forecast_historico` cuesta 1.881 unidades, asi que con 100 disponibles
+# NO PUEDE DESCARGAR NADA: falla todos los dias sin ruido. Mirar `cron_ecmwf_horario.log`
+# de estos dias -- si dice "Tramos descargados: 0", es esto.
+#
+# Si el tensor es la prioridad -- le faltan 705 dias, unas 13 noches al ritmo actual --
+# dejarlo como esta y asumir que el otro no avanza. Si se quiere que los dos progresen,
+# repartir el cupo bajando el del tensor a 7000.
+#
+# 30 2 * * * ... ecmwf_tensor_historico.py --a-postgres --sustituir --cupo 7000 ...
+
+
+# ── OPCIONAL · domingos 05:00 · limpieza de logs ────────────────────────────────────
+#
+# Con veintitantos crons escribiendo a diario, los logs crecen sin freno.
+0 5 * * 0 find /home/ubuntu/scripts/logs -name "*.log" -size +50M -exec truncate -s 10M {} \;
+
+
+# =====================================================================================
+#  NOTAS QUE VALEN PARA TODAS LAS LINEAS
+#
+#  `CRON_TZ=Europe/Madrid` ya esta arriba del crontab y es lo que hace correctas estas
+#  horas. Sin esa linea cron usa UTC y todo se desplaza una o dos horas segun la epoca --
+#  justo lo que rompe un proceso que depende de cuando publica el mercado. Es tambien el
+#  motivo de que el tensor vaya a las 02:30 y no a las 00:30: las 00:30 de Madrid son las
+#  22:30 o 23:30 UTC, o sea el dia UTC ANTERIOR, con el cupo diario ya gastado.
+#
+#  EL `-u` NO ES OPCIONAL. Sin el, Python acumula la salida al redirigir a fichero y el log
+#  parece vacio durante minutos aunque el proceso este trabajando.
+#
+#  RUTA ABSOLUTA AL PYTHON DEL ENTORNO. Cron no carga el perfil del usuario, asi que
+#  `python` a secas seria el del sistema y no encontraria ni pandas.
+#
+#  SI LA MATRIZ FALLA, LA CURVA NO SE REPUBLICA. Esta en el codigo de `cron_diario.py`, no
+#  en el cron: mas vale una curva de ayer con su fecha bien puesta que una de hoy construida
+#  sobre datos de la semana pasada. La segunda miente y no lo parece.
+# =====================================================================================

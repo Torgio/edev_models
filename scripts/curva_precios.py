@@ -35,6 +35,8 @@ La descomposición estándar del sector, en tres piezas separadas a propósito:
 """
 from __future__ import annotations
 
+from contextlib import closing
+
 import argparse
 import sys
 from datetime import date
@@ -65,7 +67,11 @@ def _con():
 
 def historico() -> pd.DataFrame:
     """El PMD publicado, en hora peninsular. Columnas: dia, hora, precio."""
-    with _con() as con:
+    # `with psycopg2.connect(...)` NO cierra la conexion: en psycopg2 el `with` hace commit o
+    # rollback de la TRANSACCION y deja el socket abierto. Cada llamada a estas funciones filtraba
+    # una conexion, y como el notebook las llama decenas de veces por ejecucion, el servidor acabo
+    # devolviendo "sorry, too many clients already". `closing` si cierra.
+    with closing(_con()) as con:
         d = pd.read_sql("SELECT datetime, es_esios FROM spot_price "
                         "WHERE es_esios IS NOT NULL ORDER BY datetime", con)
     t = pd.to_datetime(d.datetime, utc=True).dt.tz_convert(TZ)
@@ -99,7 +105,7 @@ def drivers() -> pd.DataFrame:
     Ochenta filas y tres columnas -- nada que ver con la matriz horaria de 133 columnas que
     usan los modelos de D+1, porque el problema es otro.
     """
-    with _con() as con:
+    with closing(_con()) as con:
         cap = pd.read_sql("""SELECT date, solar_pv_mw, COALESCE(autoconsume_solar_pv_mw,0) auto,
                                     wind_mw FROM esios_capacity_installed ORDER BY date""", con)
     cap["mes"] = pd.to_datetime(cap.date).dt.to_period("M")
@@ -298,7 +304,7 @@ def simular(desde, hasta, nivel: dict, molde, fac_mes,
 
 
 def _de_predictions(desde, hasta, modelo="ensemble") -> pd.DataFrame:
-    with _con() as con:
+    with closing(_con()) as con:
         d = pd.read_sql("""SELECT datetime, prediction FROM predictions
                            WHERE model = %(m)s AND datetime::date BETWEEN %(a)s AND %(b)s
                            ORDER BY datetime""",
@@ -312,8 +318,31 @@ def _de_predictions(desde, hasta, modelo="ensemble") -> pd.DataFrame:
 
 def curva(desde, hasta, nivel: dict | None = None, modelo="ensemble",
           percentiles=(10, 50, 90), n=500, verbose=True,
-          solar_gw: dict | None = None, suelo: float = -20.0) -> pd.DataFrame:
-    """La curva del rango pedido, cosiendo los tres origenes."""
+          solar_gw: dict | None = None, suelo: float = -20.0,
+          motor: str = "clasico", gas: dict | None = None,
+          demanda: dict | None = None, eolica_gw: dict | None = None,
+          crudo: bool = False) -> pd.DataFrame:
+    """La curva del rango pedido, cosiendo los tres origenes.
+
+    DOS MOTORES para el tramo simulado, y el defecto NO cambia:
+
+      `clasico`      el de siempre. Se aporta el NIVEL DE PRECIO y se deforma la forma
+                     historica con un factor que sale de la capacidad solar.
+
+      `fundamental`  `curva_fundamental`. Se aportan GAS, DEMANDA y CAPACIDAD -- magnitudes
+                     fisicas con objetivo publicado -- y el nivel SALE del modelo, via
+                     demanda residual y curva de oferta con suelo en cero. Ver ese modulo
+                     para las mediciones que lo justifican.
+
+    El tramo historico y el de `predictions` son identicos en los dos: solo cambia lo que se
+    simula mas alla.
+
+    Se mantiene el defecto en `clasico` a proposito: la seccion 9 del notebook 07 exporta lo
+    que devuelve esta funcion, y cambiar el motor por debajo cambiaria el significado del CSV
+    en disco sin que nada lo dijera.
+    """
+    if motor not in ("clasico", "fundamental"):
+        raise ValueError(f"motor '{motor}': solo 'clasico' o 'fundamental'")
     desde, hasta = pd.Timestamp(desde), pd.Timestamp(hasta)
     h = historico()
     ultimo_real = h.dia.max()
@@ -335,6 +364,31 @@ def curva(desde, hasta, nivel: dict | None = None, modelo="ensemble",
             ini = m.dia.max() + pd.Timedelta(days=1)
             if verbose:
                 print(f"  modelo     hasta {m.dia.max():%Y-%m-%d}  ({m.dia.nunique()} dias, {modelo})")
+
+        if ini <= hasta and motor == "fundamental":
+            import curva_fundamental as _cf
+            faltan = [nom for nom, esc in (("gas", gas), ("demanda", demanda),
+                                           ("solar_gw", solar_gw), ("eolica_gw", eolica_gw))
+                      if not esc]
+            if faltan:
+                raise ValueError(
+                    f"el motor fundamental necesita escenarios de {', '.join(faltan)}. "
+                    f"No son precios: son gas en EUR/MWh, demanda media en MW y capacidad "
+                    f"en GW. Usa `por_anclas` para no escribir veinte numeros.")
+            if nivel is not None and verbose:
+                print("  AVISO: `nivel` se ignora con motor='fundamental'. Ahi el nivel es "
+                      "un RESULTADO, no una entrada.")
+            out = _cf.simular(ini, hasta, gas=gas, demanda=demanda, solar_gw=solar_gw,
+                              eolica_gw=eolica_gw, n=n, percentiles=percentiles,
+                              verbose=False, crudo=crudo)
+            s_, sims = out if crudo else (out, None)
+            trozos.append(s_)
+            if verbose:
+                print(f"  simulado   {ini:%Y-%m-%d} -> {hasta:%Y-%m-%d}  "
+                      f"({s_.dia.nunique():,} dias · {n} escenarios · motor fundamental)")
+            r = pd.concat(trozos, ignore_index=True).sort_values(
+                ["dia", "hora"]).reset_index(drop=True)
+            return (r, sims) if crudo else r
 
         if ini <= hasta:
             _, fac_mes, _ = perfil(h)
