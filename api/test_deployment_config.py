@@ -2,13 +2,34 @@
 import os
 import sys
 import unittest
+from datetime import date
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from api.dashboard_api import _connection
+from api.dashboard_api import _connection, day_coverage
 
 
 class DeploymentConfigTests(unittest.TestCase):
+    def test_day_coverage_respects_madrid_daylight_saving_time(self):
+        for day, expected in (
+            (date(2026, 3, 29), 23),
+            (date(2026, 8, 31), 24),
+            (date(2026, 10, 25), 25),
+        ):
+            summary = day_coverage(day, 3, expected * 3, expected * 3, expected, expected,
+                                   latest_target=date(2026, 12, 1))
+            self.assertEqual(summary["expected_hours"], expected)
+            self.assertTrue(summary["closed"])
+
+    def test_partial_real_coverage_is_not_closed(self):
+        day = date(2026, 8, 31)
+        self.assertFalse(day_coverage(day, 3, 72, 69, 24, 23)["closed"])
+
+    def test_latest_day_ahead_horizon_remains_a_plan_even_with_spot_price(self):
+        horizon = date(2026, 9, 2)
+        self.assertFalse(day_coverage(horizon, 3, 72, 72, 24, 24,
+                                      latest_target=horizon)["closed"])
+
     @patch.dict(os.environ, {
         "DASHBOARD_DB_MODE": "environment",
         "PGHOST": "127.0.0.1",

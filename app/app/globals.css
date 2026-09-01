@@ -429,6 +429,53 @@ footer svg { width: 13px; }
 .method-card .table-scroll { margin: 12px 20px 18px; max-height: 440px; }
 .evaluation-empty { min-height: 170px; display: grid; place-items: center; border: 1px solid #d8e1dc; border-radius: 18px; background: #fff; color: #71817b; }
 
+.history-section { margin-top: 26px; }
+.history-header { display: flex; align-items: end; justify-content: space-between; gap: 28px; margin-bottom: 18px; }
+.history-header h2 { max-width: 760px; margin: 0; font-size: clamp(31px,3.3vw,46px); line-height: 1.02; letter-spacing: -.052em; }
+.history-header p:not(.section-label) { max-width: 720px; margin: 10px 0 0; color: #667770; font-size: 14px; line-height: 1.55; }
+.history-header > label { min-width: 310px; display: grid; gap: 6px; color: #667770; font-size: 11px; font-weight: 650; }
+.history-header [data-slot="native-select-wrapper"] { width: 100%; background: #fff; }
+.history-empty { min-height: 240px; display: grid; place-items: center; border: 1px solid #d8e1dc; border-radius: 20px; background: #fff; color: #71817b; }
+.history-kpis { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-bottom: 14px; }
+.history-kpis article { min-width: 0; min-height: 132px; display: grid; grid-template-columns: 30px minmax(0,1fr); grid-template-rows: auto auto auto; column-gap: 10px; align-content: center; padding: 18px 20px; border: 1px solid #d8e1dc; border-radius: 17px; background: #fff; box-shadow: 0 8px 28px rgba(18,48,40,.035); }
+.history-kpis svg { grid-row: 1 / 4; width: 18px; color: #3b8170; }
+.history-kpis span { color: #71817b; font-size: 9px; font-weight: 700; letter-spacing: .065em; text-transform: uppercase; }
+.history-kpis strong { margin: 8px 0 5px; font-size: clamp(22px,2.4vw,31px); line-height: 1; letter-spacing: -.045em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.history-kpis small { color: #667770; font-size: 10px; }
+.history-kpis .good, .history-halves .good strong, .history-tooltip .good { color: #23795e; }
+.history-kpis .bad, .history-halves .bad strong, .history-tooltip .bad { color: #a95327; }
+.history-chart-card { min-width: 0; padding: 23px 25px 18px; overflow: hidden; border: 1px solid #d8e1dc; border-radius: 20px; background: #fff; box-shadow: 0 12px 35px rgba(18,48,40,.045); }
+.history-legend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px 14px; color: #667770; font-size: 9px; }
+.history-legend span { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.history-legend i { width: 10px; height: 10px; border-radius: 3px; }
+.history-legend .win i { background: #288568; } .history-legend .loss i { background: #ad5b2b; }
+.history-legend .rolling i { width: 15px; height: 2px; border-radius: 99px; background: #213d35; }
+.extreme-strip { min-height: 34px; display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 14px; padding: 7px 10px; border-radius: 10px; background: #fff2e9; color: #925027; font-size: 9px; }
+.extreme-strip strong { margin-right: 2px; }
+.extreme-strip span { padding: 3px 7px; border: 1px solid #efcdb5; border-radius: 99px; background: rgba(255,255,255,.7); font-variant-numeric: tabular-nums; }
+.history-chart { height: 390px; margin: 5px 0 0 -6px; }
+.history-tooltip { min-width: 205px; padding: 12px 13px; border: 1px solid #d8e1dc; border-radius: 12px; background: #fff; box-shadow: 0 12px 30px rgba(16,43,36,.13); }
+.history-tooltip > strong, .history-tooltip > span { display: block; }
+.history-tooltip > span { margin-top: 3px; color: #71817b; font-size: 9px; }
+.history-tooltip dl { margin: 9px 0 0; }
+.history-tooltip dl div { display: flex; justify-content: space-between; gap: 18px; padding-top: 5px; color: #61736c; font-size: 10px; }
+.history-tooltip dd { margin: 0; color: #24483e; font-weight: 700; font-variant-numeric: tabular-nums; }
+.history-halves { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: -2px 5% 0; }
+.history-halves > div { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding-top: 8px; border-top: 2px solid currentColor; color: #71817b; }
+.history-halves > div.good { color: #288568; } .history-halves > div.bad { color: #ad5b2b; }
+.history-halves span { font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.history-halves strong { font-size: 13px; font-variant-numeric: tabular-nums; }
+.history-caption { margin: 14px 3px 0; color: #65766f; font-size: 10px; line-height: 1.55; }
+.history-method { margin-top: 10px; border-top: 1px solid #e3e9e6; color: #61736c; }
+.history-method > summary { padding: 11px 3px 5px; cursor: pointer; list-style: none; color: #52685e; font-size: 10px; font-weight: 700; }
+.history-method > summary::-webkit-details-marker { display: none; }
+.history-method > summary::after { content: '＋'; float: right; }
+.history-method[open] > summary::after { content: '−'; }
+.history-method p { margin: 5px 3px 2px; font-size: 10px; line-height: 1.55; }
+.history-insight { display: grid; grid-template-columns: minmax(220px,.45fr) minmax(0,1fr); gap: 22px; margin-top: 12px; padding: 17px 20px; border-left: 3px solid #ad5b2b; border-radius: 0 13px 13px 0; background: rgba(255,255,255,.72); color: #52685e; }
+.history-insight strong { color: #24483e; font-size: 12px; }
+.history-insight span { font-size: 11px; line-height: 1.5; }
+
 @media (max-width: 1080px) {
   .forecast-workspace, .evaluation-grid { grid-template-columns: 1fr; }
   .forecast-rail { grid-template-columns: 160px minmax(0,1fr); }
@@ -458,6 +505,17 @@ footer svg { width: 13px; }
   .kpi-stack .metric-card { min-height: 106px; border-bottom: 1px solid #e3e9e6; }
   .view-datebar { align-items: stretch; flex-direction: column; }
   .evaluation-kpis { grid-template-columns: 1fr; }
+  .history-header { align-items: stretch; flex-direction: column; }
+  .history-header > label { min-width: 0; width: 100%; }
+  .history-kpis { grid-template-columns: 1fr; }
+  .history-kpis article { min-height: 105px; }
+  .history-chart-card { padding: 18px 14px 16px; border-radius: 16px; }
+  .history-chart-card .visual-heading { align-items: flex-start; flex-direction: column; }
+  .history-legend { justify-content: flex-start; }
+  .history-chart { height: 350px; margin-left: -14px; }
+  .history-halves { margin-inline: 4px; gap: 10px; }
+  .history-halves > div { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .history-insight { grid-template-columns: 1fr; gap: 7px; }
   .evaluation-kpis article { min-height: 108px; }
   .evaluation-grid { grid-template-columns: minmax(0,1fr); }
   .scatter-wrap { height: 340px; margin-left: -12px; }

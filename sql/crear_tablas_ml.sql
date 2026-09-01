@@ -91,3 +91,64 @@ CREATE TABLE IF NOT EXISTS bess_result (
     calculado_en        TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT pk_bess_result PRIMARY KEY (fecha_objetivo, model)
 );
+
+
+-- ------------------------------------------------- la serie diaria del error --
+-- `model_metrics` guarda ventanas (`prod_30d` se recalcula entera cada pasada y
+-- borra el ayer). Esta tabla guarda el DIA, que es lo unico que permite dibujar si
+-- la ventaja sobre la persistencia se mantiene o se apaga.
+--
+-- Se guardan los DOS MAE, no solo el skill: el skill de una ventana NO es la media
+-- de los skills diarios. Un dia en que la persistencia acierta casi sola (naive de
+-- 5,56 EUR/MWh el 30-ago-2026) da un skill de -233 % que arrastra cualquier media.
+-- La ventana correcta es  1 - sum(mae*n_obs) / sum(mae_naive*n_obs),  y eso exige
+-- los dos numeradores guardados.
+CREATE TABLE IF NOT EXISTS model_metrics_daily (
+    fecha          DATE     NOT NULL,          -- dia objetivo, hora peninsular
+    model          TEXT     NOT NULL,          -- igual que predictions.model
+    seed           SMALLINT NOT NULL DEFAULT -1,
+    source         TEXT     NOT NULL DEFAULT 'production',  -- NO omitir: bess_result
+                                               -- no lo tiene y por eso mezcla tramos
+    n_obs          SMALLINT,                   -- horas con prediccion Y precio real
+    mae            DOUBLE PRECISION,
+    mae_naive      DOUBLE PRECISION,           -- la persistencia sobre LAS MISMAS horas
+    skill_vs_naive DOUBLE PRECISION,           -- 100*(1 - mae/mae_naive) DE ESE DIA
+    estado         TEXT     NOT NULL DEFAULT 'ok',   -- ok|cambio_hora|horas_incompletas|sin_naive
+    naive_regla    TEXT,                       -- que se entiende por "el precio de ayer"
+    calculado_en   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT pk_model_metrics_daily PRIMARY KEY (fecha, model, seed, source)
+);
+COMMENT ON COLUMN model_metrics_daily.naive_regla IS
+    'Misma hora 24 h antes (desplazamiento absoluto) o misma hora local de D-1 no son lo '
+    'mismo los dos domingos del cambio de hora. Se guarda la regla junto al numero.';
+COMMENT ON COLUMN model_metrics_daily.estado IS
+    'ok                = 24 horas comparables, dia normal. '
+    'cambio_hora       = el dia tiene 23 o 25 horas segun el calendario (no segun cuantas '
+                        'filas llegaron). NO invalida el error: el MAE es comparable. Lo '
+                        'que no lo es es el dinero, que necesita 24 h para cerrar el ciclo. '
+    'ayer_cambio_hora  = hoy es normal pero el naive sale de un dia que no lo era, asi que '
+                        'la persistencia de alguna hora esta incompleta. Dos dias al año. '
+    'naive_perfecto    = mae_naive = 0 (el precio no se movio de un dia para otro): el dia '
+                        'es valido y cuenta, pero no hay skill que medir. NO es sin_naive. '
+    'horas_incompletas = faltan horas en un dia que deberia tener 24: un hueco de datos. '
+    'sin_naive         = no hay dia anterior. Es el unico estado que la vista excluye.';
+
+CREATE INDEX IF NOT EXISTS ix_mmd_modelo_fecha
+    ON model_metrics_daily (model, seed, source, fecha);
+
+-- ------------------------------------------------------ la ventana movil, en SQL --
+-- La media movil se calcula AQUI y no en el navegador: es una suma sobre filas ya
+-- guardadas, no una metrica nueva. Cambiar 6 por 13 da la de 14 dias.
+CREATE OR REPLACE VIEW model_metrics_daily_7d AS
+SELECT fecha, model, seed, source, n_obs, mae, mae_naive, skill_vs_naive, estado,
+       100 * (1 - SUM(mae * n_obs)       OVER w
+                / NULLIF(SUM(mae_naive * n_obs) OVER w, 0))  AS skill_7d,
+       count(*) OVER w                                        AS dias_en_ventana
+  FROM model_metrics_daily
+ -- Se filtra por el HECHO (¿hubo naive?), no por una lista de etiquetas: una lista
+ -- hay que acordarse de ampliarla cada vez que nace un estado nuevo, y el dia que no se
+ -- amplia deja dias buenos fuera de la media sin que nadie lo note. `n_obs` ya pondera:
+ -- un dia con 23 horas pesa 23, no se descarta.
+ WHERE mae_naive IS NOT NULL AND estado <> 'sin_naive'
+WINDOW w AS (PARTITION BY model, seed, source ORDER BY fecha
+             ROWS BETWEEN 6 PRECEDING AND CURRENT ROW);

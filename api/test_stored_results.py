@@ -3,7 +3,7 @@ from datetime import date
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from api.dashboard_api import app, _connection
-from api.stored_results import clean
+from api.stored_results import clean, performance_summary, weighted_skill
 
 
 class StoredResultsTests(unittest.TestCase):
@@ -41,6 +41,7 @@ class StoredResultsTests(unittest.TestCase):
         self.cursor.description = []
         self.cursor.fetchall.return_value = []
         self.assertEqual(self.client.get('/leaderboard').json()['models'], [])
+        self.assertEqual(self.client.get('/performance-history?model=missing&seed=1').status_code, 404)
         payload = self.client.get('/bess/2026-08-31').json()
         self.assertEqual(payload['plan'], [])
         self.assertEqual(payload['results'], [])
@@ -66,13 +67,36 @@ class StoredResultsTests(unittest.TestCase):
 
     def test_db_failure_is_unavailable_not_a_simulated_result(self):
         self.cursor.execute.side_effect = RuntimeError('private credentials')
-        for path in ('/leaderboard', '/bess/2026-08-31'):
+        for path in ('/leaderboard', '/performance-history?model=gru&seed=44', '/bess/2026-08-31'):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 503)
             self.assertNotIn('private', response.text)
 
     def test_nonfinite_numbers_remain_missing(self):
         self.assertEqual(clean({'mae': float('nan'), 'nested': [float('inf'), 0]}), {'mae': None, 'nested': [None, 0]})
+
+    def test_performance_skill_aggregates_maes_instead_of_daily_percentages(self):
+        rows = [
+            {'date': date(2026, 8, 30), 'n_obs': 24, 'mae': 18.52, 'mae_naive': 5.56},
+            {'date': date(2026, 8, 31), 'n_obs': 24, 'mae': 28.18, 'mae_naive': 20.11},
+        ]
+        expected = 100 * (1 - (18.52 + 28.18) / (5.56 + 20.11))
+        self.assertAlmostEqual(weighted_skill(rows), expected)
+        self.assertNotAlmostEqual(weighted_skill(rows), (-233.2 - 40.1) / 2)
+
+    def test_performance_summary_keeps_calendar_window_and_common_observations(self):
+        rows = [
+            {'date': date(2026, 8, 3), 'n_obs': 24, 'mae': 10.0, 'mae_naive': 20.0},
+            {'date': date(2026, 8, 17), 'n_obs': 23, 'mae': 30.0, 'mae_naive': 20.0},
+            {'date': date(2026, 8, 18), 'n_obs': 24, 'mae': 5.0, 'mae_naive': 10.0},
+            {'date': date(2026, 9, 1), 'n_obs': 24, 'mae': 8.0, 'mae_naive': 10.0},
+        ]
+        result = performance_summary(rows, 30, date(2026, 8, 3), date(2026, 9, 1))
+        self.assertEqual(result['evaluated_days'], 4)
+        self.assertEqual(result['observations'], 95)
+        self.assertEqual(result['days_won'], 3)
+        self.assertEqual(result['recent_evaluated_days'], 1)
+        self.assertAlmostEqual(result['recent_skill_pct'], 20.0)
 
     def test_legacy_filters_do_not_silently_relabel_stored_results(self):
         for path in ('/leaderboard?source=production&days=30', '/bess/2026-08-31?duration=4'):

@@ -20,6 +20,15 @@ La consulta utiliza las predicciones de producción actualmente almacenadas; la 
 no conserva un historial que permita auditar revisiones posteriores. No equivale a
 rentabilidad BESS ni al porcentaje histórico del evaluador, cuyas reglas difieren.
 
+## Mejora local: rendimiento histórico frente al naive (pendiente de publicar)
+
+`GET /performance-history?model=gru&seed=44&days=30&source=production` lee
+`model_metrics_daily` y `model_metrics_daily_7d`. Devuelve la serie diaria guardada,
+los modelos y semillas disponibles, y los KPI de la ventana. El skill agregado se
+calcula como `100 × (1 − Σ(MAE modelo × horas) / Σ(MAE naive × horas))`; nunca como
+promedio de porcentajes diarios. La ruta no lee `predictions`, no reconstruye métricas
+ausentes y no escribe en PostgreSQL.
+
 ## Rutas de la versión publicada
 
 **Distinción:** el apartado siguiente describe la versión que sigue publicada.
@@ -35,7 +44,7 @@ La copia local tiene contratos nuevos para `/leaderboard` y `/bess/{target_date}
   de conexión. La autenticación y el carácter de solo lectura se mantienen.
 - Cada consulta cierra explícitamente la conexión, además de terminar su transacción.
 
-Pruebas: `python -m unittest api.test_auth api.test_deployment_config api.test_peak_accuracy api.test_stored_results`.
+Pruebas: `python -m unittest api.test_auth api.test_deployment_config api.test_peak_accuracy api.test_stored_results scripts.test_serie_diaria`.
 
 Servicio de solo lectura entre PostgreSQL y el dashboard. Expone cinco rutas:
 

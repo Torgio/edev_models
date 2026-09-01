@@ -20,7 +20,8 @@ sys.path.append(str(REPO / "ingesta"))
 from config import load_config          # noqa: E402
 
 DDL = REPO / "sql" / "crear_tablas_ml.sql"
-TABLAS = ["predictions", "models", "model_metrics", "bess_plan", "bess_result"]
+TABLAS = ["predictions", "models", "model_metrics", "model_metrics_daily",
+          "bess_plan", "bess_result"]
 # `predictions` la crea scripts/guardar_predicciones.py --crear-tabla; aqui solo se comprueba.
 # Del primer diseño. `bess_plan` esta aqui aunque el nombre se repita: la version
 # antigua tenia otras columnas (fecha_objetivo, hora, version, run_ts) y CREATE TABLE

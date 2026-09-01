@@ -25,6 +25,19 @@ test('peak accuracy uses protected read route and forwards the chosen window', a
   assert.equal(denied.status, 401);
 });
 
+test('performance history forwards only the stored-series filters', async () => {
+  const visited = [];
+  const path = 'performance-history';
+  const response = await proxyDashboardRequest(request(`${path}?model=gru&seed=44&days=30&source=production`), path, {
+    upstream, fetcher: async url => {
+      visited.push(String(url));
+      return visited.length === 1 ? session() : Response.json({ origin: 'model_metrics_daily', series: [] });
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(visited, ['https://api.example/session', 'https://api.example/performance-history?model=gru&seed=44&days=30&source=production']);
+});
+
 test('anonymous data requests never reach a data endpoint', async () => {
   let calls = 0;
   const response = await proxyDashboardRequest(request('health'), 'health', { upstream, fetcher: async (url) => { calls++; assert.equal(new URL(url).pathname, '/session'); return session(false); } });

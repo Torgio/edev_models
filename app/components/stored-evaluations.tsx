@@ -4,6 +4,7 @@ import { Cell, CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Toolti
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { bestMae, evaluationGroup, metric, numeric, rankedEvaluations, type Evaluation, type Order } from '@/lib/stored-evaluations';
+import { PerformanceHistory } from '@/components/performance-history';
 
 const orderLabels: Record<Order, string> = {
   captura_pct: 'Captura',
@@ -53,7 +54,7 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
   const highCapture = bestBy(ranked, 'captura_pct');
   const highSkill = bestBy(ranked, 'skill_vs_naive');
 
-  return <section className="evaluation-section" id="hitos" aria-labelledby="evaluation-title">
+  return <><PerformanceHistory onSessionExpired={onSessionExpired} /><section className="evaluation-section" id="hitos" aria-labelledby="evaluation-title">
     <div className="evaluation-header">
       <div><p className="section-label">Evidencia del TFM · fuente model_metrics</p><h2 id="evaluation-title">El error no ordena el valor económico</h2>
         <p>Compara cada modelo y semilla sin promediar resultados. El período evaluado permanece separado del día de previsión.</p></div>
@@ -124,5 +125,5 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
         </Table></div>
       </details>
     </>}
-  </section>;
+  </section></>;
 }

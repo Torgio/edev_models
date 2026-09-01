@@ -24,8 +24,8 @@ from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from api.auth import COOKIE_NAME, SESSION_SECONDS, LoginLimiter, auth_config
-from api.peak_accuracy import evaluation_window, midnight, peak_accuracy
-from api.stored_results import evaluations, battery
+from api.peak_accuracy import evaluation_window, hour_slots, midnight, peak_accuracy
+from api.stored_results import evaluations, battery, performance_history
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.append(str(REPO / "ingesta"))
@@ -165,7 +165,9 @@ def days(source: str = Query("production")):
             SELECT (datetime AT TIME ZONE 'Europe/Madrid')::date AS target_date,
                    count(DISTINCT model) AS models,
                    count(*) AS rows,
-                   count(s.es_esios) AS rows_with_actual
+                   count(s.es_esios) AS rows_with_actual,
+                   count(DISTINCT p.datetime) AS hours,
+                   count(DISTINCT p.datetime) FILTER (WHERE s.es_esios IS NOT NULL) AS actual_hours
             FROM predictions p
             LEFT JOIN spot_price s USING (datetime)
             WHERE p.source = %s
@@ -174,12 +176,27 @@ def days(source: str = Query("production")):
             (source,),
         )
         result = cur.fetchall()
+    latest_target = result[-1][0] if result else None
     return {
         "source": source,
-        "days": [
-            {"date": day, "models": models, "rows": rows, "rows_with_actual": actual}
-            for day, models, rows, actual in result
-        ],
+        "days": [day_coverage(*row, latest_target=latest_target) for row in result],
+    }
+
+
+def day_coverage(day: date, models: int, rows: int, rows_with_actual: int,
+                 hours: int, actual_hours: int, latest_target: date | None = None):
+    """Describe coverage and keep the latest day-ahead horizon open as a plan."""
+    expected_hours = len(hour_slots(day))
+    complete_actual = hours >= expected_hours and actual_hours == expected_hours
+    return {
+        "date": day,
+        "models": models,
+        "rows": rows,
+        "rows_with_actual": rows_with_actual,
+        "hours": hours,
+        "actual_hours": actual_hours,
+        "expected_hours": expected_hours,
+        "closed": complete_actual and (latest_target is None or day < latest_target),
     }
 
 
@@ -265,6 +282,22 @@ def leaderboard(request: Request):
         return evaluations(_connection)
     except Exception:
         raise HTTPException(503, "No se pudieron consultar las evaluaciones guardadas.") from None
+
+
+@app.get("/performance-history")
+def model_performance_history(
+    model: str = Query("gru", min_length=1, max_length=100),
+    seed: int = Query(44, ge=-1, le=32767),
+    days: int = Query(30, ge=7, le=90),
+    source: Literal["production"] = Query("production"),
+):
+    try:
+        result = performance_history(_connection, model, seed, days, source)
+    except Exception:
+        raise HTTPException(503, "No se pudo consultar el rendimiento histórico.") from None
+    if result is None:
+        raise HTTPException(404, "No hay una serie guardada para ese modelo y semilla.")
+    return result
 
 
 @app.get("/bess/{target_date}")

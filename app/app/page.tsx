@@ -21,6 +21,7 @@ import { dailyPrice } from '@/lib/daily-price';
 import { StoredEvaluations } from '@/components/stored-evaluations';
 import { StoredBattery } from '@/components/stored-battery';
 import { predictionUpdate } from '@/lib/prediction-update';
+import { initialDashboardDay, type AvailableDay } from '@/lib/initial-day';
 import type { BatteryPayload } from '@/lib/battery-types';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import {
@@ -77,6 +78,7 @@ export default function Home() {
 function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => void; onLogout: () => Promise<void> }) {
   const [date, setDate] = useState(new Date());
   const day = format(date, 'yyyy-MM-dd');
+  const [availableDays, setAvailableDays] = useState<AvailableDay[]>([]);
   const [visible, setVisible] = useState<ModelKey[]>([]);
   const [view, setView] = useState<'prediction' | 'evaluation' | 'battery'>('prediction');
   const [referenceModel, setReferenceModel] = useState('');
@@ -101,6 +103,15 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
     predictions: point.predictions as Record<string, number>,
   }));
   const hasActual = data.some(row => row.actual !== null);
+  const selectedDayInfo = availableDays.find(item => item.date === day);
+  const latestClosedDay = [...availableDays].reverse().find(item => item.closed)?.date;
+  const actualHours = selectedDayInfo?.actual_hours;
+  const expectedHours = selectedDayInfo?.expected_hours;
+  const hasDayCoverage = Number.isInteger(actualHours) && Number.isInteger(expectedHours);
+  const isClosed = hasDayCoverage && selectedDayInfo?.closed === true;
+  const dayCoverageLabel = hasDayCoverage
+    ? `${isClosed ? 'día cerrado' : actualHours ? 'cierre parcial' : 'precio real pendiente'} · ${actualHours}/${expectedHours} h reales`
+    : format(date, 'yyyy');
   const plotted = visible.filter(key => availableModels.includes(key));
   const visibleModels = plotted.length ? plotted : availableModels.slice(0, 3);
 
@@ -111,12 +122,13 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
       .then((response) => {
         if (response.status === 401) onSessionExpired();
         if (!response.ok) throw new Error(`days ${response.status}`);
-        return response.json() as Promise<{ days: { date: string }[] }>;
+        return response.json() as Promise<{ days: AvailableDay[] }>;
       })
       .then((response) => {
         if (controller.signal.aborted) return;
-        const latest = response.days.at(-1)?.date;
-        if (latest) setDate(new Date(`${latest}T12:00:00`));
+        setAvailableDays(response.days);
+        const initial = initialDashboardDay(response.days);
+        if (initial) setDate(new Date(`${initial}T12:00:00`));
       })
       .catch(() => undefined);
     return () => controller.abort();
@@ -209,12 +221,14 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
               {dataStatus === 'error' && 'Sin datos del día · consulta no disponible o sin registros'}
             </div>
             <p className="kicker">Predicción spot · España</p>
-            <h2>El precio de mañana, modelo a modelo.</h2>
-            <p className="intro">Compara las horas disponibles, detecta los valles de carga y comprueba qué modelos están aportando señal útil.</p>
+            <h2>{isClosed ? latestClosedDay === day ? 'Cómo fue el último día cerrado.' : 'Cómo fue este día cerrado.' : 'El precio previsto, modelo a modelo.'}</h2>
+            <p className="intro">{isClosed
+              ? `Compara lo previsto con las ${expectedHours} horas reales del mercado. Los días futuros con predicciones siguen disponibles con la flecha.`
+              : 'Este día aún no tiene el precio real completo; muestra el plan previsto y deja pendientes los resultados.'}</p>
           </div>
           <div className="date-stepper" aria-label="Navegación por fecha">
             <Button variant="ghost" size="icon-lg" aria-label="Día anterior" onClick={() => setDate((day) => addDays(day, -1))}><ChevronLeft /></Button>
-            <div><CalendarDays aria-hidden="true" /><span>{format(date, "EEEE, d 'de' MMMM", { locale: es })}</span><strong>{format(date, 'yyyy')}</strong></div>
+            <div><CalendarDays aria-hidden="true" /><span>{format(date, "EEEE, d 'de' MMMM", { locale: es })}</span><strong>{dayCoverageLabel}</strong></div>
             <Button variant="ghost" size="icon-lg" aria-label="Día siguiente" onClick={() => setDate((day) => addDays(day, 1))}><ChevronRight /></Button>
           </div>
         </div>
@@ -332,7 +346,7 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
               <div><p className="kicker">Operación diaria</p><h2>Plan BESS guardado</h2><p>Consulta la decisión horaria y su resultado económico sin recalcular la estrategia.</p></div>
               <div className="date-stepper" aria-label="Navegación por fecha BESS">
                 <Button variant="ghost" size="icon-lg" aria-label="Día anterior" onClick={() => setDate((day) => addDays(day, -1))}><ChevronLeft /></Button>
-                <div><CalendarDays aria-hidden="true" /><span>{format(date, "EEEE, d 'de' MMMM", { locale: es })}</span><strong>{format(date, 'yyyy')}</strong></div>
+                <div><CalendarDays aria-hidden="true" /><span>{format(date, "EEEE, d 'de' MMMM", { locale: es })}</span><strong>{dayCoverageLabel}</strong></div>
                 <Button variant="ghost" size="icon-lg" aria-label="Día siguiente" onClick={() => setDate((day) => addDays(day, 1))}><ChevronRight /></Button>
               </div>
             </div>

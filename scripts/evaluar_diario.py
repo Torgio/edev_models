@@ -44,11 +44,12 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from zoneinfo import ZoneInfo
 
 REPO = Path(__file__).resolve().parent.parent
 for p in ("scripts", "modelos", "ingesta"):
@@ -106,12 +107,17 @@ def curva_real(con, desde: date, hasta: date) -> pd.Series:
           FROM spot_price
          WHERE es_esios IS NOT NULL
            AND (datetime AT TIME ZONE 'Europe/Madrid')::date BETWEEN %s AND %s
-         ORDER BY 1""", con, params=(desde, hasta))
+         -- El segundo criterio no es decorativo: el domingo de octubre las dos 02:00
+         -- comparten la primera clave y sin desempate el orden lo decide el planificador.
+         -- Ordenando tambien por el instante, "la primera" es SIEMPRE la de +02:00.
+         ORDER BY 1, datetime""", con, params=(desde, hasta))
     s = d.set_index(pd.to_datetime(d.ts))["real"]
     # El domingo de octubre la 02:00 aparece DOS veces al convertir a hora local (la
     # +02:00 y la +01:00). En timestamptz son horas distintas, pero como indice local son
     # el mismo valor y `reindex` estalla con "cannot reindex on an axis with duplicates".
-    # Esa hora solo se usa para el naive del dia siguiente, asi que basta con la primera.
+    # Esa hora solo se usa para el naive del dia siguiente. Se elige LA PRIMERA, que con el
+    # ORDER BY de arriba es la de +02:00 (la anterior al retraso del reloj). La otra no se
+    # usa: el dia siguiente queda marcado `ayer_cambio_hora` para que se sepa.
     return s[~s.index.duplicated(keep="first")]
 
 
@@ -189,6 +195,12 @@ def ventana(con, datos: pd.DataFrame, real: pd.Series, escribir: bool):
     cociente contra la persistencia del mismo tramo es lo unico que sobrevive al cambio de
     regimen, y es la razon de que la tabla guarde `skill_vs_naive` y no solo el MAE.
     """
+    # `prod_30d` son 30 dias POR DEFINICION. Una pasada puede cargar mas -- el backfill de
+    # la serie diaria pide `--dias 40` -- y entonces esta fila diria 30 y serian 40. Se
+    # recorta aqui, no en main, para que la etiqueta y el contenido no puedan divergir.
+    fechas = pd.to_datetime(datos.ts).dt.date
+    datos = datos[fechas >= fechas.max() - timedelta(days=VENTANA - 1)]
+
     idx = pd.to_datetime(real.index)
     naive = pd.Series(real.values, index=idx + pd.Timedelta(days=1))   # el precio de ayer
     filas = []
@@ -259,6 +271,131 @@ def ventana(con, datos: pd.DataFrame, real: pd.Series, escribir: bool):
     return len(filas)
 
 
+NAIVE_REGLA = ("precio de la MISMA HORA LOCAL del dia anterior. Los dos domingos del "
+               "cambio de hora el desfase real no son 24 h sino 23 o 25, porque el indice "
+               "es hora peninsular; esos dias quedan marcados estado='cambio_hora'")
+
+
+def horas_del_dia(d: date) -> int:
+    """23, 24 o 25: las horas que tiene ESE dia en hora peninsular, segun el calendario.
+
+    El estado de un dia no se puede deducir de cuantas filas llegaron. Marzo llega con 23
+    porque la 02:00 no existe, pero un dia normal al que le falta una hora tambien llega
+    con 23 y no es lo mismo: uno es el calendario y el otro es un hueco que hay que ver.
+
+    Octubre si llega entero con sus 25 horas -- `cargar()` une por `datetime`, que es
+    timestamptz, y los dos instantes de las 02:00 son filas distintas aunque compartan
+    etiqueta local. Lo que se pierde es otra cosa y en otro dia: `curva_real()` descarta la
+    02:00 repetida para poder reindexar, asi que el naive del 26 a las 02:00 sale de la
+    PRIMERA de las dos 02:00 del 25 -- la de +02:00, fijada por el ORDER BY de la consulta.
+    Por eso el 25 sale `cambio_hora` y el 26 `ayer_cambio_hora`.
+    """
+    tz = ZoneInfo(TZ)
+    ini = datetime(d.year, d.month, d.day, tzinfo=tz)
+    return int(((ini + timedelta(days=1)).astimezone(timezone.utc)
+                - ini.astimezone(timezone.utc)).total_seconds() // 3600)
+
+
+# --------------------------------------------------------------- la serie diaria
+def serie_diaria(con, datos: pd.DataFrame, real: pd.Series, escribir: bool) -> int:
+    """`model_metrics_daily`: una fila por (dia, modelo, semilla). El error, dia a dia.
+
+    POR QUE NO BASTA `prod_30d`. Esa fila es una ventana movil que se recalcula entera en
+    cada pasada: contesta "¿como va AHORA?" y borra el ayer. Con solo esa fila no se puede
+    dibujar si la ventaja sobre la persistencia se mantiene o se apaga, que es justo lo que
+    hay que enseñar de un modelo que lleva semanas sin reentrenar.
+
+    SE GUARDAN LOS DOS MAE, NO SOLO EL SKILL. El skill de una ventana NO es la media de los
+    skills diarios. El 30-ago-2026 la persistencia acerto casi sola --naive de 5,56-- y el
+    skill de ese dia sale -233 %: promediarlo arrastraria la ventana entera. Lo correcto es
+    1 - sum(mae*n)/sum(mae_naive*n), y para eso hacen falta los dos numeradores.
+
+    LOS DIAS RAROS SE MARCAN, NO SE TIRAN. Un dia de 23 o 25 horas tiene un MAE
+    perfectamente comparable; lo que no lo es es su dinero, que necesita 24 h para cerrar
+    el ciclo. Guardarlos con `estado` deja que el panel diga cuantos excluye y por que, como
+    ya hace el contador de acierto de pico.
+    """
+    idx = pd.to_datetime(real.index)
+    naive = pd.Series(real.values, index=idx + pd.Timedelta(days=1))   # el precio de ayer
+    filas = []
+    d = datos.assign(dia=pd.to_datetime(datos.ts).dt.date)
+    for (modelo, seed, dia), g in d.groupby(["model", "seed", "dia"]):
+        g = g.set_index(pd.to_datetime(g.ts)).sort_index()
+        err = (g.pred - g.real).abs()
+        errn = (naive.reindex(g.index) - g.real).abs()
+        # LOS DOS MAE, SOBRE LAS MISMAS HORAS. Sin esta mascara, una hora sin naive entra
+        # en el numerador y no en el denominador: el cociente compararia dos coberturas
+        # distintas y el skill saldria sesgado sin que nada avisara. Hoy coinciden; el dia
+        # que `spot_price` tenga un hueco, dejarian de coincidir en silencio.
+        valido = err.notna() & errn.notna()
+        n = int(valido.sum())              # HORAS COMPARABLES, que es lo que pondera la
+                                           # media movil de la vista (SUM(mae*n_obs))
+        mae = err[valido].mean() if n else err.mean()
+        mae_n = errn[valido].mean() if n else None
+        # "no habia naive" y "el naive fue perfecto" no son lo mismo, aunque los dos dejen
+        # el skill sin definir. Con un mercado plano dos dias seguidos, mae_naive vale 0 y
+        # el dia es perfectamente valido: cuenta, y su cero entra en la suma de la ventana.
+        hay_naive = n > 0 and pd.notna(mae_n)
+        skill = (100 * (1 - mae / mae_n)
+                 if hay_naive and mae_n > 0 and pd.notna(mae) else None)
+        esperadas = horas_del_dia(dia)
+        if not hay_naive:
+            estado = "sin_naive"           # el primer dia de la serie no tiene ayer
+        elif esperadas != 24:
+            estado = "cambio_hora"         # lo dice el calendario, no el numero de filas
+        elif horas_del_dia(dia - timedelta(days=1)) != 24:
+            # El naive de hoy sale de AYER, y ayer fue un dia raro. En marzo faltaba la
+            # 02:00, asi que hoy esa hora se queda sin baseline; en octubre sobraba, y se
+            # uso solo una de las dos. En los dos casos el skill de hoy esta medido sobre
+            # una persistencia incompleta: dos dias al año, dicho en vez de escondido.
+            estado = "ayer_cambio_hora"
+        elif mae_n == 0:
+            estado = "naive_perfecto"      # el precio no se movio: no hay skill que medir
+        elif n == 24:
+            estado = "ok"
+        else:
+            estado = "horas_incompletas"
+        filas.append((dia, modelo, int(seed), "production", n, _f(mae), _f(mae_n),
+                      _f(skill), estado, NAIVE_REGLA))
+
+    if not filas:
+        _log("serie", "ningun dia que medir")
+        return 0
+    if escribir:
+        with con.cursor() as cur:
+            cur.executemany("""
+                INSERT INTO model_metrics_daily (fecha, model, seed, source, n_obs, mae,
+                    mae_naive, skill_vs_naive, estado, naive_regla)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (fecha, model, seed, source) DO UPDATE SET
+                    n_obs=EXCLUDED.n_obs, mae=EXCLUDED.mae, mae_naive=EXCLUDED.mae_naive,
+                    skill_vs_naive=EXCLUDED.skill_vs_naive, estado=EXCLUDED.estado,
+                    naive_regla=EXCLUDED.naive_regla, calculado_en=now()""", filas)
+        con.commit()
+
+    raros = [f for f in filas if f[8] != "ok"]
+    _log("serie", f"{len(filas)} filas (dia x modelo x semilla)"
+                  f"{f' · {len(raros)} marcadas: ' + ', '.join(sorted({f[8] for f in raros})) if raros else ''}"
+                  f"{'' if escribir else '  [simulacro, no escritas]'}")
+
+    # La media movil en consola, para el modelo con mas dias: es la lectura que importa.
+    t = pd.DataFrame(filas, columns=["fecha", "model", "seed", "source", "n", "mae",
+                                     "mae_naive", "skill", "estado", "regla"])
+    t = t[t.estado.isin(["ok", "cambio_hora"])]
+    if not t.empty:
+        modelo = t.groupby(["model", "seed"]).size().idxmax()
+        g = t[(t.model == modelo[0]) & (t.seed == modelo[1])].sort_values("fecha")
+        num = (g.mae * g.n).rolling(7).sum()
+        den = (g.mae_naive * g.n).rolling(7).sum()
+        mov = 100 * (1 - num / den)
+        vistos = mov.dropna()
+        if len(vistos) >= 2:
+            print(f"\n  media movil de 7 dias · {modelo[0]} (s{modelo[1]}): "
+                  f"{vistos.iloc[0]:+.1f} % -> {vistos.iloc[-1]:+.1f} %")
+            print("    " + "  ".join(f"{v:+.0f}" for v in vistos))
+    return len(filas)
+
+
 # ------------------------------------------------------------------------------ main
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
@@ -293,6 +430,7 @@ def main():
         real = curva_real(con, desde - timedelta(days=1), hasta)
 
         evaluar_dias(con, datos, real, escribir)
+        serie_diaria(con, datos, real, escribir)
         ventana(con, datos, real, escribir)
     finally:
         con.close()
