@@ -1,5 +1,5 @@
 const COOKIE = 'pulso_session';
-const READ_PATH = /^(session|health|days|leaderboard|peak-accuracy|(?:predictions|bess)\/\d{4}-\d{2}-\d{2})$/;
+const READ_PATH = /^(session|health|days|leaderboard|performance-history|peak-accuracy|(?:predictions|bess)\/\d{4}-\d{2}-\d{2})$/;
 
 function reply(value: unknown, status = 200) {
   return Response.json(value, { status, headers: { 'Cache-Control': 'private, no-store', Vary: 'Cookie', 'X-Content-Type-Options': 'nosniff' } });
@@ -21,7 +21,7 @@ export async function proxyDashboardRequest(request: Request, path: string, opti
   const isWrite = request.method === 'POST' && ['login', 'logout'].includes(path);
   if (!isRead && !isWrite) return reply({ detail: 'Ruta no disponible.' }, 404);
   if (isWrite && request.headers.get('origin') !== requestUrl.origin) return reply({ detail: 'Origen no permitido.' }, 403);
-  if ([...requestUrl.searchParams.keys()].some((key) => !['source', 'days', 'model', 'duration'].includes(key) && !(path === 'peak-accuracy' && key === 'end_date'))) {
+  if ([...requestUrl.searchParams.keys()].some((key) => !['source', 'days', 'model', 'seed', 'duration'].includes(key) && !(path === 'peak-accuracy' && key === 'end_date'))) {
     return reply({ detail: 'Parámetros no permitidos.' }, 400);
   }
   let upstream: URL;
