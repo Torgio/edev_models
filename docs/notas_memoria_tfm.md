@@ -1525,3 +1525,33 @@ todavía** mientras Pulso siga en `chatgpt.site` — funcionará el día que se 
 dominio, sin tocar nada más. La alternativa (CORS abierto ya mismo hacia `chatgpt.site`, sin
 pasar por el login) se descartó por ahora: dejaría el asistente accesible sin sesión a quien
 encontrara la URL del servidor.
+
+## 45. El frontend real de Pulso ya se está construyendo dentro del repo — y el widget del asistente queda listo
+
+Revisando la rama `magui_test` (sin fusionar todavía) apareció la pieza que faltaba de la nota
+44: Magui está construyendo el front-end **de verdad** de Pulso Energía como una app de Next.js
+dentro de este mismo repositorio (`app/`, ~18.000 líneas), con su propio backend de solo lectura
+(`api/dashboard_api.py`) — que, por su login de equipo y su endpoint `/health`, es casi seguro el
+"`pulso-api`" que ya menciona `nginx-tfm.conf`. O sea: el sitio de `chatgpt.site` es un
+paso intermedio, y el plan real es desplegar este Next.js en el mismo dominio del VPS — que es
+justo la condición que hacía falta para que `/api/asistente` (nota 44) se pueda usar de verdad.
+
+Se dejó preparado `docs/web/AsistenteWidget.tsx`: un componente de React listo para pegar en su
+app, con sus propios tokens de diseño (leídos de su `globals.css`, no inventados) y sin ninguna
+marca de Claude visible. Se detectó y corrigió un detalle antes de dárselo: nginx no devuelve un
+401 limpio cuando la sesión caduca, sino que redirige (302) a la pantalla de login en HTML — el
+componente lo detecta por el `content-type` de la respuesta, no por el código de estado.
+
+**Coordinación pendiente con Magui, no resuelta aquí**: su `dashboard_api.py` también pide un rol
+de Postgres de solo lectura (`.env.dashboard.local`), construido de forma independiente al
+`asistente_solo_lectura` de la nota 43 — misma idea, dos veces por separado. Queda como pregunta
+abierta si conviene un único rol de solo lectura compartido entre ambos servicios o si cada uno
+mantiene el suyo, acotado a lo que necesita.
+
+**Sobre el diseño de "más funciones" del asistente**: se aclaró que `consulta_sql_lectura` ya
+funciona como la "función genérica de emergencia" que se pedía — cuando una pregunta cae en ella
+queda registrada en `historial.jsonl` con la pregunta exacta, así que revisar ese historial
+periódicamente es la forma de detectar qué patrones conviene "promover" a una función fija y
+probada. Se decidió explícitamente NO dejar que el LLM genere y ejecute funciones Python nuevas
+por su cuenta (a diferencia del SQL, sin el mismo perímetro de seguridad) — la promoción a función
+fija la sigue haciendo una persona, revisando el patrón antes de escribirlo.
