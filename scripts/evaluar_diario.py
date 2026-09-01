@@ -65,6 +65,13 @@ SIMULADOR = {"potencia_mw": POTENCIA_MW, "capacidad_mwh": CAPACIDAD_MWH,
              "regla": "carga en las HORAS mas baratas predichas, descarga en las mas caras"}
 
 
+def _f(x):
+    """np.float64 -> float. psycopg2 no adapta los escalares de NumPy: los interpola con
+    su repr, que en NumPy 2 es "np.float64(0.0)", y Postgres busca un esquema `np`. Las
+    metricas salen de medias de pandas, asi que TODAS pasan por aqui antes del INSERT."""
+    return None if x is None or pd.isna(x) else float(x)
+
+
 def _log(paso, texto):
     print(f"[{datetime.now():%H:%M:%S}] {paso}  {texto}", flush=True)
 
@@ -193,9 +200,9 @@ def ventana(con, datos: pd.DataFrame, real: pd.Series, escribir: bool):
         if m is None:
             continue
         filas.append((modelo, int(seed), "prod_30d", "global", int(m["n_horas"]),
-                      m["MAE"], m["RMSE"], m["sMAPE"], None, None,
-                      m["captura_%"], m["eur_dia"], m["pico_1h_%"], m.get("skill_%"),
-                      json.dumps(SIMULADOR)))
+                      _f(m["MAE"]), _f(m["RMSE"]), _f(m["sMAPE"]), None, None,
+                      _f(m["captura_%"]), _f(m["eur_dia"]), _f(m["pico_1h_%"]),
+                      _f(m.get("skill_%")), json.dumps(SIMULADOR)))
     # LA PERSISTENCIA, COMO UN MODELO MAS. Sin esta fila la tabla no contesta la unica
     # pregunta que importa: ¿aporta el modelo, o el dinero lo pone la horquilla del
     # mercado? En un mes de dias parecidos, predecir "manana como hoy" puede capturar casi
@@ -207,8 +214,8 @@ def ventana(con, datos: pd.DataFrame, real: pd.Series, escribir: bool):
     mn = metricas(nv, pd.Series(ref.real.values, index=ridx))
     if mn is not None:
         filas.append(("naive_D1", -1, "prod_30d", "global", int(mn["n_horas"]),
-                      mn["MAE"], mn["RMSE"], mn["sMAPE"], None, None,
-                      mn["captura_%"], mn["eur_dia"], mn["pico_1h_%"], 0.0,
+                      _f(mn["MAE"]), _f(mn["RMSE"]), _f(mn["sMAPE"]), None, None,
+                      _f(mn["captura_%"]), _f(mn["eur_dia"]), _f(mn["pico_1h_%"]), 0.0,
                       json.dumps(SIMULADOR)))
 
     if escribir and filas:
