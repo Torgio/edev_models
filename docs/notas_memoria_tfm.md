@@ -1497,3 +1497,31 @@ herramienta ya cubre la pregunta. Probado con una pregunta real que ninguna func
 cubría ("compárame el precio de España y Portugal hora a hora"): generó el SQL correcto y de paso
 encontró un dato real — ese día concreto los dos mercados fueron idénticos hora a hora (sin
 desacoplamiento MIBEL).
+
+## 44. Cómo llega el asistente a "Pulso Energía" — y por qué no es tan simple como CORS
+
+Un compañero preguntó si se podía enchufar el asistente a **Pulso Energía**, la web de cliente
+que ha construido Magui (`pulso-energia-tfm.maguicervinio.chatgpt.site`). Al investigar apareció
+información nueva sobre cómo está montado el despliegue del equipo, que vale la pena dejar clara:
+
+**Dos servicios distintos en el mismo servidor**: `pulso-api` (el backend de Magui, con el login
+de equipo) va en el puerto 8000; nuestro API del TFM (predicciones + estudio de batería +
+asistente) va en el **8010**, solo accesible a través de nginx — nunca expuesto directamente.
+
+**La sesión de Pulso no cruza dominios, a propósito.** Su cookie es `samesite=strict`: el
+navegador solo la envía si la página que llama está en el MISMO dominio donde se creó. Como Pulso
+hoy vive en `chatgpt.site` (externo) y nuestro API vive en el dominio del VPS, ningún endpoint
+protegido (ni siquiera `/bateria/`, la pantalla de estudio que ya existe) es alcanzable
+directamente desde el sitio de Magui todavía — no es un descuido, nginx usa `auth_request` contra
+`pulso-api` precisamente para que solo entre quien ya inició sesión de equipo, y eso exige mismo
+dominio. El propio equipo ya lo documentó en el código: *"cuando Magui despliegue su front en este
+dominio, esto sobra"* — o sea, el plan es que su front-end acabe sirviéndose desde el mismo sitio.
+
+**Decisión tomada**: se dejó preparada la ruta `/api/asistente` en nginx, con el mismo patrón que
+ya usa el estudio de batería (reutiliza la sesión de Pulso, con su propia zona de límite de
+peticiones porque cada pregunta gasta créditos reales de la API de Claude, a diferencia del resto
+del proyecto que es cálculo propio sin coste). Queda protegida y lista, pero **no funcional
+todavía** mientras Pulso siga en `chatgpt.site` — funcionará el día que se despliegue en el mismo
+dominio, sin tocar nada más. La alternativa (CORS abierto ya mismo hacia `chatgpt.site`, sin
+pasar por el login) se descartó por ahora: dejaría el asistente accesible sin sesión a quien
+encontrara la URL del servidor.
