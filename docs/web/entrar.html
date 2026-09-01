@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pulso Energía · Entrar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   POR QUE EXISTE ESTA PAGINA
+   `pulso-api` no sirve ni un HTML: es un API puro. Su login es `POST /login` con un
+   JSON, y la cookie que devuelve es `samesite=strict`, asi que solo viaja si el
+   navegador esta EN ESTE MISMO DOMINIO. El front de chatgpt.site no puede usarla.
+
+   Sin una pagina aqui, quien no tiene sesion acababa viendo
+   `{"detail":"Inicia sesion para consultar los datos."}` en crudo, que no es una
+   pantalla de login: es el 401 del API pintado por el navegador.
+
+   Veinte lineas y el problema desaparece. Cuando Magui despliegue su front en este
+   dominio, esto sobra y se borra.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root{
+  --background:#f3f6f2; --foreground:#17322b;
+  --primary:#173f35;    --primary-foreground:#f7faf7;
+  --secondary:#e4ece8;  --muted:#e9eeeb; --muted-foreground:#697a74;
+  --border:#d8e0dc;     --ring:#43a99f;  --alerta:#924831;
+  --radius:.85rem;      --sombra:0 20px 60px rgba(18,48,40,.07);
+  --sans:'Geist',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:var(--background);color:var(--foreground);
+     font-family:var(--sans);font-size:15px;line-height:1.55;display:grid;
+     place-items:center;padding:24px;-webkit-font-smoothing:antialiased}
+.caja{width:100%;max-width:420px}
+.cab{display:flex;align-items:center;gap:13px;margin-bottom:26px}
+.logo{width:44px;height:44px;border-radius:13px;background:var(--primary);
+      display:grid;place-items:center;flex:none}
+.logo svg{width:21px;height:21px;fill:#7fe3bd}
+.sobre{font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;
+       color:var(--muted-foreground)}
+.cab b{font-size:19px;font-weight:600;display:block;line-height:1.2}
+
+.tarjeta{background:#fff;border:1px solid var(--border);border-radius:var(--radius);
+         padding:28px;box-shadow:var(--sombra)}
+.ico{width:46px;height:46px;border-radius:13px;background:var(--secondary);
+     display:grid;place-items:center;margin-bottom:18px}
+.ico svg{width:21px;height:21px;fill:none;stroke:var(--primary);stroke-width:1.9;
+         stroke-linecap:round;stroke-linejoin:round}
+h1{font-size:24px;font-weight:600;letter-spacing:-.02em;margin:0 0 6px}
+p.sub{margin:0 0 22px;color:var(--muted-foreground);font-size:14px}
+
+label{display:block;font-size:11px;font-weight:600;letter-spacing:.11em;
+      text-transform:uppercase;color:var(--muted-foreground);margin-bottom:7px}
+input{width:100%;border:1px solid var(--border);border-radius:11px;background:#fff;
+      padding:12px 14px;font:inherit;font-size:15px;color:inherit;outline:none}
+input:focus{border-color:var(--ring);box-shadow:0 0 0 3px rgba(67,169,159,.13)}
+button{width:100%;margin-top:16px;padding:12px 20px;border:none;border-radius:11px;
+       background:var(--primary);color:var(--primary-foreground);font:inherit;
+       font-size:15px;font-weight:500;cursor:pointer;transition:.15s}
+button:hover:not(:disabled){background:#0f2e26}
+button:disabled{background:var(--muted);color:#a8b5b0;cursor:not-allowed}
+.error{margin-top:14px;padding:11px 14px;border-radius:11px;background:#f6e6e0;
+       color:var(--alerta);font-size:13.5px;display:none}
+.pie{margin-top:20px;text-align:center;font-size:12.5px;color:var(--muted-foreground)}
+</style>
+</head>
+<body>
+<div class="caja">
+  <div class="cab">
+    <div class="logo"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></div>
+    <div>
+      <div class="sobre">TFM · Mercado eléctrico</div>
+      <b>Pulso Energía</b>
+    </div>
+  </div>
+
+  <div class="tarjeta">
+    <div class="ico"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div>
+    <h1>La señal empieza aquí.</h1>
+    <p class="sub">Accede con la contraseña del equipo.</p>
+
+    <form id="f">
+      <label for="p">Contraseña</label>
+      <input id="p" type="password" autocomplete="current-password" autofocus required>
+      <button id="b" type="submit">Entrar</button>
+    </form>
+    <div class="error" id="e"></div>
+  </div>
+
+  <div class="pie" id="destino"></div>
+</div>
+
+<script>
+// A donde volver despues de entrar. Se valida que sea una ruta de ESTE sitio: aceptar
+// una URL completa convertiria esto en un redirector abierto, que es como se montan las
+// suplantaciones -- un enlace que parece nuestro y acaba en otro sitio.
+const p = new URLSearchParams(location.search).get('next') || '';
+const destino = /^\/[^\/\\]/.test(p) ? p : '/bateria/estudio_bateria_dev.html';
+document.getElementById('destino').textContent = 'Después de entrar: ' + destino;
+
+const f = document.getElementById('f'), b = document.getElementById('b'),
+      e = document.getElementById('e');
+
+f.onsubmit = async ev => {
+  ev.preventDefault();
+  e.style.display = 'none';
+  b.disabled = true; b.textContent = 'Comprobando…';
+  try{
+    const r = await fetch('/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      // `same-origin` para que el navegador GUARDE la cookie que devuelve. Sin esto
+      // la respuesta llega bien y la sesion no se establece, que es de los fallos
+      // mas desconcertantes que hay.
+      credentials: 'same-origin',
+      body: JSON.stringify({password: document.getElementById('p').value}),
+    });
+    if (r.ok){ location.href = destino; return; }
+    e.textContent = r.status === 401 ? 'Contraseña incorrecta.'
+                  : r.status === 429 ? 'Demasiados intentos. Espera un momento.'
+                  : `No se ha podido entrar (${r.status}).`;
+  }catch(err){
+    e.textContent = 'No se ha podido contactar con el servidor.';
+  }
+  e.style.display = 'block';
+  b.disabled = false; b.textContent = 'Entrar';
+  document.getElementById('p').select();
+};
+</script>
+</body>
+</html>

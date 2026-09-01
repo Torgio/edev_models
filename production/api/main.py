@@ -18,6 +18,7 @@ confiar en que cuadre.
 """
 from __future__ import annotations
 
+import os
 import sys
 from contextlib import contextmanager
 from datetime import date
@@ -175,6 +176,40 @@ def asistente(cuerpo: PreguntaAsistente):
     except Exception as e:
         raise HTTPException(500, f"Error del asistente: {e}")
     return {"respuesta": r["texto"], "imagenes_base64": r["imagenes_base64"]}
+
+
+# El estudio de bateria va en su propio modulo y se engancha aqui. Asi el panel de
+# predicciones sigue siendo dos endpoints y no se mezcla con lo otro, que tiene tareas
+# en segundo plano y subida de ficheros.
+# `from bateria import ...` a secas solo funciona si esta carpeta esta en sys.path, y
+# arrancando como `uvicorn production.api.main:app` NO lo esta. Se añade explicitamente.
+sys.path.append(str(Path(__file__).parent))
+from bateria import router as router_bateria           # noqa: E402
+app.include_router(router_bateria)
+
+
+# La pantalla del estudio de bateria se sirve DESDE AQUI, no como fichero suelto.
+#
+# Abierta con file:// el navegador la trata como otro origen y bloquea cualquier llamada
+# al API -- se ve la pagina, no se ve un solo dato, y el error aparece en la consola donde
+# nadie mira. Sirviendola desde el mismo puerto no hay origen cruzado que valga.
+#
+#     http://127.0.0.1:8000/bateria/estudio_bateria_dev.html
+PANTALLAS = REPO / "docs" / "web"
+if PANTALLAS.is_dir():
+    app.mount("/bateria", StaticFiles(directory=str(PANTALLAS), html=True),
+              name="bateria")
+# y las plantillas de ejemplo, que la pantalla enlaza para descargar
+PLANTILLAS = REPO / "docs" / "plantillas"
+if PLANTILLAS.is_dir():
+    app.mount("/plantillas", StaticFiles(directory=str(PLANTILLAS)), name="plantillas")
+
+# CORS solo para desarrollo: permite abrir el HTML con file:// o desde otro puerto
+# mientras se maqueta. En produccion sobra, porque todo sale del mismo origen.
+if os.environ.get("TFM_CORS_ABIERTO"):
+    from fastapi.middleware.cors import CORSMiddleware
+    app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"],
+                       allow_headers=["*"])
 
 
 # Se monta al final: si fuera antes, se tragaria tambien las rutas /api/*.

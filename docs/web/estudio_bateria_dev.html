@@ -1,0 +1,1684 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pulso Energía · Estudio de batería (desarrollo)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   VENTANA PARALELA · no toca nada de lo que ya hay.
+   Es un fichero suelto: se abre solo, se prueba solo y luego se enchufa.
+
+   Los tokens estan copiados de la web en produccion, no estimados a ojo, asi que al
+   integrarlo basta con borrar el bloque :root y heredar el del sitio.
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root{
+  --background:#f3f6f2; --foreground:#17322b;
+  --primary:#173f35;    --primary-foreground:#f7faf7;
+  --secondary:#e4ece8;  --secondary-foreground:#17322b;
+  --muted:#e9eeeb;      --muted-foreground:#697a74;
+  --border:#d8e0dc;     --ring:#43a99f;
+  --acento:#258160;     --alerta:#924831;
+  --radius:.85rem;
+  --sombra:0 20px 60px rgba(18,48,40,.07);
+  --sans:'Geist',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'Geist Mono',ui-monospace,'SF Mono',Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--background); color:var(--foreground);
+  font-family:var(--sans); font-size:15px; line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+}
+.marco{max-width:960px;margin:0 auto;padding:32px 22px 80px}
+
+/* ── cabecera ───────────────────────────────────────────────────────────── */
+.cab{display:flex;align-items:center;gap:13px;margin-bottom:30px}
+.logo{width:44px;height:44px;border-radius:13px;background:var(--primary);
+      display:grid;place-items:center;flex:none}
+.logo svg{width:21px;height:21px;fill:#7fe3bd}
+.sobre{font-size:11px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;
+       color:var(--muted-foreground)}
+.cab b{font-size:19px;font-weight:600;display:block;line-height:1.2}
+
+/* ── pasos ──────────────────────────────────────────────────────────────── */
+.pasos{display:flex;align-items:center;gap:9px;margin-bottom:26px;flex-wrap:wrap}
+.paso{display:flex;align-items:center;gap:9px;padding:7px 15px 7px 9px;
+      background:#fff;border:1px solid var(--border);border-radius:24px;
+      font-size:13.5px;color:var(--muted-foreground);transition:.18s}
+.paso .n{width:22px;height:22px;border-radius:50%;background:var(--muted);
+        display:grid;place-items:center;font-size:11.5px;font-weight:600;
+        font-family:var(--mono);color:var(--muted-foreground)}
+.paso.activo{background:var(--primary);border-color:var(--primary);
+             color:var(--primary-foreground)}
+.paso.activo .n{background:rgba(255,255,255,.17);color:#fff}
+.paso.hecho{border-color:#bcdccc;background:#eef7f2;color:#1c6b4c}
+.paso.hecho .n{background:#cfeadd;color:#1c6b4c}
+.raya{flex:1;height:1px;background:var(--border);min-width:14px}
+
+/* ── tarjetas ───────────────────────────────────────────────────────────── */
+.tarjeta{background:#fff;border:1px solid var(--border);border-radius:var(--radius);
+         padding:24px;box-shadow:var(--sombra);margin-bottom:18px}
+.tarjeta.plana{box-shadow:none}
+.tarjeta.suave{background:var(--secondary);border-color:#cfdcd6;box-shadow:none}
+.cabtar{display:flex;justify-content:space-between;align-items:flex-start;
+        gap:14px;margin-bottom:20px}
+.cabtar h2{margin:0;font-size:19px;font-weight:600;letter-spacing:-.01em}
+.cabtar p{margin:3px 0 0;font-size:13.5px;color:var(--muted-foreground)}
+
+.rej{display:grid;gap:14px}
+.r2{grid-template-columns:1fr 1fr}
+.r3{grid-template-columns:repeat(3,1fr)}
+.r4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:720px){.r2,.r3,.r4{grid-template-columns:1fr}}
+
+/* ── botones ────────────────────────────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
+     font-family:inherit;font-size:14px;font-weight:500;padding:11px 20px;
+     border-radius:11px;border:1px solid transparent;cursor:pointer;
+     transition:.15s;text-decoration:none}
+.btn:disabled{cursor:not-allowed}
+.p1{background:var(--primary);color:var(--primary-foreground)}
+.p1:hover:not(:disabled){background:#0f2e26}
+.p1:disabled{background:var(--muted);color:#a8b5b0;border-color:var(--border)}
+.p2{background:#fff;color:var(--primary);border-color:var(--border)}
+.p2:hover{border-color:#b9cbc3;background:#fbfdfb}
+.p3{background:transparent;color:var(--muted-foreground);border-color:var(--border)}
+.p3:hover{background:#fff}
+.enlace{background:none;border:none;color:var(--acento);font:inherit;font-size:13.5px;
+        font-weight:500;cursor:pointer;padding:0;text-decoration:none}
+.enlace:hover{text-decoration:underline}
+
+/* ── zona de subida ─────────────────────────────────────────────────────── */
+.suelta{border:1.5px dashed #c3d2cb;border-radius:var(--radius);background:#fbfdfb;
+        padding:26px 20px;text-align:center;cursor:pointer;transition:.18s}
+.suelta:hover,.suelta.encima{border-color:var(--acento);background:#f2f9f5}
+.suelta .ico{width:42px;height:42px;border-radius:12px;background:var(--secondary);
+             display:grid;place-items:center;margin:0 auto 12px}
+.suelta .ico svg{width:19px;height:19px;fill:none;stroke:var(--acento);
+                 stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.suelta b{display:block;font-size:15px;font-weight:600;margin-bottom:3px}
+.suelta small{color:var(--muted-foreground);font-size:12.8px;display:block;
+              margin-bottom:14px}
+input[type=file]{display:none}
+
+/* ── ficha del fichero leido ────────────────────────────────────────────── */
+.ficha{border:1px solid var(--border);border-radius:var(--radius);background:#fff;
+       padding:18px 20px}
+.ficha.mal{border-color:#e8cfc5;background:#fdf9f7}
+.ficha .arriba{display:flex;justify-content:space-between;align-items:center;
+               gap:10px;margin-bottom:12px}
+.ficha .nom{font-weight:600;font-size:14.5px;word-break:break-all}
+.pil{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:20px;
+     font-size:12px;font-weight:500;background:var(--secondary);color:var(--primary);
+     white-space:nowrap}
+.pil.ok{background:#dcf0e6;color:#1c6b4c}
+.pil.mal{background:#f6e6e0;color:var(--alerta)}
+.pil.gris{background:var(--muted);color:var(--muted-foreground)}
+.pt{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.dato{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+      padding:7px 0;border-bottom:1px solid var(--border);font-size:13.5px}
+.dato:last-of-type{border-bottom:none}
+.dato em{font-style:normal;color:var(--muted-foreground)}
+.dato b{font-family:var(--mono);font-weight:500}
+.motivo{color:var(--alerta);font-size:13.5px;margin:0 0 14px}
+
+/* ── campos ─────────────────────────────────────────────────────────────── */
+.campo label{display:block;font-size:11px;font-weight:600;letter-spacing:.11em;
+             text-transform:uppercase;color:var(--muted-foreground);margin-bottom:7px}
+.caja{display:flex;align-items:baseline;justify-content:space-between;gap:8px;
+      border:1px solid var(--border);border-radius:11px;background:#fff;padding:10px 14px}
+.caja input{border:none;outline:none;font-family:var(--mono);font-size:20px;
+            font-weight:500;width:100%;background:none;color:inherit}
+.caja span{color:var(--muted-foreground);font-size:13px;white-space:nowrap}
+.caja:focus-within{border-color:var(--ring);box-shadow:0 0 0 3px rgba(67,169,159,.13)}
+.grupo{display:flex;gap:5px;flex-wrap:wrap}
+.grupo .btn{flex:1;padding:10px 0;min-width:44px;font-size:13px}
+
+/* ── resultado ──────────────────────────────────────────────────────────── */
+.kpi{background:#fff;border:1px solid var(--border);border-radius:var(--radius);
+     padding:17px 19px}
+.kpi .et{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+         color:var(--muted-foreground);margin-bottom:7px}
+.kpi .vl{font-family:var(--mono);font-size:29px;font-weight:500;line-height:1;
+         letter-spacing:-.025em}
+.kpi .un{font-size:12.5px;color:var(--muted-foreground);margin-top:6px}
+.kpi.destaca{background:var(--primary);border-color:var(--primary)}
+.kpi.destaca .et{color:#93b3a8}
+.kpi.destaca .vl{color:#fff}
+.kpi.destaca .un{color:#a8c4b9}
+
+.barra{height:6px;background:var(--muted);border-radius:4px;overflow:hidden;margin:14px 0}
+.barra i{display:block;height:100%;background:var(--acento);width:0;transition:width .4s}
+
+.nota{border-left:2.5px solid var(--ring);padding:3px 0 3px 15px;
+      color:var(--muted-foreground);font-size:13.5px;margin:16px 0}
+.nota b{color:var(--foreground)}
+.nota.aviso{border-left-color:var(--alerta)}
+.oculto{display:none}
+.pieza{margin-top:auto}
+.acciones{display:flex;justify-content:space-between;align-items:center;
+          margin-top:20px;gap:12px;flex-wrap:wrap}
+svg.perfil{width:100%;height:auto;display:block}
+.integra{margin-top:46px;padding:16px 18px;border:1px dashed #c3d2cb;
+         border-radius:var(--radius);font-size:12.8px;color:var(--muted-foreground);
+         background:#fbfdfb}
+.integra b{color:var(--foreground)}
+.integra code{font-family:var(--mono);font-size:12px;background:var(--muted);
+              padding:1px 5px;border-radius:5px}
+
+/* ── el informe ─────────────────────────────────────────────────────────── */
+/* `.cabinf` declara `display:flex` mas abajo y con la misma especificidad gana,
+   asi que la cabecera del informe se colaba en pantalla. El `!important` aqui no
+   es pereza: es que esta regla tiene que ganar siempre. */
+.solo-papel{display:none !important}
+@media print{
+  @page{ size:A4; margin:16mm 14mm }
+  body{background:#fff;font-size:11pt}
+  .marco{max-width:none;padding:0}
+  /* fuera todo lo que es navegacion: en papel no se pulsa nada */
+  .pasos,.acciones,.integra,#s1,#s2,#cargando,.nota{display:none}
+  /* `revert` volveria al valor del navegador y tiraria tambien el flex de la
+     cabecera, que quedaria apilada. Se dice lo que se quiere en cada caso. */
+  .solo-papel{display:block !important}
+  .cabinf.solo-papel{display:flex !important}
+  .tarjeta{box-shadow:none;break-inside:avoid}
+  .kpi{break-inside:avoid}
+  .r4{grid-template-columns:repeat(4,1fr)}
+  /* los fondos de las tarjetas y del KPI destacado tienen que imprimirse */
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+/* ── navegacion de fecha · misma pieza que el grafico de precios del sitio ── */
+.nav{display:flex;align-items:center;gap:8px;flex:none}
+.mover{background:#fff;color:var(--primary);border:1px solid var(--border);
+       border-radius:9px;width:32px;height:32px;font-size:16px;cursor:pointer;
+       display:grid;place-items:center;transition:.15s;line-height:1}
+.mover:hover:not(:disabled){border-color:#b9cbc3;background:#fbfdfb}
+.mover:disabled{opacity:.35;cursor:not-allowed}
+input[type=month],input[type=date]{
+  background:#fff;color:var(--foreground);border:1px solid var(--border);
+  border-radius:9px;padding:6px 10px;font:inherit;font-size:13px;cursor:pointer}
+input[type=month]:focus,input[type=date]:focus{outline:none;border-color:var(--ring);
+  box-shadow:0 0 0 3px rgba(67,169,159,.13)}
+
+.avanzado{margin-top:20px;border-top:1px solid var(--border);padding-top:16px}
+.avanzado summary{cursor:pointer;font-size:13.5px;font-weight:500;
+                  color:var(--muted-foreground);list-style:none;user-select:none}
+.avanzado summary::-webkit-details-marker{display:none}
+.avanzado summary::before{content:'B8';display:inline-block;margin-right:8px;
+                          transition:transform .15s}
+.avanzado[open] summary::before{transform:rotate(90deg)}
+.avanzado summary:hover{color:var(--foreground)}
+.avanzado .caja input{font-size:16px}
+
+.mini{background:var(--secondary);border-radius:11px;padding:11px 14px}
+.mini em{font-style:normal;display:block;font-size:11px;font-weight:600;
+         letter-spacing:.09em;text-transform:uppercase;color:var(--muted-foreground);
+         margin-bottom:4px}
+.mini b{font-family:var(--mono);font-size:16px;font-weight:500}
+
+.tabla{width:100%;border-collapse:collapse;font-size:13px}
+.tabla th{text-align:right;font-weight:600;font-size:10.5px;letter-spacing:.07em;
+          text-transform:uppercase;color:var(--muted-foreground);
+          padding:0 12px 8px 0;border-bottom:1px solid var(--border);white-space:nowrap}
+.tabla th:first-child{text-align:left}
+.tabla td{padding:7px 12px 7px 0;border-bottom:1px solid var(--border);
+          text-align:right;font-family:var(--mono);font-size:12.5px;white-space:nowrap}
+.tabla td:first-child{text-align:left;font-family:var(--sans);font-weight:500}
+.tabla tr:last-child td{border-bottom:none}
+.tabla tr.total td{border-top:1.5px solid var(--border);font-weight:600;
+                   background:var(--secondary)}
+.dia-sel{cursor:pointer}
+
+.cabinf{display:flex;justify-content:space-between;align-items:flex-end;
+        border-bottom:1px solid var(--border);padding-bottom:12px;margin-bottom:20px}
+.cabinf h2{margin:0;font-size:20px;font-weight:600}
+.cabinf .meta{font-size:12px;color:var(--muted-foreground);text-align:right;
+              font-family:var(--mono);line-height:1.7}
+.fichainf{margin-top:22px;font-size:12px;color:var(--muted-foreground)}
+.fichainf .dato{font-size:12px}
+</style>
+</head>
+<body>
+<div class="marco">
+
+  <div class="cab">
+    <div class="logo"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></div>
+    <div>
+      <div class="sobre">TFM · Mercado eléctrico</div>
+      <b>Estudio de batería <span style="font-size:12px;font-weight:500;color:#924831;background:#f6e6e0;padding:2px 9px;border-radius:20px;vertical-align:middle;margin-left:6px">desarrollo</span></b>
+    </div>
+  </div>
+
+  <div id="fuente" style="display:flex;align-items:center;gap:10px;margin-bottom:18px;
+       flex-wrap:wrap"></div>
+
+  <div class="pasos">
+    <div class="paso activo" id="p1"><span class="n">1</span> Curvas</div>
+    <div class="raya"></div>
+    <div class="paso" id="p2"><span class="n">2</span> Batería</div>
+    <div class="raya"></div>
+    <div class="paso" id="p3"><span class="n">3</span> Resultado</div>
+  </div>
+
+
+  <!-- ══════════════════════ PASO 1 · CURVAS ══════════════════════════════ -->
+  <section id="s1">
+    <div class="tarjeta">
+      <div class="cabtar">
+        <div>
+          <h2>Sube tus curvas</h2>
+          <p>Un año completo, hora a hora. El resto se lee del propio fichero.</p>
+        </div>
+        <span class="pil gris"><span class="pt"></span>Paso 1 de 3</span>
+      </div>
+
+      <div class="rej r2">
+        <div>
+          <div class="suelta" id="z-con" data-tipo="consumo">
+            <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L8 8m4-4 4 4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></div>
+            <b>Curva de consumo</b>
+            <small>Arrastra el fichero o pulsa para elegirlo</small>
+            <span class="btn p2">Elegir fichero</span>
+            <input type="file" id="f-con" accept=".csv,.txt,.xlsx,.xls">
+          </div>
+          <div id="ficha-con"></div>
+        </div>
+        <div>
+          <div class="suelta" id="z-gen" data-tipo="generacion">
+            <div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg></div>
+            <b>Curva de generación</b>
+            <small>Opcional, si hay fotovoltaica</small>
+            <span class="btn p2">Elegir fichero</span>
+            <input type="file" id="f-gen" accept=".csv,.txt,.xlsx,.xls">
+          </div>
+          <div id="ficha-gen"></div>
+        </div>
+      </div>
+
+      <div class="acciones">
+        <div style="display:flex;gap:16px;flex-wrap:wrap">
+          <a class="enlace" href="../plantillas/plantilla_consumo.csv" id="pl-con" download>↓ Plantilla de consumo</a>
+          <a class="enlace" href="../plantillas/plantilla_generacion.csv" id="pl-gen" download>↓ Plantilla de generación</a>
+        </div>
+        <button class="btn p1" id="ir2" disabled>Continuar</button>
+      </div>
+    </div>
+
+    <div id="grafico-perfiles" class="oculto">
+      <div class="tarjeta plana">
+        <div class="cabtar" style="margin-bottom:14px">
+          <div><h2 style="font-size:15px">El día medio de tus curvas</h2>
+          <p>Si la generación no baja a cero de noche, los ficheros están cruzados.</p></div>
+        </div>
+        <svg class="perfil" id="svg-perfil" viewBox="0 0 700 190"></svg>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════ PASO 2 · BATERÍA ═════════════════════════════ -->
+  <section id="s2" class="oculto">
+    <div class="tarjeta">
+      <div class="cabtar">
+        <div>
+          <h2>¿Qué batería te planteas?</h2>
+          <p>Si no lo sabes, deja los valores que vienen puestos.</p>
+        </div>
+        <span class="pil gris"><span class="pt"></span>Paso 2 de 3</span>
+      </div>
+
+      <div class="rej r3">
+        <div class="campo">
+          <label>Potencia</label>
+          <div class="caja"><input id="b-pot" type="number" value="100" min="5" step="5"><span>kW</span></div>
+        </div>
+        <div class="campo">
+          <label>Duración</label>
+          <!-- 1 y 3 h existen y se venden: las de 1 h son de regulacion de frecuencia
+               y las de 3 h aparecen mucho en autoconsumo industrial -->
+          <div class="grupo" id="b-dur">
+            <button class="btn p3" data-h="1">1 h</button>
+            <button class="btn p3" data-h="2">2 h</button>
+            <button class="btn p3" data-h="3">3 h</button>
+            <button class="btn p1" data-h="4">4 h</button>
+            <button class="btn p3" data-h="6">6 h</button>
+            <button class="btn p3" data-h="8">8 h</button>
+          </div>
+        </div>
+        <div class="campo">
+          <label>Precio</label>
+          <div class="caja"><input id="b-capex" type="number" value="200000" min="20000" step="10000"><span>€/MWh</span></div>
+        </div>
+      </div>
+
+      <div class="tarjeta suave" style="margin:18px 0 0">
+        <div class="sobre" style="margin-bottom:10px">Con eso, la batería queda así</div>
+        <div class="rej r4" style="gap:20px">
+          <div class="dato" style="border:none;padding:0"><em>Energía</em><b id="k-e">0,40 MWh</b></div>
+          <div class="dato" style="border:none;padding:0"><em>Útil</em><b id="k-u">0,36 MWh</b></div>
+          <div class="dato" style="border:none;padding:0"><em>Coste total</em><b id="k-c">80.000 €</b></div>
+          <div class="dato" style="border:none;padding:0"><em>Coste de ciclo</em><b id="k-cc">37,0 €/MWh</b></div>
+        </div>
+      </div>
+
+      <div class="nota"><b>El precio es por MWh instalado, no total.</b> El coste de arriba
+        es el que se paga.</div>
+
+      <!-- ── el resto de la ficha ────────────────────────────────────────── -->
+      <details class="avanzado">
+        <summary>Opciones avanzadas · lo que dice la ficha del fabricante</summary>
+        <div class="rej r3" style="margin-top:18px">
+          <div class="campo">
+            <label>Rendimiento ida y vuelta</label>
+            <div class="caja"><input id="b-ef" type="number" value="90" min="70" max="99" step="1"><span>%</span></div>
+          </div>
+          <div class="campo">
+            <label>Ciclos de vida</label>
+            <div class="caja"><input id="b-ciclos" type="number" value="6000" min="1000" max="15000" step="500"><span>ciclos</span></div>
+          </div>
+          <div class="campo">
+            <label>Degradación</label>
+            <div class="caja"><input id="b-deg" type="number" value="3" min="1" max="6" step="0.5"><span>% / 1.000 ciclos</span></div>
+          </div>
+          <div class="campo">
+            <label>Carga máxima</label>
+            <div class="caja"><input id="b-cmax" type="number" value="100" min="10" max="100" step="5"><span>% nominal</span></div>
+          </div>
+          <div class="campo">
+            <label>Descarga máxima</label>
+            <div class="caja"><input id="b-dmax" type="number" value="100" min="10" max="100" step="5"><span>% nominal</span></div>
+          </div>
+          <div class="campo">
+            <label>Mínimo técnico</label>
+            <div class="caja"><input id="b-pmin" type="number" value="0" min="0" max="50" step="5"><span>% nominal</span></div>
+          </div>
+          <div class="campo">
+            <label>Carga mínima (SoC)</label>
+            <div class="caja"><input id="b-socmin" type="number" value="5" min="0" max="30" step="1"><span>%</span></div>
+          </div>
+          <div class="campo">
+            <label>Carga máxima (SoC)</label>
+            <div class="caja"><input id="b-socmax" type="number" value="95" min="70" max="100" step="1"><span>%</span></div>
+          </div>
+          <div class="campo">
+            <label>Mantenimiento</label>
+            <div class="caja"><input id="b-opex" type="number" value="1.5" min="0" max="10" step="0.1"><span>% CAPEX/año</span></div>
+          </div>
+        </div>
+        <div class="nota aviso" id="aviso-milp" style="display:none">
+          <b>El mínimo técnico convierte esto en otro problema.</b> Por encima de cero el
+          cálculo pasa de programación lineal a entera mixta y tarda entre 20 y 40 veces
+          más, para arañar un 0,04 % de margen. Déjalo en cero salvo que el inversor lo
+          imponga de verdad.
+        </div>
+      </details>
+
+      <!-- ── el periodo del estudio ──────────────────────────────────────── -->
+      <div class="tarjeta suave" style="margin:18px 0 0">
+        <div class="sobre" style="margin-bottom:12px">Qué periodo quieres estudiar</div>
+        <div class="rej r2" style="align-items:end;margin-bottom:14px">
+          <div class="campo">
+            <label>Empieza el</label>
+            <input type="date" id="est-desde" style="width:100%;padding:10px 14px;
+                   font-family:var(--mono);font-size:15px">
+          </div>
+          <div class="campo">
+            <label>Y termina el</label>
+            <input type="date" id="est-hasta" style="width:100%;padding:10px 14px;
+                   font-family:var(--mono);font-size:15px">
+          </div>
+        </div>
+        <div class="campo" style="margin-bottom:14px">
+          <label>Qué escenario de precio</label>
+          <div class="grupo" id="est-pct">
+            <button class="btn p3" data-p="p10">Pesimista (P10)</button>
+            <button class="btn p1" data-p="p50">Central (P50)</button>
+            <button class="btn p3" data-p="p90">Optimista (P90)</button>
+          </div>
+        </div>
+        <div class="campo">
+          <label>Atajos</label>
+          <div class="grupo" id="est-dur">
+            <button class="btn p3" data-modo="ano">Un año</button>
+            <button class="btn p1" data-modo="vida">Toda la vida</button>
+            <button class="btn p3" data-modo="real">Solo datos reales</button>
+          </div>
+        </div>
+        <p style="margin:14px 0 0;font-size:13px;color:var(--muted-foreground)"
+           id="est-explica"></p>
+      </div>
+
+      <div class="acciones">
+        <button class="btn p3" onclick="ir(1)">← Atrás</button>
+        <button class="btn p1" id="ir3">Calcular estudio →</button>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ══════════════════════ PASO 3 · RESULTADO ═══════════════════════════ -->
+  <section id="s3" class="oculto">
+
+    <div class="tarjeta" id="cargando">
+      <div class="cabtar">
+        <div><h2>Calculando tu estudio</h2>
+        <p id="txt-carga">Preparando los datos…</p></div>
+        <span class="pil gris"><span class="pt"></span>≈ 4 minutos</span>
+      </div>
+      <div class="barra"><i id="barra"></i></div>
+      <div class="nota">Puedes cerrar esta pestaña: el cálculo sigue en el servidor y el
+        resultado queda guardado.</div>
+    </div>
+
+    <div id="resultado" class="oculto">
+
+      <!-- cabecera que SOLO sale en el papel: en pantalla ya esta la del sitio -->
+      <div class="cabinf solo-papel">
+        <div>
+          <div class="sobre">Pulso Energía · TFM</div>
+          <h2>Estudio de batería</h2>
+        </div>
+        <div class="meta" id="inf-meta"></div>
+      </div>
+
+      <div class="rej r4" style="margin-bottom:18px">
+        <div class="kpi destaca">
+          <div class="et">Sale a cuenta en</div>
+          <div class="vl" id="r-pct">100 %</div>
+          <div class="un">de los 20 escenarios</div>
+        </div>
+        <div class="kpi">
+          <div class="et">Ahorro a vida completa</div>
+          <div class="vl" id="r-ahorro">164.010</div>
+          <div class="un">euros</div>
+        </div>
+        <div class="kpi">
+          <div class="et">Valor actual neto</div>
+          <div class="vl" id="r-van">+2.544</div>
+          <div class="un" id="r-banda">euros · banda 1.769 a 3.219</div>
+        </div>
+        <div class="kpi">
+          <div class="et">Uso diario</div>
+          <div class="vl" id="r-ciclos">1,0</div>
+          <div class="un" id="r-vida">ciclos al día · vida 7,8 años</div>
+        </div>
+      </div>
+
+      <!-- ── un mes de funcionamiento, navegable ─────────────────────────── -->
+      <div class="tarjeta plana">
+        <div class="cabtar" style="margin-bottom:14px;align-items:center">
+          <div>
+            <h2 style="font-size:15px">Un mes de funcionamiento</h2>
+            <p>Verde carga, rojo descarga. La línea es el precio. Pulsa un día para verlo.</p>
+          </div>
+          <div class="nav">
+            <button class="mover" id="mes-antes" title="Mes anterior">‹</button>
+            <input type="month" id="mes-fecha">
+            <button class="mover" id="mes-despues" title="Mes siguiente">›</button>
+          </div>
+        </div>
+        <svg class="perfil" id="svg-mes" viewBox="0 0 1000 250"></svg>
+        <div class="rej r4" style="margin-top:16px">
+          <div class="mini"><em>Cargado</em><b id="m-carga">—</b></div>
+          <div class="mini"><em>Descargado</em><b id="m-desc">—</b></div>
+          <div class="mini"><em>Ciclos</em><b id="m-ciclos">—</b></div>
+          <div class="mini"><em>Ahorro del mes</em><b id="m-ahorro">—</b></div>
+        </div>
+      </div>
+
+      <!-- ── el dia elegido ──────────────────────────────────────────────── -->
+      <div class="tarjeta plana">
+        <div class="cabtar" style="margin-bottom:14px;align-items:center">
+          <div>
+            <h2 style="font-size:15px" id="titulo-dia">El día</h2>
+            <p>Precio, consumo, generación y qué hace la batería, hora a hora.</p>
+          </div>
+          <div class="nav">
+            <button class="mover" id="dia-antes" title="Día anterior">‹</button>
+            <input type="date" id="dia-fecha">
+            <button class="mover" id="dia-despues" title="Día siguiente">›</button>
+          </div>
+        </div>
+        <svg class="perfil" id="svg-dia" viewBox="0 0 1000 300"></svg>
+        <div class="rej r4" style="margin-top:16px">
+          <div class="mini"><em>Compra</em><b id="d-compra">—</b></div>
+          <div class="mini"><em>Venta</em><b id="d-venta">—</b></div>
+          <div class="mini"><em>Sin batería</em><b id="d-sin">—</b></div>
+          <div class="mini"><em>Ahorro del día</em><b id="d-ahorro">—</b></div>
+        </div>
+      </div>
+
+      <!-- ── balance de energia ──────────────────────────────────────────── -->
+      <div class="tarjeta plana">
+        <div class="cabtar" style="margin-bottom:16px">
+          <div><h2 style="font-size:15px">Qué cambia en tu balance de energía</h2>
+          <p>Un año completo, con batería y sin ella. En MWh.</p></div>
+        </div>
+
+        <svg class="perfil" id="svg-balance" viewBox="0 0 1000 210"></svg>
+
+        <div style="overflow-x:auto;margin-top:18px">
+          <table class="tabla" id="tabla-balance"></table>
+        </div>
+
+        <div class="rej r3" style="margin-top:18px">
+          <div class="mini"><em>Menos red comprada</em><b id="b-red">—</b></div>
+          <div class="mini"><em>Menos vertido tirado</em><b id="b-vert">—</b></div>
+          <div class="mini"><em>Autoconsumo</em><b id="b-auto">—</b></div>
+        </div>
+
+        <div class="nota" style="margin-bottom:0"><b>La batería consume energía, no la
+          crea.</b> Aumenta lo que pasa por la instalación —lo que carga— y pierde por el
+          camino un 10 % en el ciclo. Lo que mejora es de dónde sale: menos horas comprando
+          a la red cara y menos excedente vendido barato.</div>
+      </div>
+
+      <!-- ── el detalle economico ────────────────────────────────────────── -->
+      <div class="tarjeta plana">
+        <div class="cabtar" style="margin-bottom:16px">
+          <div><h2 style="font-size:15px">El detalle económico</h2>
+          <p>De dónde sale el número de arriba.</p></div>
+        </div>
+
+        <div class="rej r4" style="margin-bottom:22px">
+          <div class="mini"><em>Inversión</em><b id="e-capex">—</b></div>
+          <div class="mini"><em>Ahorro al año</em><b id="e-anual">—</b></div>
+          <div class="mini"><em>Se recupera en</em><b id="e-payback">—</b></div>
+          <div class="mini"><em>Rentabilidad anual</em><b id="e-tir">—</b></div>
+        </div>
+
+        <div class="sobre" style="margin-bottom:10px">De la inversión al valor actual neto</div>
+        <svg class="perfil" id="svg-cascada" viewBox="0 0 1000 190"></svg>
+
+        <div class="sobre" style="margin:26px 0 10px">Año a año</div>
+        <div style="overflow-x:auto"><table class="tabla" id="tabla-anos"></table></div>
+
+        <div class="nota" style="margin-bottom:0"><b>El ahorro baja con los años</b> y no es
+          la batería envejeciendo: es el precio. El hueco entre el valle de mediodía y el
+          pico de la tarde se estrecha según entra más fotovoltaica en el sistema, y con él
+          se estrecha lo que un arbitraje puede ganar.</div>
+      </div>
+
+      <div class="nota"><b>El número grande es en cuántos escenarios sale bien, no el valor
+        actual neto.</b> Un VAN mediano positivo con un 45 % de escenarios buenos es una
+        inversión que falla más de la mitad de las veces.</div>
+
+      <!-- los supuestos, tambien solo en el papel: un informe sin ellos no vale de nada
+           dentro de seis meses, cuando nadie recuerde con que se calculo -->
+      <div class="fichainf solo-papel">
+        <div class="sobre" style="margin-bottom:8px">Con qué se ha calculado</div>
+        <div class="dato"><em>Batería</em><b id="inf-bat"></b></div>
+        <div class="dato"><em>Consumo</em><b id="inf-con"></b></div>
+        <div class="dato"><em>Generación</em><b id="inf-gen"></b></div>
+        <div class="dato"><em>Periodo estudiado</em><b id="inf-periodo"></b></div>
+        <div class="dato"><em>Curva de precio</em><b id="inf-curva"></b></div>
+        <div class="dato"><em>Tasa de descuento · mantenimiento</em><b>7 % · 1,5 % del CAPEX</b></div>
+      </div>
+
+      <div class="acciones">
+        <button class="btn p3" onclick="ir(2)">← Cambiar la batería</button>
+        <button class="btn p2" id="informe">Descargar informe</button>
+      </div>
+    </div>
+  </section>
+
+
+  <div class="integra">
+    <b>Ventana paralela.</b> Fichero suelto, no toca nada de lo que ya hay. Para integrarlo:
+    borrar el bloque <code>:root</code> y heredar los tokens del sitio, y sustituir las tres
+    funciones marcadas con <code>// SERVIDOR</code> por las llamadas reales
+    (<code>cargar_curvas.py --json</code> y <code>caso.py ejecutar</code>). La lectura del
+    fichero en el navegador es solo para la vista previa: el que manda es el servidor.
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   Prototipo. Lee el CSV en el navegador SOLO para la vista previa inmediata --
+   el fichero se sube igualmente y el servidor lo vuelve a leer, que es el que manda.
+   Hacer la vista previa aqui evita una ida y vuelta de red para decirle al usuario
+   "esto son 8.760 horas de 2027", que es justo lo que quiere saber al instante.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const S = { consumo:null, generacion:null, dur:4, rechazada:{} };
+const num = (v,d=1)=>v.toLocaleString('es-ES',{minimumFractionDigits:d,maximumFractionDigits:d});
+const ent = v=>v.toLocaleString('es-ES',{maximumFractionDigits:0});
+
+/* ── lectura del fichero ────────────────────────────────────────────────── */
+function separador(linea){
+  const c=(linea.match(/;/g)||[]).length, k=(linea.match(/,/g)||[]).length;
+  return c>k ? ';' : ',';
+}
+function aNumero(t,sep){
+  if(t==null) return NaN;
+  t=String(t).trim();
+  if(!t) return NaN;
+  // un CSV español trae 1.234,56 -- si el separador es ';' la coma es decimal
+  if(sep===';') t=t.replace(/\./g,'').replace(',','.');
+  return parseFloat(t);
+}
+
+function leerCSV(texto){
+  const lineas = texto.split(/\r?\n/).filter(l=>l.trim());
+  if(lineas.length<24) throw new Error('el fichero tiene muy pocas filas');
+  const sep = separador(lineas[0]);
+  const cab = lineas[0].split(sep).map(c=>c.trim().toLowerCase());
+
+  const iFecha = cab.findIndex(c=>/fecha|date|dia|day/.test(c));
+  const iHora  = cab.findIndex(c=>/^(hora|hour|h)$/.test(c));
+  // la columna de valor: la que lleva la unidad en el nombre, o la ultima numerica
+  let iVal = cab.findIndex(c=>/kwh|mwh|valor|value|consumo|generacion|energia/.test(c));
+  if(iVal<0) iVal = cab.length-1;
+
+  // unidad: se LEE del encabezado y no se adivina. 40 por hora son 40 kWh en una pyme
+  // y 40 MWh en una fabrica, y por la magnitud no se distinguen.
+  const nomVal = cab[iVal]||'';
+  let factor = null;                       // a MWh
+  if(/kwh/.test(nomVal)) factor = 0.001;
+  else if(/mwh/.test(nomVal)) factor = 1;
+
+  // formato ANCHO: columnas h1..h24
+  const cols = cab.map((c,i)=>({c,i})).filter(o=>/^(h|hora|hour)?_?\d{1,2}$/.test(o.c));
+  const filas = [];
+  if(cols.length>=20){
+    const iF = iFecha>=0 ? iFecha : 0;
+    for(let n=1;n<lineas.length;n++){
+      const p = lineas[n].split(sep);
+      const f = (p[iF]||'').trim();
+      for(const o of cols){
+        const v = aNumero(p[o.i],sep);
+        // una celda VACIA es una hora que no existe, no un cero: las descargas de
+        // distribuidora traen H25 siempre puesta y solo tiene valor el domingo de octubre
+        if(!isNaN(v)) filas.push({f, h:parseInt(o.c.match(/\d+/)[0]), v});
+      }
+    }
+  } else {
+    if(iFecha<0) throw new Error('no encuentro la columna de fecha');
+    for(let n=1;n<lineas.length;n++){
+      const p = lineas[n].split(sep);
+      const v = aNumero(p[iVal],sep);
+      if(isNaN(v)) continue;
+      let f=(p[iFecha]||'').trim(), h;
+      if(iHora>=0){ h=parseInt(p[iHora]); }
+      else { const m=f.match(/[T ](\d{1,2}):/); h=m?parseInt(m[1])+1:NaN; f=f.split(/[T ]/)[0]; }
+      if(!isNaN(h)) filas.push({f,h,v});
+    }
+  }
+  if(!filas.length) throw new Error('no he podido leer ninguna fila de datos');
+
+  const dias = [...new Set(filas.map(r=>r.f))].sort();
+  const total = filas.reduce((a,r)=>a+r.v,0);
+  const porHora = Array(25).fill(0), cuenta = Array(25).fill(0);
+  for(const r of filas){ if(r.h>=1&&r.h<=25){ porHora[r.h]+=r.v; cuenta[r.h]++; } }
+  const media = porHora.map((s,i)=>cuenta[i]?s/cuenta[i]:0);
+
+  return { filas:filas.length, dias:dias.length, desde:dias[0], hasta:dias[dias.length-1],
+           total, pico:Math.max(...filas.map(r=>r.v)), media, factor, nomVal };
+}
+
+/* ── revision · los mismos criterios que el servidor ────────────────────── */
+function revisar(d, tipo){
+  const mal=[];
+  if(d.dias<300) mal.push(`Solo ${d.dias} días. Hace falta un año completo: los meses que falten se rellenan con la media de los demás.`);
+  if(d.total<=0) mal.push('La curva suma cero: probablemente la columna de valores no es la que se ha leído.');
+  if(tipo==='generacion'){
+    const noche = d.media.slice(1,6).reduce((a,b)=>a+b,0)/5;
+    const mediaTot = d.media.slice(1,25).reduce((a,b)=>a+b,0)/24;
+    if(mediaTot>0 && noche/mediaTot>0.02)
+      mal.push(`Genera ${num(noche/mediaTot,2)} de su media entre las 0:00 y las 4:00, y una fotovoltaica da cero. ¿Es este el fichero de generación?`);
+  }
+  if(d.factor===null) mal.push('El encabezado no dice si son kWh o MWh, y no se adivina. Renombra la columna a algo como «consumo_kwh».');
+  return mal;
+}
+
+/* ── pintar la ficha ────────────────────────────────────────────────────── */
+function ficha(tipo, nombre, d, mal){
+  const anual = d.total*(d.factor||0.001)/(d.dias/365.25);
+  const pico  = d.pico*(d.factor||0.001)*1000;
+  const ok = mal.length===0;
+  let h = `<div class="ficha ${ok?'':'mal'}">
+    <div class="arriba"><span class="nom">${nombre}</span>
+      <span class="pil ${ok?'ok':'mal'}"><span class="pt"></span>${ok?'Correcta':'No se puede usar'}</span></div>`;
+  if(!ok) h += mal.map(m=>`<p class="motivo">${m}</p>`).join('');
+  h += `<div class="dato"><em>Periodo</em><b>${d.desde} → ${d.hasta}</b></div>
+        <div class="dato"><em>Días</em><b>${d.dias}</b></div>
+        <div class="dato"><em>${tipo==='consumo'?'Consumo':'Generación'} anual</em><b>${num(anual)} MWh</b></div>
+        <div class="dato"><em>Punta</em><b>${num(pico)} kW</b></div>`;
+  if(tipo==='generacion' && ok)
+    h += `<div class="dato"><em>Equivale a</em><b>${num(anual/1.6)} kWp</b></div>`;
+  if(!ok) h += `<div style="margin-top:14px"><button class="btn p3" data-forzar="${tipo}"
+        style="font-size:13px;padding:8px 14px">Usarlo igualmente</button></div>`;
+  return h+'</div>';
+}
+
+/* ── el grafico del dia medio ───────────────────────────────────────────── */
+function perfil(){
+  const c=S.consumo, g=S.generacion;
+  if(!c) return;
+  const W=700,H=190,ml=42,mr=14,mt=14,mb=26;
+  const serie = d => d ? d.media.slice(1,25).map(v=>v*(d.factor||0.001)*1000) : null;
+  const sc=serie(c), sg=serie(g);
+  const max=Math.max(...(sc||[0]), ...(sg||[0]), 1)*1.12;
+  const X=i=>ml+i*(W-ml-mr)/23, Y=v=>H-mb-(v/max)*(H-mt-mb);
+  const linea=s=>s.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ');
+  let s=`<style>.ejx{font:10px var(--sans);fill:#697a74}.gr{stroke:#e4ece8;stroke-width:1}</style>`;
+  for(let k=0;k<=3;k++){ const v=max*k/3;
+    s+=`<line class="gr" x1="${ml}" y1="${Y(v)}" x2="${W-mr}" y2="${Y(v)}"/>
+        <text class="ejx" x="4" y="${Y(v)+3.5}">${ent(v)}</text>`; }
+  for(let i=0;i<24;i+=3) s+=`<text class="ejx" x="${X(i)}" y="${H-8}" text-anchor="middle">${i}h</text>`;
+  if(sg) s+=`<path d="${linea(sg)}" fill="none" stroke="#f0a830" stroke-width="2.2" stroke-linejoin="round"/>`;
+  s+=`<path d="${linea(sc)}" fill="none" stroke="#173f35" stroke-width="2.2" stroke-linejoin="round"/>`;
+  s+=`<text class="ejx" x="${W-mr}" y="${mt}" text-anchor="end" fill="#173f35">consumo (kW)</text>`;
+  if(sg) s+=`<text class="ejx" x="${W-mr}" y="${mt+14}" text-anchor="end" fill="#c8871a">generación (kW)</text>`;
+  document.getElementById('svg-perfil').innerHTML=s;
+  document.getElementById('grafico-perfiles').classList.remove('oculto');
+}
+
+/* ── enganches de subida ────────────────────────────────────────────────── */
+function engancha(idZona, idInput, tipo, idFicha){
+  const z=document.getElementById(idZona), inp=document.getElementById(idInput);
+  z.onclick=()=>inp.click();
+  z.ondragover=e=>{e.preventDefault();z.classList.add('encima')};
+  z.ondragleave=()=>z.classList.remove('encima');
+  z.ondrop=e=>{e.preventDefault();z.classList.remove('encima');
+               if(e.dataTransfer.files[0]) tomar(e.dataTransfer.files[0])};
+  inp.onchange=()=>inp.files[0]&&tomar(inp.files[0]);
+
+  function tomar(file){
+    const caja=document.getElementById(idFicha);
+    if(!/\.(csv|txt)$/i.test(file.name)){
+      // SERVIDOR · el .xlsx no se lee en el navegador: se sube y responde el servidor
+      caja.innerHTML=`<div class="ficha"><div class="arriba">
+        <span class="nom">${file.name}</span>
+        <span class="pil gris"><span class="pt"></span>Subiendo…</span></div>
+        <p style="margin:0;font-size:13.5px;color:var(--muted-foreground)">
+        Los Excel los lee el servidor. Aquí se enseñará su respuesta.</p></div>`;
+      return;
+    }
+    const fr=new FileReader();
+    fr.onload=()=>{
+      let d,mal;
+      try{ d=leerCSV(fr.result); mal=revisar(d,tipo); }
+      catch(err){
+        caja.innerHTML=`<div class="ficha mal"><div class="arriba">
+          <span class="nom">${file.name}</span>
+          <span class="pil mal"><span class="pt"></span>No se puede leer</span></div>
+          <p class="motivo">${err.message}</p></div>`;
+        S[tipo]=null; S.rechazada[tipo]=true; revisarPaso(); return;
+      }
+      caja.innerHTML=ficha(tipo,file.name,d,mal);
+      S[tipo]= mal.length? null : d;
+      S.rechazada[tipo] = mal.length>0;
+      // "usarlo igualmente": el usuario puede tener razon -- hay instalaciones raras --
+      // pero entonces el dato malo entra porque alguien lo decidio, no porque nadie miro
+      const bf = caja.querySelector('[data-forzar]');
+      if(bf) bf.onclick = e=>{
+        e.stopPropagation();
+        S[tipo]=d; S.rechazada[tipo]=false;
+        caja.querySelector('.ficha').classList.remove('mal');
+        caja.querySelector('.pil').className='pil gris';
+        caja.querySelector('.pil').innerHTML='<span class="pt"></span>Aceptada a mano';
+        bf.remove(); perfil(); revisarPaso();
+      };
+      perfil(); revisarPaso();
+    };
+    fr.readAsText(file,'utf-8');
+  }
+}
+engancha('z-con','f-con','consumo','ficha-con');
+engancha('z-gen','f-gen','generacion','ficha-gen');
+
+function revisarPaso(){
+  // La generacion es OPCIONAL, pero una generacion RECHAZADA no es lo mismo que no haberla
+  // subido: si se dejara continuar, el estudio saldria sin ella y sin decirlo. Un
+  // resultado que cambia en silencio segun lo que el servidor haya podido leer es peor
+  // que un boton apagado.
+  const rechazada = Object.values(S.rechazada).some(Boolean);
+  const btn = document.getElementById('ir2');
+  btn.disabled = !S.consumo || rechazada;
+  btn.textContent = rechazada ? 'Corrige el fichero para seguir' : 'Continuar';
+}
+
+/* ── navegacion ─────────────────────────────────────────────────────────── */
+function ir(n){
+  for(const i of [1,2,3]){
+    document.getElementById('s'+i).classList.toggle('oculto', i!==n);
+    const p=document.getElementById('p'+i);
+    p.classList.toggle('activo', i===n);
+    p.classList.toggle('hecho', i<n);
+  }
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+document.getElementById('ir2').onclick=()=>ir(2);
+
+/* ── ficha de la bateria ────────────────────────────────────────────────── */
+const val = (id, d) => { const e=document.getElementById(id);
+                         return e ? (+e.value || 0) : d; };
+
+/* La ficha entera, en un sitio. Todo lo demas la lee de aqui en vez de ir tocando
+   el DOM por su cuenta -- que es como se termina con dos partes de la pantalla
+   calculando con valores distintos. */
+function ficha(){
+  const kw = val('b-pot',100), socmin = val('b-socmin',5)/100, socmax = val('b-socmax',95)/100;
+  const E = kw/1000*S.dur;
+  return { kw, E, dur:S.dur,
+           capex_mwh: val('b-capex',200000), capex: E*val('b-capex',200000),
+           ef: val('b-ef',90)/100, socmin, socmax, util: E*(socmax-socmin),
+           ciclos: val('b-ciclos',6000), deg: val('b-deg',3),
+           cmax: val('b-cmax',100)/100, dmax: val('b-dmax',100)/100,
+           pmin: val('b-pmin',0)/100, opex: val('b-opex',1.5)/100 };
+}
+
+/* El coste de ciclo: lo que cuesta cada MWh descargado en desgaste de la bateria.
+   Es lo que decide si un hueco de precio compensa o no, asi que sale del CAPEX y de
+   los ciclos de vida, no de un numero puesto a mano. */
+function costeCiclo(b){ return (b.E*b.capex_mwh)/(b.ciclos*Math.max(b.util,1e-9)); }
+
+function bateria(){
+  const b = ficha();
+  document.getElementById('k-e').textContent = num(b.E,2)+' MWh';
+  document.getElementById('k-u').textContent = num(b.util,2)+' MWh';
+  document.getElementById('k-c').textContent = ent(b.capex)+' €';
+  const kc = document.getElementById('k-cc');
+  if (kc) kc.textContent = num(costeCiclo(b),1)+' €/MWh';
+  const av = document.getElementById('aviso-milp');
+  if (av) av.style.display = b.pmin > 0 ? 'block' : 'none';
+}
+// cualquier campo de la ficha recalcula
+document.querySelectorAll('#s2 input').forEach(i => i.addEventListener('input', bateria));
+document.getElementById('b-pot').oninput=bateria;
+document.getElementById('b-capex').oninput=bateria;
+document.querySelectorAll('#b-dur .btn').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#b-dur .btn').forEach(x=>x.className='btn p3');
+  b.className='btn p1'; S.dur=+b.dataset.h; bateria();
+});
+bateria();
+
+/* ── el calculo ─────────────────────────────────────────────────────────── */
+document.getElementById('ir3').onclick=()=>{
+  fijarPeriodo(PERIODO.modo);
+  ir(3);
+  document.getElementById('cargando').classList.remove('oculto');
+  document.getElementById('resultado').classList.add('oculto');
+  // SERVIDOR · aqui va `caso.py ejecutar`. Mientras tanto, el progreso simulado.
+  let n=0; const total=20;
+  const t=setInterval(()=>{
+    n++;
+    document.getElementById('barra').style.width=(n/total*100)+'%';
+    document.getElementById('txt-carga').textContent=
+      `Escenario ${n} de ${total} · optimizando 7.426 días`;
+    if(n>=total){ clearInterval(t); setTimeout(mostrar,350); }
+  },110);
+};
+
+async function mostrar(){
+  document.getElementById('cargando').classList.add('oculto');
+  document.getElementById('resultado').classList.remove('oculto');
+  // el mes arranca en enero del primer año y el dia en un dia cualquiera de ese mes
+  MES = new Date(PERIODO.desde.getFullYear(), PERIODO.desde.getMonth(), 1);
+  DIA = new Date(PERIODO.desde.getFullYear(), PERIODO.desde.getMonth(),
+                 Math.min(15, new Date(PERIODO.desde.getFullYear(),
+                                       PERIODO.desde.getMonth()+1, 0).getDate()));
+  await traerMes(MES.getFullYear(), MES.getMonth());
+  pintarMes(); pintarDia(); balance(); economia();
+  rellenarInforme();
+}
+
+/* ── el informe ─────────────────────────────────────────────────────────────
+   Se imprime la propia pantalla con una hoja de estilos de impresion. Sale un PDF
+   decente con un clic, sin librerias y sin ida y vuelta al servidor.
+
+   SERVIDOR · el informe COMPLETO -- las 534.672 filas de despacho, el año a año, el
+   barrido de tamaños -- tiene que generarlo el servidor, que es quien los tiene. Esto
+   cubre lo que el usuario quiere en el momento: llevarse la pantalla que esta viendo.  */
+function rellenarInforme(){
+  const kw = +document.getElementById('b-pot').value || 0;
+  const cx = +document.getElementById('b-capex').value || 0;
+  const E  = kw/1000*S.dur;
+  const f  = new Date();
+  const fecha = f.toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+
+  document.getElementById('inf-meta').innerHTML =
+    `${fecha}<br>${f.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}`;
+  document.getElementById('inf-bat').textContent =
+    `${ent(kw)} kW · ${S.dur} h · ${num(E,2)} MWh · ${ent(E*cx)} €`;
+
+  const linea = (d,tipo) => {
+    if(!d) return tipo==='generacion' ? 'sin instalación' : '—';
+    const anual = d.total*(d.factor||0.001)/(d.dias/365.25);
+    return `${num(anual)} MWh/año · ${d.dias} días · ${d.desde} → ${d.hasta}`;
+  };
+  document.getElementById('inf-con').textContent = linea(S.consumo,'consumo');
+  document.getElementById('inf-gen').textContent = linea(S.generacion,'generacion');
+  // SERVIDOR · sale de `app_case_run.curve_generated_at`. La curva se pisa cada mañana,
+  // asi que sin esta linea dos informes de dias distintos no se pueden comparar y nadie
+  // se entera.
+  document.getElementById('inf-curva').textContent =
+    PERIODO.modo === 'real' ? 'precio realizado, sin predicción'
+                            : 'publicada el 31-08-2026 · 20 escenarios';
+  const ip = document.getElementById('inf-periodo');
+  if (ip) ip.textContent =
+    `${PERIODO.desde.toLocaleDateString('es-ES')} → ${PERIODO.hasta.toLocaleDateString('es-ES')}`
+    + ` · ${num(PERIODO.anos,1)} años · `
+    + {ano:'un año', vida:'vida de la batería', real:'solo datos reales'}[PERIODO.modo];
+}
+
+document.getElementById('informe').onclick = ()=>{
+  rellenarInforme();
+  window.print();
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SIMULACION DE UN MES
+   Todo lo de aqui abajo es PROVISIONAL y esta marcado. El servidor ya calcula esto
+   de verdad -- programacion lineal sobre 20 escenarios de precio, y el resultado
+   vive en `app_case_dispatch` -- pero mientras no haya API, la pantalla necesita
+   algo que responda a lo que el usuario acaba de escribir. Un despacho de mentira
+   que reacciona ENSEÑA la pantalla; uno de verdad que no llega, no.
+
+   La heuristica de abajo NO es el optimizador: carga en las horas baratas y descarga
+   en las caras, dia a dia. Se parece bastante y se calcula al instante. Al enchufar
+   el servidor se borra entera y se leen las filas reales.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const HOY = new Date(2027, 0, 1);
+let MES = new Date(2027, 0, 1), DIA = new Date(2027, 0, 15);
+
+/* `toISOString` pasa por UTC, y en Madrid --UTC+1 o +2-- la medianoche local cae en el
+   dia ANTERIOR. Todas las fechas de fin salian un dia antes: la vida acababa el 30 de
+   diciembre y el tramo real el 30 de agosto. Se formatea desde las componentes locales,
+   que es lo que el usuario ha escrito y lo que espera leer. */
+const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${
+                   String(d.getDate()).padStart(2,'0')}`;
+const azar = s => { let x = Math.sin(s * 12.9898) * 43758.5453; return x - Math.floor(x); };
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   LA CURVA DE PRECIO · medida, no inventada.
+
+   Estos 72 numeros son los percentiles P10/P50/P90 por hora del dia de la curva que
+   el servidor publica: 50 escenarios sobre 7.426 dias, de 2026 a 2046.
+
+   La primera version de esta pantalla llevaba una curva inventada con un
+   `Math.max(0, ...)` que la clavaba en cero, y estaba MUY lejos de la real:
+
+       horas <= 0        inventada  0 %      real  21,0 %
+       horas <  0        inventada  0 %      real  12,5 %  (minimo -15 EUR/MWh)
+       mediodia (13h)    inventada  ~34      real  P50 = 0,0 -- el 62 % de esas horas <= 0
+       pico de tarde     inventada  ~88      real  121
+
+   O sea, la mitad de diferencial del que hay de verdad. Y el diferencial es
+   EXACTAMENTE lo que hace que una bateria tenga sentido o no, asi que la pantalla
+   enseñaba una bateria mucho peor de lo que seria. Con precios que nunca bajan de
+   cero no hay nada que arbitrar.
+
+   El cero no es un suelo: es un PUNTO DE ACUMULACION. A mediodia el precio no baja
+   suavemente hasta 12 o 15 -- se planta en cero, y de ahi se va a negativo cuando
+   sobra tanta solar que hay que pagar por colocarla.
+   ═══════════════════════════════════════════════════════════════════════════ */
+const CURVA = {
+  p10: [ 1.4, 0.7, 0.6, 0.6, 0.5, 0.6, 0.8, 0.5, 0.0,-0.1,-0.8,-1.1,
+        -1.5,-1.5,-1.3,-1.0,-0.7,-0.0, 0.2, 3.3,18.7,26.0,13.2, 5.1],
+  p50: [95.1,83.8,76.3,75.2,74.1,76.6,83.7,73.6,41.3, 5.8, 0.2, 0.0,
+         0.0, 0.0, 0.0, 0.0, 0.5,16.9,69.9,101.1,116.5,121.0,114.4,104.3],
+  p90: [135.8,129.5,125.9,125.4,124.8,126.0,130.4,131.9,126.9,112.4,83.9,44.0,
+        17.3,14.5,26.6,54.7,90.6,120.0,138.2,147.6,156.2,159.6,151.9,142.4],
+};
+let PERCENTIL = 'p50';
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CONEXION CON EL SERVIDOR
+   Si el API responde, manda el API: los precios salen de `app_curve_hourly`, que es la
+   curva de verdad. Si no responde -- la pagina abierta como fichero suelto, el servicio
+   parado -- se sigue con el perfil medido de aqui abajo y se avisa en pantalla.
+
+   No es un apaño: es lo que permite que Magui maquete sin tener el backend delante y que
+   la misma pagina funcione conectada sin tocar una linea.
+   ═══════════════════════════════════════════════════════════════════════════ */
+// Servida desde el API, el origen es el mismo y basta con rutas relativas. Abierta como
+// fichero suelto se intenta el puerto de desarrollo, y si no contesta se sigue sin el.
+const API = (location.protocol === 'file:') ? 'http://127.0.0.1:8000' : '';
+let SERVIDOR = null;                    // el estado de la curva publicada, si hay
+const CACHE = new Map();                // dia -> [24 precios], para no pedir dos veces
+
+async function conectar(){
+  try{
+    const r = await fetch(`${API}/api/bat/estado`, {signal: AbortSignal.timeout(4000)});
+    if (!r.ok) throw new Error(r.status);
+    SERVIDOR = await r.json();
+  }catch(e){ SERVIDOR = null; }
+  pintarFuente();
+  return SERVIDOR;
+}
+
+function pintarFuente(){
+  const c = document.getElementById('fuente');
+  if (!c) return;
+  c.innerHTML = SERVIDOR
+    ? `<span class="pil ok"><span class="pt"></span>Conectado</span>
+       <span class="tenue" style="font-size:12.5px">curva publicada el
+       ${new Date(SERVIDOR.generada).toLocaleDateString('es-ES')} ·
+       ${SERVIDOR.escenarios} escenarios · ${SERVIDOR.desde} → ${SERVIDOR.hasta}</span>`
+    : `<span class="pil mal"><span class="pt"></span>Sin servidor</span>
+       <span class="tenue" style="font-size:12.5px">precios de demostración, medidos de la
+       curva real pero generados aquí. Arranca el API para usar la de verdad.</span>`;
+}
+
+/* Se pide el mes entero de una vez: 744 filas en una peticion en vez de 31. */
+async function traerMes(a, m){
+  if (!SERVIDOR) return false;
+  const d0 = `${a}-${String(m+1).padStart(2,'0')}-01`;
+  const nd = new Date(a, m+1, 0).getDate();
+  const d1 = `${a}-${String(m+1).padStart(2,'0')}-${nd}`;
+  if (CACHE.has(d0)) return true;
+  try{
+    const r = await fetch(`${API}/api/bat/curva?desde=${d0}&hasta=${d1}`,
+                          {signal: AbortSignal.timeout(15000)});
+    if (!r.ok) return false;
+    const d = await r.json();
+    for (let i = 0; i < d.t.length; i++){
+      const dia = d.t[i].slice(0,10);
+      if (!CACHE.has(dia)) CACHE.set(dia, []);
+      CACHE.get(dia).push(d[PERCENTIL][i]);
+    }
+    CACHE.set(d0, CACHE.get(d0) || []);
+    return true;
+  }catch(e){ return false; }
+}
+
+/* El perfil medido, como respaldo. Mismo contrato: 24 numeros. */
+function precioDia(f){
+  const guardado = CACHE.get(iso(f));
+  if (guardado && guardado.length === 24) return guardado;
+  return precioSintetico(f);
+}
+
+function precioSintetico(f){
+  const doy = Math.floor((f - new Date(f.getFullYear(),0,0)) / 864e5);
+  const base = CURVA[PERCENTIL];
+  const est = 1 + 0.22 * Math.cos((doy - 15) / 365 * 2 * Math.PI);   // invierno caro
+  const dia = 0.86 + 0.28 * azar(doy + f.getFullYear()*400);
+  return base.map((v, h) => {
+    const ruido = (azar(doy*24 + h) - .5) * 11;
+    // por encima de 6 EUR/MWh el precio se mueve como cualquier otro; por debajo esta
+    // en el punto de acumulacion del cero y lo que decide es si sobra solar o no
+    if (v > 6) return v * est * dia + ruido;
+    const sobra = azar(doy*31 + h*7);
+    return sobra < .45 ? 0 : (sobra < .72 ? -Math.min(15, sobra*22) : Math.max(0, v + ruido*.5));
+  });
+}
+
+/* el consumo y la generacion del usuario, en kW por hora de ese dia */
+function perfilDia(f){
+  const doy = Math.floor((f - new Date(f.getFullYear(),0,0)) / 864e5);
+  const finde = f.getDay() === 0 || f.getDay() === 6;
+  const media = d => d ? d.media.slice(1,25).map(v => v*(d.factor||0.001)*1000) : Array(24).fill(0);
+  const L0 = media(S.consumo), G0 = media(S.generacion);
+  // estacionalidad ligera, para que un mes de enero no se vea igual que uno de julio
+  const eL = (1 + 0.18 * Math.cos((doy - 20) / 365 * 2 * Math.PI)) * (finde ? 0.62 : 1);
+  const eG =  0.62 + 0.38 * Math.sin((doy - 80) / 365 * 2 * Math.PI);
+  return { L: L0.map(v => v*eL), G: G0.map(v => v*eG) };
+}
+
+/* SERVIDOR · el LP de verdad. Esto es una heuristica de andar por casa: llenar en las
+   horas mas baratas y vaciar en las mas caras, respetando potencia y estado de carga. */
+function despachoDia(f, soc0){
+  const b = ficha();
+  const er = Math.sqrt(b.ef), cc = costeCiclo(b);
+  const kwC = b.kw*b.cmax, kwD = b.kw*b.dmax, pmin = b.kw*b.pmin;
+  // TODO EN kWh Y kW. Mezclar el estado de carga en MWh con las potencias en kW hacia
+  // que el hueco disponible saliera mil veces menor y la bateria no cargaba nunca.
+  const utilK = b.util * 1000;
+  const p = precioDia(f), {L, G} = perfilDia(f);
+  const c = Array(24).fill(0), d = Array(24).fill(0), soc = Array(24).fill(0);
+  let s = soc0 ?? 0;
+
+  // EL PRECIO QUE IMPORTA NO ES EL DEL MERCADO, es el que se evita.
+  // En autoconsumo un kWh que se deja de comprar vale el spot MAS el peaje, y un kWh
+  // que se deja de verter vale solo el 80 % del spot. Ordenar por el precio del pool a
+  // secas hace que la bateria ignore justo lo que la hace rentable en una fabrica.
+  const RECARGO = 70, EXPORTA = .8;
+  const neto = h => L[h] - G[h];                       // kW: >0 importa, <0 sobra
+  const coste = h => neto(h) > 0 ? p[h] + RECARGO : p[h] * EXPORTA;  // cargar cuesta
+  const valor = h => neto(h) > 0 ? p[h] + RECARGO : p[h] * EXPORTA;  // descargar ahorra
+
+  const horas = [...Array(24).keys()];
+
+  // SE EMPAREJA CADA CARGA CON SU DESCARGA, no se eligen por separado.
+  //
+  // Decidir "estas son las horas baratas" y "estas las caras" por su cuenta llenaba la
+  // bateria de energia que luego no habia donde colocar: un dia de enero sin excedente
+  // cargaba 200 kWh de red a 126 EUR/MWh y solo descargaba 59, y el resto se quedaba
+  // dentro. Sobre el papel eran horas baratas; en la practica era dinero tirado.
+  //
+  // Aqui cada kWh que entra tiene ya un sitio donde salir, y solo entra si esa pareja
+  // concreta paga el rendimiento y el desgaste. Un kWh cargado a `pc` rinde `er*pv` al
+  // descargarlo, y ha costado `pc/er` mas `cc` de desgaste.
+  const fuentes = [];                       // de donde sacar energia, de mas barata a mas cara
+  for (const h of horas){
+    const sob = Math.max(-neto(h), 0);
+    if (sob > 0) fuentes.push({h, kw: Math.min(sob, kwC), precio: p[h]*EXPORTA});
+    const libre = kwC - Math.min(sob, kwC);
+    if (libre > 0) fuentes.push({h, kw: libre, precio: p[h] + RECARGO});
+  }
+  fuentes.sort((a,x) => a.precio - x.precio);
+
+  const destinos = horas.filter(h => neto(h) > 0)    // solo se vacia si hay que importar
+    .map(h => ({h, kw: Math.min(kwD, neto(h)), precio: p[h] + RECARGO}))
+    .sort((a,x) => x.precio - a.precio);
+
+  let libreEnBateria = utilK - s;
+  for (const dst of destinos){
+    let porColocar = Math.min(dst.kw, (s + libreEnBateria) * er);
+    for (const src of fuentes){
+      if (porColocar <= .01 || libreEnBateria <= .01) break;
+      if (src.kw <= .01) continue;
+      if (src.h >= dst.h) continue;                  // no se puede gastar lo aun no cargado
+      if (er*dst.precio - src.precio/er - cc <= 0) break;   // ya no compensa, ni las siguientes
+      const carga = Math.min(src.kw, libreEnBateria, porColocar/er/er);
+      if (carga <= .01) continue;
+      c[src.h] += carga; src.kw -= carga; libreEnBateria -= carga;
+      const sale = carga*er*er;
+      d[dst.h] += sale; porColocar -= sale; libreEnBateria += sale;
+    }
+  }
+  // el excedente que quedo sin pareja se guarda igual: verterlo al 80 % del pool es la
+  // alternativa, y guardarlo casi nunca es peor
+  for (const h of horas){
+    const sob = Math.max(-neto(h), 0) - c[h];
+    if (sob > .01 && libreEnBateria > .01){
+      const extra = Math.min(sob, kwC - c[h], libreEnBateria);
+      c[h] += extra; libreEnBateria -= extra;
+    }
+  }
+  for (const h of horas){                            // minimo tecnico del inversor
+    if (pmin > 0 && c[h] > 0 && c[h] < pmin) c[h] = 0;
+    if (pmin > 0 && d[h] > 0 && d[h] < pmin) d[h] = 0;
+  }
+  for (let h = 0; h < 24; h++){                      // y el estado de carga que resulta
+    s = Math.max(0, Math.min(utilK, s + c[h]*er - d[h]/er));
+    soc[h] = s;
+  }
+  return { p, L, G, c, d, soc, E:b.E, util:b.util, cc };
+}
+
+/* la economia de un dia, con bateria y sin ella */
+function euros(r){
+  const RECARGO = 70, EXPORTA = 0.8;
+  let compra = 0, venta = 0, compra0 = 0, venta0 = 0;
+  for (let h = 0; h < 24; h++){
+    const neto  = r.L[h] - r.G[h] + r.c[h] - r.d[h];
+    const neto0 = r.L[h] - r.G[h];
+    const kwh = v => v / 1000;           // kW durante 1 h -> MWh
+    if (neto > 0) compra += kwh(neto) * (r.p[h] + RECARGO); else venta += kwh(-neto) * r.p[h] * EXPORTA;
+    if (neto0 > 0) compra0 += kwh(neto0) * (r.p[h] + RECARGO); else venta0 += kwh(-neto0) * r.p[h] * EXPORTA;
+  }
+  const desgaste = r.d.reduce((a,b)=>a+b,0) / 1000 * r.cc;
+  return { compra, venta, coste: compra - venta + desgaste,
+           coste0: compra0 - venta0, ahorro: (compra0 - venta0) - (compra - venta + desgaste) };
+}
+
+/* ── el mes ─────────────────────────────────────────────────────────────── */
+function pintarMes(){
+  if (!S.consumo) return;
+  const a = MES.getFullYear(), m = MES.getMonth();
+  const nd = new Date(a, m+1, 0).getDate();
+  document.getElementById('mes-fecha').value = `${a}-${String(m+1).padStart(2,'0')}`;
+
+  const dias = [], W = 1000, H = 250, ml = 44, mr = 12, mt = 16, mb = 30;
+  let soc = null, tc = 0, td = 0, tah = 0;
+  for (let k = 1; k <= nd; k++){
+    const f = new Date(a, m, k);
+    const r = despachoDia(f, soc);
+    soc = r.soc[23];
+    const e = euros(r);
+    tc += r.c.reduce((x,y)=>x+y,0)/1000;
+    td += r.d.reduce((x,y)=>x+y,0)/1000;
+    tah += e.ahorro;
+    dias.push({k, f, r, e});
+  }
+  const util = dias[0].r.util;
+  document.getElementById('m-carga').textContent  = num(tc,1)+' MWh';
+  document.getElementById('m-desc').textContent   = num(td,1)+' MWh';
+  document.getElementById('m-ciclos').textContent = num(td/Math.max(util,1e-9)/nd,2)+' /día';
+  document.getElementById('m-ahorro').textContent = ent(tah)+' €';
+
+  const todos = dias.flatMap(x => x.r.p);
+  const max = Math.max(...todos) * 1.08;
+  const anD = (W-ml-mr)/nd;
+  const X = (k,h) => ml + (k-1)*anD + (h+0.5)*anD/24;
+  const Y = v => H-mb-(v/max)*(H-mt-mb);
+
+  let s = `<style>.ejx{font:10.5px var(--sans);fill:#697a74}.gr{stroke:#e4ece8}
+           .dd:hover rect.fondo{fill:#173f35;fill-opacity:.05}</style>`;
+  for (const x of dias){
+    s += `<g class="dd dia-sel" data-d="${iso(x.f)}">
+          <rect class="fondo" x="${ml+(x.k-1)*anD}" y="${mt}" width="${anD}"
+                height="${H-mt-mb}" fill="transparent"/>`;
+    for (let h = 0; h < 24; h++){
+      const w = anD/24;
+      if (x.r.c[h] > .01) s += `<rect x="${X(x.k,h)-w/2}" y="${mt}" width="${w}"
+            height="${H-mt-mb}" fill="#258160" opacity=".17"/>`;
+      if (x.r.d[h] > .01) s += `<rect x="${X(x.k,h)-w/2}" y="${mt}" width="${w}"
+            height="${H-mt-mb}" fill="#924831" opacity=".17"/>`;
+    }
+    s += `</g>`;
+  }
+  for (let k = 0; k <= 3; k++){ const v = max*k/3;
+    s += `<line class="gr" x1="${ml}" y1="${Y(v)}" x2="${W-mr}" y2="${Y(v)}" stroke-width="1"/>
+          <text class="ejx" x="6" y="${Y(v)+3.5}">${ent(v)}</text>`; }
+  let ruta = '';
+  dias.forEach(x => x.r.p.forEach((v,h) => {
+    ruta += `${ruta?'L':'M'}${X(x.k,h).toFixed(1)} ${Y(v).toFixed(1)}`; }));
+  s += `<path d="${ruta}" fill="none" stroke="#173f35" stroke-width="1.3"/>`;
+  for (let k = 1; k <= nd; k += (nd > 28 ? 3 : 2))
+    s += `<text class="ejx" x="${ml+(k-.5)*anD}" y="${H-9}" text-anchor="middle">${k}</text>`;
+  s += `<text class="ejx" x="${W-mr}" y="${mt-3}" text-anchor="end">€/MWh</text>`;
+  document.getElementById('svg-mes').innerHTML = s;
+
+  document.querySelectorAll('#svg-mes .dia-sel').forEach(g => g.onclick = () => {
+    DIA = new Date(g.dataset.d + 'T00:00:00'); pintarDia();
+  });
+}
+
+/* ── el dia ─────────────────────────────────────────────────────────────── */
+function pintarDia(){
+  if (!S.consumo) return;
+  document.getElementById('dia-fecha').value = iso(DIA);
+  document.getElementById('titulo-dia').textContent =
+    DIA.toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long',year:'numeric'})
+       .replace(/^./, c => c.toUpperCase());
+
+  const r = despachoDia(DIA, null), e = euros(r);
+  document.getElementById('d-compra').textContent = num(e.compra,2)+' €';
+  document.getElementById('d-venta').textContent  = num(e.venta,2)+' €';
+  document.getElementById('d-sin').textContent    = num(e.coste0,2)+' €';
+  document.getElementById('d-ahorro').textContent = num(e.ahorro,2)+' €';
+
+  const W = 1000, H = 300, ml = 46, mr = 46, mt = 18, mb = 30, alto = H-mt-mb;
+  const maxP = Math.max(...r.p)*1.1;
+  const maxK = Math.max(...r.L, ...r.G, ...r.c, ...r.d, 1)*1.15;
+  const X = h => ml + h*(W-ml-mr)/23;
+  const Yp = v => H-mb-(v/maxP)*alto, Yk = v => H-mb-(v/maxK)*alto;
+  const an = (W-ml-mr)/23;
+
+  let s = `<style>.ejx{font:10.5px var(--sans);fill:#697a74}.gr{stroke:#e4ece8}</style>`;
+  // las bandas cubren TODO el alto: proporcionales al precio desaparecen justo cuando
+  // el precio se va a cero, que es cuando mas carga
+  for (let h = 0; h < 24; h++){
+    if (r.c[h] > .01) s += `<rect x="${X(h)-an/2}" y="${mt}" width="${an}" height="${alto}"
+          fill="#258160" opacity=".15"/>`;
+    if (r.d[h] > .01) s += `<rect x="${X(h)-an/2}" y="${mt}" width="${an}" height="${alto}"
+          fill="#924831" opacity=".15"/>`;
+  }
+  for (let k = 0; k <= 3; k++){ const v = maxP*k/3;
+    s += `<line class="gr" x1="${ml}" y1="${Yp(v)}" x2="${W-mr}" y2="${Yp(v)}" stroke-width="1"/>
+          <text class="ejx" x="6" y="${Yp(v)+3.5}">${ent(v)}</text>`; }
+  const linea = (v,Y) => v.map((x,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(x).toFixed(1)}`).join(' ');
+  s += `<path d="${linea(r.G,Yk)}" fill="none" stroke="#f0a830" stroke-width="2"/>`;
+  s += `<path d="${linea(r.L,Yk)}" fill="none" stroke="#697a74" stroke-width="2"
+         stroke-dasharray="4 3"/>`;
+  s += `<path d="${linea(r.p,Yp)}" fill="none" stroke="#173f35" stroke-width="2.4"/>`;
+  for (let h = 0; h < 24; h += 3)
+    s += `<text class="ejx" x="${X(h)}" y="${H-9}" text-anchor="middle">${h}h</text>`;
+  s += `<text class="ejx" x="6" y="${mt-4}">€/MWh</text>
+        <text class="ejx" x="${W-mr+6}" y="${mt-4}">kW</text>`;
+  for (let k = 0; k <= 3; k++){ const v = maxK*k/3;
+    s += `<text class="ejx" x="${W-mr+6}" y="${Yk(v)+3.5}">${ent(v)}</text>`; }
+  s += `<text class="ejx" x="${ml}" y="${mt-4}">— precio · ‑‑ consumo · — generación</text>`;
+  document.getElementById('svg-dia').innerHTML = s;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   EL PERIODO DEL ESTUDIO
+   Tres opciones, y no son un capricho de configuracion: son tres preguntas distintas.
+
+     un año      ¿cuanto ahorro el año que viene? Rapido, y es lo que casi todo el
+                 mundo quiere saber primero.
+     toda la vida ¿me sale a cuenta la inversion? Es la unica que da un VAN honesto,
+                 porque la bateria se paga a lo largo de su vida, no en un año.
+     datos reales ¿me fio de esto? No usa prediccion: recorre el precio que REALMENTE
+                 hubo. Es la forma de contrastar el motor contra la realidad antes de
+                 creerse lo que dice del futuro.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+// EL RANGO ES CONTINUO DE 2020 A 2046, sin agujero en medio.
+//
+// Hay precio de mercado REALIZADO desde 2020 en `spot_price`, prediccion para mañana en
+// `predictions`, y curva de ahi en adelante. El motor las pega solas por fecha, asi que un
+// estudio puede empezar en 2020 tranquilamente -- de hecho es lo interesante: contrastar
+// lo que la herramienta dice contra lo que de verdad paso.
+//
+// La primera version limitaba el inicio a 2026-09-02 salvo en modo "datos reales", y eso
+// dejaba fuera seis años de mercado que estan ahi.
+const REAL_DESDE = '2020-01-01', REAL_HASTA = '2026-08-31';
+const CURVA_DESDE = '2026-09-02', CURVA_HASTA = '2046-12-31';
+const TODO_DESDE = REAL_DESDE, TODO_HASTA = CURVA_HASTA;
+
+let PERIODO = { modo:'vida', desde:new Date(2027,0,1), hasta:null, anos:12 };
+
+function vidaAnos(){
+  // los ciclos mandan sobre el calendario: una bateria que cicla una vez al dia gasta
+  // sus 6.000 ciclos en 16 años, y una que cicla media vez, en 32
+  const b = ficha();
+  let desc = 0, soc = null;
+  for (let m = 0; m < 12; m++){
+    const f = new Date(2027, m, 15), nd = new Date(2027, m+1, 0).getDate();
+    const r = despachoDia(f, soc); soc = r.soc[23];
+    desc += r.d.reduce((a,x)=>a+x,0)/1000 * nd;
+  }
+  const ciclosAno = desc / Math.max(b.util, 1e-9);
+  return Math.max(1, Math.min(25, Math.round(b.ciclos / Math.max(ciclosAno, 1e-9))));
+}
+
+const dDesde = () => document.getElementById('est-desde');
+const dHasta = () => document.getElementById('est-hasta');
+const suma = (f, anos) => new Date(f.getFullYear()+Math.floor(anos),
+                                   f.getMonth()+Math.round((anos%1)*12), f.getDate());
+
+/* Los atajos RELLENAN las dos fechas; las fechas mandan. Un atajo que bloquea el campo
+   obliga a elegir entre "lo comodo" y "lo que quiero", y aqui no hay motivo: se pone el
+   valor y se deja tocar. Si se toca, el modo pasa a `medida` y el atajo se apaga. */
+function fijarPeriodo(modo){
+  PERIODO.modo = modo;
+  const ex = document.getElementById('est-explica');
+  const real = modo === 'real';
+  // el inicio puede ser cualquiera desde 2020; solo el FIN se topa en el ultimo dia real
+  // cuando se ha pedido expresamente no usar prediccion
+  const lim = real ? [REAL_DESDE, REAL_HASTA] : [TODO_DESDE, TODO_HASTA];
+  for (const i of [dDesde(), dHasta()]){ i.min = lim[0]; i.max = lim[1]; }
+
+  if (modo !== 'medida'){
+    if (dDesde().value < lim[0] || dDesde().value > lim[1])
+      dDesde().value = real ? REAL_DESDE : '2027-01-01';
+    // arrancar en el pasado es legitimo, pero conviene decir en que se apoya cada tramo
+    PERIODO.hay_historico = dDesde().value < REAL_HASTA;
+    const d0 = new Date(dDesde().value + 'T00:00:00');
+    const fin = real ? new Date(REAL_HASTA + 'T00:00:00')
+              : modo === 'ano' ? suma(d0, 1) : suma(d0, vidaAnos());
+    dHasta().value = iso(fin > new Date(lim[1]+'T00:00:00')
+                         ? new Date(lim[1]+'T00:00:00') : fin);
+  }
+
+  PERIODO.desde = new Date(dDesde().value + 'T00:00:00');
+  PERIODO.hasta = new Date(dHasta().value + 'T00:00:00');
+  if (PERIODO.hasta <= PERIODO.desde){            // el usuario ha cruzado las fechas
+    PERIODO.hasta = suma(PERIODO.desde, 1);
+    dHasta().value = iso(PERIODO.hasta);
+  }
+  PERIODO.anos = (PERIODO.hasta - PERIODO.desde) / 3.15576e10;
+
+  const rango = `del ${PERIODO.desde.toLocaleDateString('es-ES')} al ` +
+                `${PERIODO.hasta.toLocaleDateString('es-ES')} — ` +
+                `<b>${num(PERIODO.anos,1)} años</b>`;
+  const mezcla = PERIODO.hay_historico && !real
+    ? ` <br>Empieza antes de hoy: hasta el ${new Date(REAL_HASTA+'T00:00:00')
+        .toLocaleDateString('es-ES')} usa el <b>precio que realmente hubo</b> y a partir de ` +
+      `ahí la curva simulada. La banda de incertidumbre solo existe en el tramo simulado.`
+    : '';
+  ex.innerHTML = mezcla + (
+    real ? `Sobre el precio que <b>realmente hubo</b>, ${rango}. Sin predicción y sin ` +
+           `banda: el precio fue el que fue. Sirve para contrastar el motor contra la ` +
+           `realidad, no para decidir una inversión.`
+  : modo === 'ano' ? `Un año, ${rango}. Da el ahorro, pero <b>no un VAN que signifique ` +
+           `nada</b>: la batería se paga a lo largo de su vida, no en doce meses.`
+  : modo === 'vida' ? `Los años que la batería aguanta ciclando a este ritmo, ${rango}. ` +
+           `La vida la marcan los <b>ciclos</b>, no el calendario: cuanto más trabaja, ` +
+           `antes se gasta.`
+  : `A medida, ${rango}.` + (PERIODO.anos < vidaAnos() - .5
+      ? ` Ojo: es <b>menos que la vida de la batería</b>, así que el VAN sale peor de lo ` +
+        `que le corresponde — se paga la inversión entera y solo se cobran unos años.`
+      : PERIODO.anos > vidaAnos() + .5
+      ? ` Ojo: es <b>más que la vida de la batería</b>, que aguantaría unos ` +
+        `${vidaAnos()} años a este ritmo. Los años de más no producen nada.`
+      : ''));
+}
+
+document.querySelectorAll('#est-pct .btn').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#est-pct .btn').forEach(x => x.className = 'btn p3');
+  b.className = 'btn p1'; PERCENTIL = b.dataset.p;
+  CACHE.clear();                       // los precios guardados eran del otro percentil
+});
+
+document.querySelectorAll('#est-dur .btn').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#est-dur .btn').forEach(x => x.className = 'btn p3');
+  b.className = 'btn p1';
+  fijarPeriodo(b.dataset.modo);
+});
+dDesde().value = '2027-01-01';
+dDesde().onchange = () => fijarPeriodo(PERIODO.modo === 'real' ? 'real' : PERIODO.modo);
+dHasta().onchange = () => {                       // tocar el fin es pasarse a medida
+  document.querySelectorAll('#est-dur .btn').forEach(x => x.className = 'btn p3');
+  fijarPeriodo('medida');
+};
+
+/* ── el balance de energia ──────────────────────────────────────────────────
+   La bateria no crea energia: la mueve. Aumenta lo que pasa por la instalacion --lo
+   que carga-- y pierde un 10 % por el camino. Lo que mejora es de DONDE sale cada
+   kWh: menos horas comprando caro y menos excedente vendido barato.
+
+   Se recorre un dia de cada mes y se multiplica por los dias del mes. Con doce
+   despachos se tiene el año, y la pantalla no se queda pensando.                   */
+function balance(){
+  if (!S.consumo) return;
+  let L=0, G=0, dir=0, imp0=0, exp0=0, imp1=0, exp1=0, carg=0, desc=0;
+  let soc = null;
+  for (let m = 0; m < 12; m++){
+    const f = new Date(2027, m, 15);
+    const nd = new Date(2027, m+1, 0).getDate();
+    const r = despachoDia(f, soc); soc = r.soc[23];
+    for (let h = 0; h < 24; h++){
+      const k = nd/1000;                      // kW durante 1 h, x dias del mes -> MWh
+      L += r.L[h]*k;  G += r.G[h]*k;
+      dir += Math.min(r.L[h], r.G[h])*k;      // lo que se autoconsume sin bateria
+      const n0 = r.L[h] - r.G[h];
+      imp0 += Math.max(n0,0)*k; exp0 += Math.max(-n0,0)*k;
+      const n1 = r.L[h] - r.G[h] + r.c[h] - r.d[h];
+      imp1 += Math.max(n1,0)*k; exp1 += Math.max(-n1,0)*k;
+      carg += r.c[h]*k; desc += r.d[h]*k;
+    }
+  }
+  const perdidas = carg - desc;
+  const auto0 = G ? dir/G : 0, auto1 = G ? (G-exp1)/G : 0;
+
+  document.getElementById('b-red').textContent  = num(imp0-imp1,1)+' MWh/año';
+  document.getElementById('b-vert').textContent = num(exp0-exp1,1)+' MWh/año';
+  document.getElementById('b-auto').textContent = num(auto0*100,0)+' → '+num(auto1*100,0)+' %';
+
+  const fil = [
+    ['Consumo de la instalación', L, L, null],
+    ['Generación propia', G, G, null],
+    ['Comprado a la red', imp0, imp1, 'baja'],
+    ['Vertido a la red', exp0, exp1, 'baja'],
+    ['Cargado en la batería', 0, carg, 'sube'],
+    ['Descargado de la batería', 0, desc, 'sube'],
+    ['Perdido en el ciclo', 0, perdidas, 'sube'],
+  ];
+  let t = `<tr><th>Concepto</th><th>Sin batería</th><th>Con batería</th><th>Diferencia</th></tr>`;
+  for (const [nom, a, b, dir_] of fil){
+    const dif = b - a;
+    const col = !dir_ ? 'var(--muted-foreground)'
+              : (dir_==='baja' ? (dif<0?'#1c6b4c':'#924831') : '#697a74');
+    t += `<tr><td>${nom}</td><td>${a?num(a,1):'—'}</td><td>${num(b,1)}</td>
+          <td style="color:${col}">${dir_ ? (dif>0?'+':'')+num(dif,1) : '—'}</td></tr>`;
+  }
+  t += `<tr class="total"><td>Autoconsumo de tu generación</td>
+        <td>${num(auto0*100,0)} %</td><td>${num(auto1*100,0)} %</td>
+        <td style="color:#1c6b4c">+${num((auto1-auto0)*100,0)} pp</td></tr>`;
+  document.getElementById('tabla-balance').innerHTML = t;
+
+  // ── el diagrama: dos barras apiladas, sin y con ───────────────────────
+  const W = 1000, H = 210, ml = 96, mr = 12, mt = 22, mb = 30;
+  const total = Math.max(imp0+G, imp1+G+0.001);
+  const X = v => ml + (v/total)*(W-ml-mr);
+  const alto = 42, hueco = 30;
+  const tramos = (imp, autoc, vert, cargado) => [
+    ['Red', imp, '#924831'], ['Autoconsumo', autoc, '#258160'],
+    ['Vertido', vert, '#f0a830'],
+  ];
+  let s = `<style>.ejx{font:11px var(--sans);fill:#697a74}
+           .et{font:600 11px var(--sans);fill:#17322b}
+           .vv{font:600 10.5px var(--mono);fill:#fff}</style>`;
+  [['Sin batería', imp0, dir, exp0, mt],
+   ['Con batería', imp1, G-exp1, exp1, mt+alto+hueco]].forEach(([nom,i_,a_,e_,y]) => {
+    s += `<text class="et" x="8" y="${y+alto/2+4}">${nom}</text>`;
+    let x = ml;
+    for (const [et, v, col] of tramos(i_, a_, e_)){
+      if (v <= 0.05) continue;
+      const w = X(v) - ml;
+      s += `<rect x="${x}" y="${y}" width="${w}" height="${alto}" fill="${col}"
+             opacity=".88" rx="4"/>`;
+      if (w > 46) s += `<text class="vv" x="${x+w/2}" y="${y+alto/2+4}"
+             text-anchor="middle">${num(v,0)}</text>`;
+      x += w;
+    }
+  });
+  s += `<text class="ejx" x="${ml}" y="${H-10}">
+          <tspan fill="#924831">■</tspan> comprado a la red
+          <tspan fill="#258160">■</tspan> autoconsumido
+          <tspan fill="#f0a830">■</tspan> vertido a la red   ·   MWh al año</text>`;
+  document.getElementById('svg-balance').innerHTML = s;
+}
+
+/* ── la economia ────────────────────────────────────────────────────────── */
+function economia(){
+  const b = ficha();
+  const capex = b.capex, OPEX = b.opex, TASA = .07;
+
+  // el ahorro del primer año, muestreando un dia de cada mes
+  let anual = 0, soc = null;
+  for (let m = 0; m < 12; m++){
+    const f = new Date(2027, m, 15);
+    const r = despachoDia(f, soc); soc = r.soc[23];
+    anual += euros(r).ahorro * new Date(2027, m+1, 0).getDate();
+  }
+  // el hueco de precio se estrecha con los años segun entra mas solar en el sistema
+  const anos = Math.max(1, Math.round(PERIODO.anos)), cae = 0.955;
+  const flujos = Array.from({length:anos}, (_,i) => anual*Math.pow(cae,i) - capex*OPEX);
+  const van = -capex + flujos.reduce((a,f,i) => a + f/Math.pow(1+TASA,i+1), 0);
+
+  let acum = -capex, pay = null;
+  flujos.forEach((f,i) => { acum += f; if (pay === null && acum > 0) pay = i+1; });
+  // TIR por biseccion: mas corta que Newton y no se va a ningun lado. Solo tiene
+  // solucion si el VAN cambia de signo en el intervalo; si no, no hay TIR y se dice.
+  const npv = t => -capex + flujos.reduce((a,f,i) => a + f/Math.pow(1+t,i+1), 0);
+  let lo = -0.5, hi = 1.0, tir = null;
+  if (npv(lo) * npv(hi) < 0){
+    for (let k = 0; k < 60; k++){
+      const md = (lo + hi) / 2;
+      if (npv(lo) * npv(md) < 0) hi = md; else lo = md;
+    }
+    tir = (lo + hi) / 2;
+  }
+
+  document.getElementById('e-capex').textContent   = ent(capex)+' €';
+  document.getElementById('e-anual').textContent   = ent(anual)+' €';
+  document.getElementById('e-payback').textContent = pay ? pay+' años' : 'nunca';
+  document.getElementById('e-tir').textContent     = tir === null ? '—' : num(tir*100,1)+' %';
+
+  // ── la cascada ────────────────────────────────────────────────────────
+  const bruto = flujos.reduce((a,f) => a+f, 0) + capex*OPEX*anos;
+  const opex  = capex*OPEX*anos;
+  const desc  = van - (-capex + bruto - opex);
+  const pasos = [['Inversión',-capex],['Ahorro bruto',bruto],['Mantenimiento',-opex],
+                 ['Descuento al 7 %',desc]];
+  const W = 1000, H = 190, ml = 8, mr = 8, mt = 26, mb = 34;
+  const vals = []; let a2 = 0;
+  for (const [,v] of pasos){ vals.push(a2, a2+v); a2 += v; }
+  vals.push(a2, 0);
+  const lo2 = Math.min(...vals), hi2 = Math.max(...vals);
+  const Y = v => H-mb-((v-lo2)/(hi2-lo2||1))*(H-mt-mb);
+  const n = pasos.length+1, an = (W-ml-mr)/n;
+  let s = `<style>.ejx{font:10.5px var(--sans);fill:#697a74}
+           .vl{font:600 11px var(--mono);fill:#fff}</style>`;
+  acum = 0;
+  pasos.forEach(([nom,v],i) => {
+    const y0 = Y(acum), y1 = Y(acum+v);
+    const col = v > 0 ? '#258160' : '#924831';
+    s += `<rect x="${ml+i*an+an*.18}" y="${Math.min(y0,y1)}" width="${an*.64}"
+           height="${Math.max(Math.abs(y1-y0),2)}" rx="5" fill="${col}" opacity=".9"/>
+          <text class="vl" x="${ml+i*an+an*.5}" y="${(y0+y1)/2+4}" text-anchor="middle">
+            ${ent(v)}</text>
+          <text class="ejx" x="${ml+i*an+an*.5}" y="${H-14}" text-anchor="middle">${nom}</text>`;
+    acum += v;
+    if (i < pasos.length) s += `<line x1="${ml+i*an+an*.82}" y1="${Y(acum)}"
+      x2="${ml+(i+1)*an+an*.18}" y2="${Y(acum)}" stroke="#c3d2cb" stroke-dasharray="2 3"/>`;
+  });
+  const i = pasos.length, col = acum > 0 ? '#173f35' : '#924831';
+  s += `<rect x="${ml+i*an+an*.18}" y="${Math.min(Y(0),Y(acum))}" width="${an*.64}"
+         height="${Math.max(Math.abs(Y(acum)-Y(0)),2)}" rx="5" fill="${col}"/>
+        <text class="vl" x="${ml+i*an+an*.5}" y="${(Y(0)+Y(acum))/2+4}" text-anchor="middle">
+          ${ent(acum)}</text>
+        <text class="ejx" x="${ml+i*an+an*.5}" y="${H-14}" text-anchor="middle">VAN</text>
+        <line x1="${ml}" y1="${Y(0)}" x2="${W-mr}" y2="${Y(0)}" stroke="#17322b"
+              stroke-width="1"/>`;
+  document.getElementById('svg-cascada').innerHTML = s;
+
+  // ── la tabla ──────────────────────────────────────────────────────────
+  let t = `<tr><th>Año</th><th>Ahorro</th><th>Mantenimiento</th><th>Flujo</th>
+           <th>Descontado</th><th>Acumulado</th></tr>`;
+  let ac = -capex;
+  flujos.forEach((f,i) => {
+    const desc2 = f/Math.pow(1+TASA,i+1); ac += desc2;
+    t += `<tr><td>${PERIODO.desde.getFullYear()+i}</td><td>${ent(f+capex*OPEX)}</td><td>−${ent(capex*OPEX)}</td>
+          <td>${ent(f)}</td><td>${ent(desc2)}</td>
+          <td style="color:${ac>0?'#1c6b4c':'#924831'}">${ent(ac)}</td></tr>`;
+  });
+  t += `<tr class="total"><td>Total</td><td>${ent(flujos.reduce((a,f)=>a+f,0)+opex)}</td>
+        <td>−${ent(opex)}</td><td>${ent(flujos.reduce((a,f)=>a+f,0))}</td>
+        <td>${ent(van+capex)}</td><td>${ent(van)}</td></tr>`;
+  document.getElementById('tabla-anos').innerHTML = t;
+}
+
+/* ── navegacion ─────────────────────────────────────────────────────────── */
+const irMes = async () => { await traerMes(MES.getFullYear(), MES.getMonth()); pintarMes(); };
+document.getElementById('mes-antes').onclick   = ()=>{ MES.setMonth(MES.getMonth()-1); irMes(); };
+document.getElementById('mes-despues').onclick = ()=>{ MES.setMonth(MES.getMonth()+1); irMes(); };
+document.getElementById('mes-fecha').onchange  = e=>{
+  const [a,m] = e.target.value.split('-'); MES = new Date(+a, +m-1, 1); irMes(); };
+document.getElementById('dia-antes').onclick   = ()=>{ DIA.setDate(DIA.getDate()-1); pintarDia(); };
+document.getElementById('dia-despues').onclick = ()=>{ DIA.setDate(DIA.getDate()+1); pintarDia(); };
+document.getElementById('dia-fecha').onchange  = e=>{
+  DIA = new Date(e.target.value+'T00:00:00'); pintarDia(); };
+
+/* ── el despacho de un dia medio ────────────────────────────────────────── */
+function despacho(){
+  // SERVIDOR · esto vendra de `app_case_dispatch`. La forma es la de un dia real:
+  // carga al mediodia con el excedente solar, descarga en el pico de tarde.
+  const precio=[62,58,55,53,52,54,61,72,78,70,55,38,24,19,22,35,54,73,88,95,90,82,74,68];
+  const carga =[0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,0,0,0,0,0,0,0,0,0];
+  const desc  =[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0];
+  const W=700,H=200,ml=42,mr=14,mt=16,mb=26;
+  const max=Math.max(...precio)*1.1;
+  const X=i=>ml+i*(W-ml-mr)/23, Y=v=>H-mb-(v/max)*(H-mt-mb);
+  const an=(W-ml-mr)/23;
+  let s=`<style>.ejx{font:10px var(--sans);fill:#697a74}.gr{stroke:#e4ece8;stroke-width:1}</style>`;
+  // las bandas cubren TODO el alto: proporcionales al precio se vuelven invisibles
+  // justo cuando el precio se va a cero, que es cuando mas carga
+  precio.forEach((_,i)=>{
+    if(carga[i]) s+=`<rect x="${X(i)-an/2}" y="${mt}" width="${an}" height="${H-mt-mb}" fill="#258160" opacity=".16"/>`;
+    if(desc[i])  s+=`<rect x="${X(i)-an/2}" y="${mt}" width="${an}" height="${H-mt-mb}" fill="#924831" opacity=".16"/>`;
+  });
+  for(let k=0;k<=3;k++){ const v=max*k/3;
+    s+=`<line class="gr" x1="${ml}" y1="${Y(v)}" x2="${W-mr}" y2="${Y(v)}"/>
+        <text class="ejx" x="4" y="${Y(v)+3.5}">${ent(v)}</text>`; }
+  for(let i=0;i<24;i+=3) s+=`<text class="ejx" x="${X(i)}" y="${H-8}" text-anchor="middle">${i}h</text>`;
+  s+=`<path d="${precio.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ')}"
+       fill="none" stroke="#173f35" stroke-width="2.2" stroke-linejoin="round"/>`;
+  s+=`<text class="ejx" x="${W-mr}" y="${mt}" text-anchor="end">precio €/MWh</text>`;
+  document.getElementById('svg-despacho').innerHTML=s;
+}
+/* ── lo ultimo de todo: preguntar si hay servidor ──────────────────────────
+   Aqui y no antes. `const API`, `let SERVIDOR` y `const CACHE` se declaran a mitad del
+   script, y llamar a `conectar()` por encima de esa linea cae en la zona muerta
+   temporal: la funcion existe --las declaraciones se elevan-- pero sus constantes no.
+   El error llegaba envuelto en la promesa, asi que no rompia nada a la vista: la
+   pantalla se quedaba en "sin servidor" sin decir por que, y los datos que enseñaba
+   eran los de demostracion aunque el API estuviera delante contestando. */
+conectar();
+</script>
+</body>
+</html>

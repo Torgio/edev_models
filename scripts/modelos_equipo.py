@@ -102,6 +102,10 @@ class ArbolPlano:
     def __init__(self, familia, semilla, matriz="produccion"):
         cfg = INVENTARIO[familia]
         self.familia, self.semilla, self.matriz = familia, semilla, matriz
+        # El fichero se llama `__s0`, pero la semilla con la que se entreno fue la 42:
+        # asi lo declara la metadata de Magdalena (`semillas: [42, 43, 44]`). La tabla
+        # `predictions` guarda la de verdad, igual que para las nuestras.
+        self.semilla_real = 42 + semilla
         self.autor, self.motor = cfg["autor"], cfg["motor"]
         meta = json.loads(Path(cfg["meta"]).read_text(encoding="utf-8"))
         self.features = list(meta[cfg["clave_features"]])
@@ -185,6 +189,24 @@ def cargar(modelo="todos", matriz="produccion", semilla=None):
         ss = [semilla] if semilla is not None else INVENTARIO[n]["semillas"]
         miembros += [ArbolPlano(n, s, matriz) for s in ss]
     return Predictor(f"equipo:{modelo}", miembros, matriz)
+
+
+def representantes(matriz="produccion", verbose=False):
+    """El mejor de cada familia SEGUN VALIDACION -- la misma regla que para las nuestras.
+
+    No viene de un CSV como `por_semilla.csv` porque los companeros no dejaron el MAE por
+    semilla: se mide aqui, sobre validacion 2025, y nunca se mira test para elegir. Son
+    siete arboles sobre 365 dias, cuesta segundos.
+    """
+    d, _, _ = evaluar(matriz, "va")
+    d = d.dropna(subset=["MAE"])
+    d["fam"] = d.modelo.str.rsplit("__s", n=1).str[0]
+    d["sem"] = d.modelo.str.rsplit("__s", n=1).str[1].astype(int)
+    mejor = d.loc[d.groupby("fam").MAE.idxmin()]
+    if verbose:
+        for r in mejor.itertuples():
+            print(f"  representante {r.fam:14s} s{r.sem}  MAE_val {r.MAE:.3f}")
+    return [ArbolPlano(r.fam, int(r.sem), matriz) for r in mejor.itertuples()]
 
 
 def evaluar(matriz="produccion", tramo="va", desde=None, hasta=None):

@@ -202,13 +202,26 @@ def _representantes(carpeta):
 
 
 def cargar(modelo="ensemble", matriz="nucleo", semilla=None):
-    """`modelo` es "ensemble" o el nombre de una familia."""
+    """`modelo` es una familia, "ensemble", "equipo" o "ensemble_equipo".
+
+    Los dos ultimos traen los arboles planos de Magdalena y Willy (ver
+    `scripts/modelos_equipo.py`). `ensemble` se deja como estaba -- nuestras 8 familias --
+    a proposito: es el numero que esta escrito en la memoria y no debe moverse solo porque
+    aparezcan modelos nuevos.
+    """
     carpeta = _carpeta(matriz)
     if not (carpeta / "por_semilla.csv").exists():
         raise FileNotFoundError(f"no hay resultados en {carpeta}: entrena primero")
     rep = _representantes(carpeta)
 
-    if modelo == "ensemble":
+    externos = []
+    if modelo in ("equipo", "ensemble_equipo"):
+        from modelos_equipo import representantes
+        externos = representantes(matriz)
+        if modelo == "equipo":
+            return Predictor(modelo, externos, matriz)
+
+    if modelo in ("ensemble", "ensemble_equipo"):
         filas = list(rep.itertuples())
     else:
         cand = rep[rep.familia == modelo]
@@ -230,12 +243,15 @@ def cargar(modelo="ensemble", matriz="nucleo", semilla=None):
         raise FileNotFoundError(
             f"faltan modelos en disco:\n  - " + "\n  - ".join(sin_fichero) +
             "\n  Reentrena esas familias con --guardar-modelos.")
-    return Predictor(modelo, miembros, matriz)
+    return Predictor(modelo, miembros + externos, matriz)
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--modelo", default="ensemble")
+    ap.add_argument("--modelo", default="ensemble",
+                    help="una familia, 'ensemble' (nuestras 8), 'equipo' "
+                         "(los arboles de Magdalena y Willy) o "
+                         "'ensemble_equipo' (los 11)")
     ap.add_argument("--matriz", default="nucleo")
     ap.add_argument("--tramo", default="te", choices=["tr", "va", "te", "todo"])
     ap.add_argument("--desde")

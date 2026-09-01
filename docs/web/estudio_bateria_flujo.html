@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Pulso Energía · Estudio de batería</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════════════════
+   Tokens leidos de la web en produccion, no estimados:
+   pulso-energia-tfm.maguicervinio.chatgpt.site
+   ═══════════════════════════════════════════════════════════════════════════ */
+:root{
+  --background:#f3f6f2; --foreground:#17322b;
+  --primary:#173f35;    --primary-foreground:#f7faf7;
+  --secondary:#e4ece8;  --secondary-foreground:#17322b;
+  --muted:#e9eeeb;      --muted-foreground:#697a74;
+  --border:#d8e0dc;     --ring:#43a99f;
+  --acento:#258160;     --alerta:#924831;
+  --radius:.85rem;
+  --sombra:0 20px 60px rgba(18,48,40,.07);
+  --sans:'Geist',ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'Geist Mono',ui-monospace,'SF Mono',Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--background); color:var(--foreground);
+  font-family:var(--sans); font-size:10.2pt; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  -webkit-print-color-adjust:exact; print-color-adjust:exact;
+}
+/* Margen CERO en @page y el margen real como padding de la hoja: asi el fondo llega al
+   borde del papel en vez de dejar una orla blanca, y la caja de contenido tiene un ancho
+   conocido -- que es lo que impide que las lineas largas se salgan por la derecha. */
+@page{ size:A4; margin:0 }
+
+.hoja{
+  width:210mm; min-height:297mm; padding:15mm 14mm 10mm;
+  page-break-after:always; overflow:hidden;
+  display:flex; flex-direction:column;
+}
+.hoja:last-child{ page-break-after:auto; }
+.hoja > .pie{ margin-top:auto }   /* el pie, siempre abajo del todo */
+
+/* ── tipografia ─────────────────────────────────────────────────────────── */
+h1{font-size:27pt;line-height:1.1;font-weight:600;letter-spacing:-.02em;margin:0 0 6px}
+h2{font-size:16pt;line-height:1.2;font-weight:600;letter-spacing:-.01em;
+   margin:0 0 14px;color:var(--primary)}
+h3{font-size:10.5pt;font-weight:600;margin:22px 0 8px;color:var(--primary)}
+p{margin:0 0 10px;max-width:none}
+.sobre{font-family:var(--sans);font-size:8pt;font-weight:600;letter-spacing:.13em;
+       text-transform:uppercase;color:var(--muted-foreground);margin:0 0 6px}
+.entrada{font-size:11.5pt;color:var(--muted-foreground);max-width:150mm;margin:0 0 20px}
+.tenue{color:var(--muted-foreground)}
+code,.mono{font-family:var(--mono);font-size:9pt}
+code{background:var(--muted);padding:1px 5px;border-radius:5px;color:var(--primary)}
+strong{font-weight:600}
+
+/* ── piezas ─────────────────────────────────────────────────────────────── */
+.marca{display:flex;align-items:center;gap:13px;margin-bottom:34px}
+.logo{width:46px;height:46px;border-radius:13px;background:var(--primary);
+      display:grid;place-items:center;flex:none}
+.logo svg{width:22px;height:22px;fill:none;stroke:#7fe3bd;stroke-width:2;
+          stroke-linecap:round;stroke-linejoin:round}
+.marca b{font-size:13pt;font-weight:600;display:block;line-height:1.2}
+
+.tarjeta{background:#fff;border:1px solid var(--border);border-radius:var(--radius);
+         padding:18px 20px;box-shadow:var(--sombra);margin-bottom:14px}
+.tarjeta.plana{box-shadow:none}
+.tarjeta.suave{background:var(--secondary);border-color:#cfdcd6;box-shadow:none}
+
+.rejilla{display:grid;gap:12px}
+.r2{grid-template-columns:1fr 1fr}
+.r3{grid-template-columns:repeat(3,1fr)}
+.r4{grid-template-columns:repeat(4,1fr)}
+
+/* botones, tal cual los queremos en la web */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;
+     font-family:var(--sans);font-size:9.5pt;font-weight:500;
+     padding:11px 20px;border-radius:11px;border:1px solid transparent;cursor:pointer}
+.btn-primario{background:var(--primary);color:var(--primary-foreground)}
+.btn-secundario{background:#fff;color:var(--primary);border-color:var(--border)}
+.btn-fantasma{background:transparent;color:var(--muted-foreground);
+              border-color:var(--border)}
+.btn-apagado{background:var(--muted);color:#a8b5b0;border-color:var(--border)}
+.btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.9;
+         stroke-linecap:round;stroke-linejoin:round}
+
+.suelta{border:1.5px dashed #c3d2cb;border-radius:var(--radius);background:#fbfdfb;
+        padding:22px 18px;text-align:center}
+.suelta .ico{width:38px;height:38px;border-radius:11px;background:var(--secondary);
+             display:grid;place-items:center;margin:0 auto 10px}
+.suelta .ico svg{width:18px;height:18px;fill:none;stroke:var(--acento);
+                 stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.suelta b{display:block;font-size:10pt;font-weight:600;margin-bottom:3px}
+.suelta small{color:var(--muted-foreground);font-size:8.6pt}
+
+.pildora{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;
+         border-radius:20px;font-size:8.4pt;font-weight:500;
+         background:var(--secondary);color:var(--primary)}
+.pildora.ok{background:#dcf0e6;color:#1c6b4c}
+.pildora.mal{background:#f6e6e0;color:var(--alerta)}
+.pildora.gris{background:var(--muted);color:var(--muted-foreground)}
+.punto{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+
+.dato{display:flex;justify-content:space-between;align-items:baseline;
+      padding:6px 0;border-bottom:1px solid var(--border)}
+.dato:last-child{border-bottom:none}
+.dato em{font-style:normal;color:var(--muted-foreground);font-size:9pt}
+.dato b{font-family:var(--mono);font-size:9.5pt;font-weight:500}
+
+.kpi{background:#fff;border:1px solid var(--border);border-radius:var(--radius);
+     padding:14px 16px}
+.kpi .et{font-size:8pt;font-weight:600;letter-spacing:.09em;text-transform:uppercase;
+         color:var(--muted-foreground);margin-bottom:5px}
+.kpi .vl{font-family:var(--mono);font-size:19pt;font-weight:500;line-height:1;
+         letter-spacing:-.02em}
+.kpi .un{font-size:8.6pt;color:var(--muted-foreground);margin-top:4px}
+.kpi.destaca{background:var(--primary);border-color:var(--primary)}
+.kpi.destaca .et{color:#93b3a8}
+.kpi.destaca .vl{color:#fff}
+.kpi.destaca .un{color:#a8c4b9}
+
+table{width:100%;border-collapse:collapse;font-size:9pt}
+th{text-align:left;font-weight:600;font-size:8pt;letter-spacing:.07em;
+   text-transform:uppercase;color:var(--muted-foreground);
+   padding:0 10px 7px 0;border-bottom:1px solid var(--border)}
+td{padding:7px 10px 7px 0;border-bottom:1px solid var(--border);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.m{font-family:var(--mono);font-size:8.6pt;white-space:nowrap}
+
+.nota{border-left:2.5px solid var(--ring);padding:2px 0 2px 14px;
+      color:var(--muted-foreground);font-size:9.3pt;margin:14px 0;max-width:none}
+.nota b{color:var(--foreground)}
+.aviso{border-left-color:var(--alerta)}
+
+.pie{margin-top:22px;padding-top:10px;border-top:1px solid var(--border);
+     font-size:8pt;color:var(--muted-foreground);display:flex;
+     justify-content:space-between}
+.num{font-family:var(--mono)}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════ 1 · PORTADA ══════════════════════ -->
+<section class="hoja">
+  <div class="marca">
+    <div class="logo"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></div>
+    <div>
+      <div class="sobre" style="margin:0">TFM · Mercado eléctrico</div>
+      <b>Pulso Energía</b>
+    </div>
+  </div>
+
+  <div class="sobre">Módulo nuevo</div>
+  <h1>Estudio de batería</h1>
+  <p class="entrada">Cómo queremos que funcione: qué sube el usuario, qué hace el
+     servidor con ello y qué ve de vuelta.</p>
+
+  <div class="tarjeta">
+    <div class="rejilla r3">
+      <div>
+        <div class="sobre">El usuario aporta</div>
+        <p style="margin:0;font-size:9.4pt">Su curva de consumo, su curva de generación
+           y las características de la batería que se plantea instalar.</p>
+      </div>
+      <div>
+        <div class="sobre">El sistema aporta</div>
+        <p style="margin:0;font-size:9.4pt">La curva de precio a veinte años, que se
+           republica sola cada día. El usuario ni la elige ni la ve.</p>
+      </div>
+      <div>
+        <div class="sobre">Y devuelve</div>
+        <p style="margin:0;font-size:9.4pt">El despacho óptimo hora a hora y las cifras
+           económicas con su banda de incertidumbre.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="nota">
+    <b>Tres pantallas y un botón.</b> No hay configuración del estudio: ni horizonte, ni
+    política de carga, ni número de escenarios. Todo eso lo fija el servidor. El usuario
+    sube sus datos y obtiene un resultado.
+  </div>
+
+  <h3>Lo que hay en cada pantalla</h3>
+  <table>
+    <tr><th style="width:24%">Pantalla</th><th style="width:38%">Qué pide</th><th>Qué enseña al terminar</th></tr>
+    <tr>
+      <td><b>1 · Curvas</b></td>
+      <td>Dos ficheros. Ningún campo más.</td>
+      <td>Periodo, MWh al año, pico y —en generación— los kWp equivalentes.</td>
+    </tr>
+    <tr>
+      <td><b>2 · Batería</b></td>
+      <td>Potencia, duración y precio. Lo demás tiene valor por defecto.</td>
+      <td>Energía total, energía útil y coste de ciclo.</td>
+    </tr>
+    <tr>
+      <td><b>3 · Resultado</b></td>
+      <td>Nada. Solo espera.</td>
+      <td>Si sale a cuenta, cuánto se ahorra y qué hace la batería cada hora.</td>
+    </tr>
+  </table>
+
+  <div class="pie"><span>Pulso Energía · Estudio de batería</span><span class="num">1</span></div>
+</section>
+
+
+<!-- ══════════════════════════════════ 2 · EL FLUJO ═════════════════════════ -->
+<section class="hoja">
+  <div class="sobre">Arquitectura</div>
+  <h2>El flujo de información</h2>
+  <p class="entrada">Dos corrientes que se juntan. Una la trae el usuario cuando quiere;
+     la otra corre sola todos los días a las 11:45.</p>
+
+  <div class="tarjeta plana" style="padding:22px 18px">
+  <svg viewBox="0 0 760 340" style="width:100%;height:auto">
+    <defs>
+      <marker id="f" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+        <path d="M0 0 L7 3.2 L0 6.4 z" fill="#8fa39b"/>
+      </marker>
+      <marker id="fv" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+        <path d="M0 0 L7 3.2 L0 6.4 z" fill="#258160"/>
+      </marker>
+    </defs>
+    <style>
+      .cj{fill:#fff;stroke:#d8e0dc;stroke-width:1.2}
+      .cj-p{fill:#173f35;stroke:none}
+      .cj-s{fill:#e4ece8;stroke:#cfdcd6;stroke-width:1.2}
+      .tt{font:600 11px 'Geist',sans-serif;fill:#17322b}
+      .tt-b{fill:#f7faf7}
+      .st{font:9.5px 'Geist',sans-serif;fill:#697a74}
+      .st-b{fill:#a8c4b9}
+      .fl{stroke:#8fa39b;stroke-width:1.3;fill:none;marker-end:url(#f)}
+      .fl-v{stroke:#258160;stroke-width:1.6;fill:none;marker-end:url(#fv)}
+      .et{font:600 8px 'Geist',sans-serif;fill:#697a74;letter-spacing:.07em}
+    </style>
+
+    <!-- carril del usuario -->
+    <text class="et" x="8" y="20">EL USUARIO, CUANDO QUIERE</text>
+    <rect class="cj" x="8" y="30" width="150" height="58" rx="11"/>
+    <text class="tt" x="24" y="53">Curva de consumo</text>
+    <text class="st" x="24" y="70">.csv o .xlsx · 1 año</text>
+
+    <rect class="cj" x="8" y="98" width="150" height="58" rx="11"/>
+    <text class="tt" x="24" y="121">Curva de generación</text>
+    <text class="st" x="24" y="138">.csv o .xlsx · 1 año</text>
+
+    <rect class="cj" x="8" y="166" width="150" height="58" rx="11"/>
+    <text class="tt" x="24" y="189">Ficha de batería</text>
+    <text class="st" x="24" y="206">kW · horas · €/MWh</text>
+
+    <path class="fl" d="M158 59 H205 V130"/>
+    <path class="fl" d="M158 127 H203"/>
+    <path class="fl" d="M158 195 H205 V138"/>
+
+    <!-- validacion -->
+    <rect class="cj-s" x="212" y="100" width="126" height="56" rx="11"/>
+    <text class="tt" x="228" y="123">Revisión</text>
+    <text class="st" x="228" y="140">¿es lo que dice ser?</text>
+    <path class="fl" d="M338 128 H392"/>
+
+    <!-- base -->
+    <rect class="cj-p" x="396" y="96" width="140" height="64" rx="11"/>
+    <text class="tt tt-b" x="414" y="121">Base de datos</text>
+    <text class="st st-b" x="414" y="138">tablas del usuario</text>
+
+    <!-- carril automatico -->
+    <text class="et" x="8" y="262">CADA DÍA A LAS 11:45, SOLO</text>
+    <rect class="cj" x="8" y="272" width="150" height="52" rx="11"/>
+    <text class="tt" x="24" y="293">Matriz de datos</text>
+    <text class="st" x="24" y="310">mercado, clima, demanda</text>
+    <path class="fl-v" d="M158 298 H208"/>
+
+    <rect class="cj" x="212" y="272" width="126" height="52" rx="11"/>
+    <text class="tt" x="228" y="293">Curva 20 años</text>
+    <text class="st" x="228" y="310">50 escenarios</text>
+    <path class="fl-v" d="M338 298 H392"/>
+    <path class="fl-v" d="M466 272 V166"/>
+
+    <!-- optimizador -->
+    <rect class="cj-p" x="396" y="272" width="140" height="52" rx="11"/>
+    <text class="tt tt-b" x="414" y="293">Precio horario</text>
+    <text class="st st-b" x="414" y="310">178.224 horas</text>
+
+    <path class="fl" d="M536 128 H592"/>
+    <rect class="cj" x="596" y="86" width="156" height="84" rx="11"/>
+    <text class="tt" x="614" y="112">Optimizador</text>
+    <text class="st" x="614" y="129">programación lineal</text>
+    <text class="st" x="614" y="145">20 escenarios</text>
+    <text class="st" x="614" y="161">~4 minutos</text>
+
+    <path class="fl" d="M674 170 V214"/>
+    <rect class="cj-s" x="596" y="218" width="156" height="66" rx="11"/>
+    <text class="tt" x="614" y="243">Resultado</text>
+    <text class="st" x="614" y="260">despacho + economía</text>
+    <text class="st" x="614" y="276">a la pantalla 3</text>
+  </svg>
+  </div>
+
+  <div class="rejilla r2">
+    <div class="tarjeta suave">
+      <div class="sobre">Por qué la curva de precio no se pregunta</div>
+      <p style="margin:0;font-size:9.4pt">Se genera sola cada mañana a partir de la matriz
+        de datos del proyecto y cubre hasta 2046. Hay <b>una sola</b> y se pisa cada día:
+        no es un archivo histórico, es la foto de hoy. Preguntar al usuario por ella sería
+        pedirle algo que no tiene.</p>
+    </div>
+    <div class="tarjeta suave">
+      <div class="sobre">Por qué se revisa lo que sube</div>
+      <p style="margin:0;font-size:9.4pt">Un fichero mal subido no falla: el estudio corre
+        igual y devuelve un número con dos decimales. En las pruebas se cargó una curva de
+        consumo en la casilla de generación y la recomendación salió <b>invertida</b>. La
+        revisión existe por eso.</p>
+    </div>
+  </div>
+
+  <div class="pie"><span>El flujo de información</span><span class="num">2</span></div>
+</section>
+
+
+<!-- ═══════════════════════════ 3 · PANTALLA 1 · CURVAS ════════════════════ -->
+<section class="hoja">
+  <div class="sobre">Pantalla 1 de 3</div>
+  <h2>Las curvas</h2>
+  <p class="entrada">Dos botones de fichero. Ningún campo de texto, ningún desplegable.</p>
+
+  <div class="tarjeta">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div>
+        <div style="font-size:11.5pt;font-weight:600">Sube tus curvas</div>
+        <div class="tenue" style="font-size:9pt">Un año completo, horario</div>
+      </div>
+      <span class="pildora gris"><span class="punto"></span>Paso 1 de 3</span>
+    </div>
+
+    <div class="rejilla r2">
+      <div class="suelta">
+        <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L8 8m4-4 4 4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></div>
+        <b>Curva de consumo</b>
+        <small>Arrastra el fichero o pulsa para elegirlo</small>
+        <div style="margin-top:12px"><span class="btn btn-secundario">Elegir fichero</span></div>
+      </div>
+      <div class="suelta">
+        <div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg></div>
+        <b>Curva de generación</b>
+        <small>Opcional, si hay fotovoltaica o eólica</small>
+        <div style="margin-top:12px"><span class="btn btn-secundario">Elegir fichero</span></div>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+      <a style="font-size:9pt;color:var(--acento);text-decoration:none;font-weight:500">
+        ↓ Descargar plantilla de ejemplo</a>
+      <span class="btn btn-apagado">Continuar</span>
+    </div>
+  </div>
+
+  <h3>Al soltar el fichero · lo que hay que enseñar</h3>
+  <p style="font-size:9.4pt">Aquí es donde el usuario reconoce sus propios datos, o se da
+     cuenta de que ha subido el año que no era. El botón de continuar no se activa hasta
+     que las dos tarjetas están en verde.</p>
+
+  <div class="rejilla r2">
+    <div class="tarjeta plana">
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+        <b style="font-size:9.6pt">consumo_2027.csv</b>
+        <span class="pildora ok"><span class="punto"></span>Correcta</span>
+      </div>
+      <div class="dato"><em>Periodo</em><b>01-01-2027 → 31-12-2027</b></div>
+      <div class="dato"><em>Días</em><b>365</b></div>
+      <div class="dato"><em>Consumo anual</em><b>374,2 MWh</b></div>
+      <div class="dato"><em>Punta</em><b>75,7 kW</b></div>
+      <div class="dato"><em>Huecos</em><b>0</b></div>
+    </div>
+    <div class="tarjeta plana">
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+        <b style="font-size:9.6pt">fotovoltaica_2027.xlsx</b>
+        <span class="pildora ok"><span class="punto"></span>Correcta</span>
+      </div>
+      <div class="dato"><em>Periodo</em><b>01-01-2027 → 31-12-2027</b></div>
+      <div class="dato"><em>Días</em><b>365</b></div>
+      <div class="dato"><em>Generación anual</em><b>177,2 MWh</b></div>
+      <div class="dato"><em>Punta</em><b>207,7 kW</b></div>
+      <div class="dato"><em>Equivale a</em><b>110,8 kWp</b></div>
+    </div>
+  </div>
+
+  <div class="nota">
+    <b>El consumo anual y los kWp no se preguntan: se leen del fichero.</b> Ya están dentro.
+    Pedirlos aparte sería pedir dos veces el mismo dato, y cuando las dos respuestas no
+    coinciden no hay forma de saber cuál es la buena. Los <b>kWp equivalentes</b> son el
+    contraste: si alguien tiene 250 instalados y aquí salen 110, el fichero es de otra
+    instalación o está en otra unidad.
+  </div>
+
+  <div class="pie"><span>Pantalla 1 · Las curvas</span><span class="num">3</span></div>
+</section>
+
+
+<!-- ═══════════════════════ 4 · ERRORES Y FORMATOS ═════════════════════════ -->
+<section class="hoja">
+  <div class="sobre">Pantalla 1 · casos que se dan</div>
+  <h2>Cuando el fichero no vale</h2>
+  <p class="entrada">Mismo sitio, mismo formato de tarjeta. Cambia el color y aparece el
+     motivo, escrito para leerse.</p>
+
+  <div class="tarjeta plana" style="border-color:#e8cfc5">
+    <div style="display:flex;justify-content:space-between;margin-bottom:10px">
+      <b style="font-size:9.6pt">consumo_2027.csv</b>
+      <span class="pildora mal"><span class="punto"></span>No se puede usar</span>
+    </div>
+    <p style="margin:0 0 12px;font-size:9.4pt;color:var(--alerta)">
+      Genera 0,82 de su media entre las 0:00 y las 4:00, y una fotovoltaica da cero.
+      ¿Es este el fichero de generación?</p>
+    <div style="display:flex;gap:8px">
+      <span class="btn btn-secundario">Subir otro</span>
+      <span class="btn btn-fantasma">Usarlo igualmente</span>
+    </div>
+  </div>
+
+  <h3>Todos los motivos de rechazo</h3>
+  <table>
+    <tr><th style="width:34%">Qué se comprueba</th><th>Qué se le dice al usuario</th></tr>
+    <tr><td>Menos de 300 días</td><td>Hace falta un año completo: los meses que falten se rellenan con la media de los demás.</td></tr>
+    <tr><td>Horas sin valor</td><td>Quedan huecos que no se han podido rellenar.</td></tr>
+    <tr><td>Consumo negativo</td><td>Hay horas con consumo por debajo de cero.</td></tr>
+    <tr><td>La curva suma cero</td><td>Probablemente la columna de valores no es la que se ha leído.</td></tr>
+    <tr><td>Solar que genera de noche</td><td>Una fotovoltaica da cero entre las 0:00 y las 4:00. ¿Es este el fichero?</td></tr>
+  </table>
+
+  <div class="nota aviso">
+    <b>«Usarlo igualmente» debe existir, y debe costar un clic de más.</b> Hay instalaciones
+    raras y el usuario puede tener razón. Pero por defecto no se guarda: así, si el dato malo
+    entra, ha entrado porque alguien lo decidió, no porque nadie miró.
+  </div>
+
+  <h3>Formatos que el servidor reconoce solo</h3>
+  <table>
+    <tr><th style="width:22%">Formato</th><th style="width:34%">Cómo viene</th><th>De dónde suele salir</th></tr>
+    <tr><td><b>Ancho</b></td><td class="m">fecha · H1 … H24 (o H25)</td><td>Excel de distribuidora</td></tr>
+    <tr><td><b>Largo</b></td><td class="m">fecha · hora · valor</td><td>Sistemas de medida</td></tr>
+    <tr><td><b>Largo</b></td><td class="m">fecha-hora · valor</td><td>Dataloggers</td></tr>
+  </table>
+
+  <p style="font-size:9.4pt;margin-top:12px">Acepta <code>.csv</code>, <code>.xlsx</code>,
+     <code>.xls</code> y <code>.xlsm</code>. En Excel <b>la curva no tiene por qué estar en
+     la primera hoja</b>: se prueban todas. Resuelve solo el domingo de 23 horas de marzo y
+     el de 25 de octubre, y el 29 de febrero.</p>
+
+  <div class="nota">
+    <b>Lo único que la web tiene que preguntar es la unidad</b>, y solo si el fichero viene
+    en formato ancho. Ahí las columnas se llaman <code>H1…H24</code> y no hay dónde
+    escribirla. En formato largo va en el nombre de la columna
+    (<code>consumo_kwh</code>) y se lee sola. Nunca se adivina por la magnitud: 40 por hora
+    son 40 kWh en una pyme y 40 MWh en una fábrica.
+  </div>
+
+  <div class="pie"><span>Pantalla 1 · Errores y formatos</span><span class="num">4</span></div>
+</section>
+
+
+<!-- ═══════════════════════ 5 · PANTALLA 2 · BATERIA ═══════════════════════ -->
+<section class="hoja">
+  <div class="sobre">Pantalla 2 de 3</div>
+  <h2>La batería</h2>
+  <p class="entrada">Tres campos visibles. El resto tiene valor por defecto y vive en un
+     desplegable que casi nadie abrirá.</p>
+
+  <div class="tarjeta">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <div>
+        <div style="font-size:11.5pt;font-weight:600">¿Qué batería te planteas?</div>
+        <div class="tenue" style="font-size:9pt">Si no lo sabes, deja los valores que vienen</div>
+      </div>
+      <span class="pildora gris"><span class="punto"></span>Paso 2 de 3</span>
+    </div>
+
+    <div class="rejilla r3" style="margin-bottom:16px">
+      <div>
+        <div class="sobre">Potencia</div>
+        <div class="tarjeta plana" style="margin:0;padding:11px 14px;display:flex;
+             justify-content:space-between;align-items:baseline">
+          <b class="mono" style="font-size:13pt">100</b><span class="tenue">kW</span>
+        </div>
+      </div>
+      <div>
+        <div class="sobre">Duración</div>
+        <div style="display:flex;gap:5px">
+          <span class="btn btn-fantasma" style="padding:9px 0;flex:1">2 h</span>
+          <span class="btn btn-primario" style="padding:9px 0;flex:1">4 h</span>
+          <span class="btn btn-fantasma" style="padding:9px 0;flex:1">6 h</span>
+        </div>
+      </div>
+      <div>
+        <div class="sobre">Precio</div>
+        <div class="tarjeta plana" style="margin:0;padding:11px 14px;display:flex;
+             justify-content:space-between;align-items:baseline">
+          <b class="mono" style="font-size:13pt">200.000</b><span class="tenue">€/MWh</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tarjeta suave" style="margin-bottom:16px">
+      <div class="sobre">Con eso, la batería queda así</div>
+      <div class="rejilla r3" style="gap:18px">
+        <div class="dato" style="border:none;padding:0"><em>Energía</em><b>0,40 MWh</b></div>
+        <div class="dato" style="border:none;padding:0"><em>Útil</em><b>0,36 MWh</b></div>
+        <div class="dato" style="border:none;padding:0"><em>Coste</em><b>80.000 €</b></div>
+      </div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span class="tenue" style="font-size:9pt">▸ Opciones avanzadas</span>
+      <span class="btn btn-primario">Calcular estudio →</span>
+    </div>
+  </div>
+
+  <div class="nota">
+    <b>El precio es por MWh instalado, no total.</b> Una batería de 100 kW y 4 horas son
+    0,4 MWh, y a 200.000 €/MWh cuesta <b>80.000 €</b>. Enseñar el coste total ahí al lado,
+    calculado, evita el malentendido antes de que ocurra.
+  </div>
+
+  <h3>Lo que va en «opciones avanzadas»</h3>
+  <table>
+    <tr><th style="width:32%">Campo</th><th style="width:18%">Por defecto</th><th>Cuándo se toca</th></tr>
+    <tr><td>Rendimiento de ida y vuelta</td><td class="m">0,90</td><td>Si la ficha del fabricante dice otra cosa</td></tr>
+    <tr><td>Estado de carga mín. / máx.</td><td class="m">5 % / 95 %</td><td>Casi nunca</td></tr>
+    <tr><td>Ciclos de vida</td><td class="m">6.000</td><td>Química distinta de LFP</td></tr>
+    <tr><td>Carga y descarga máximas</td><td class="m">100 % / 100 %</td><td>Inversor asimétrico</td></tr>
+    <tr><td>Mínimo técnico del inversor</td><td class="m">0 %</td><td><b>Avisar:</b> por encima de cero el cálculo tarda entre 20 y 40 veces más</td></tr>
+  </table>
+
+  <div class="pie"><span>Pantalla 2 · La batería</span><span class="num">5</span></div>
+</section>
+
+
+<!-- ═══════════════════════ 6 · PANTALLA 3 · RESULTADO ═════════════════════ -->
+<section class="hoja">
+  <div class="sobre">Pantalla 3 de 3</div>
+  <h2>El resultado</h2>
+  <p class="entrada">Lo primero, la respuesta. El detalle, debajo, para quien lo quiera.</p>
+
+  <div class="rejilla r4" style="margin-bottom:16px">
+    <div class="kpi destaca">
+      <div class="et">Sale a cuenta en</div>
+      <div class="vl">100 %</div>
+      <div class="un">de los 20 escenarios</div>
+    </div>
+    <div class="kpi">
+      <div class="et">Ahorro a vida completa</div>
+      <div class="vl">164.010</div>
+      <div class="un">euros</div>
+    </div>
+    <div class="kpi">
+      <div class="et">Valor actual neto</div>
+      <div class="vl">+2.544</div>
+      <div class="un">euros · banda 1.769 a 3.219</div>
+    </div>
+    <div class="kpi">
+      <div class="et">Uso diario</div>
+      <div class="vl">1,0</div>
+      <div class="un">ciclos al día · vida 7,8 años</div>
+    </div>
+  </div>
+
+  <div class="nota">
+    <b>El número grande es el porcentaje de escenarios en que sale bien, no el valor actual
+    neto.</b> Un VAN mediano positivo con un 45 % de escenarios buenos es una inversión que
+    falla más de la mitad de las veces, y enseñando solo la mediana eso no se ve.
+  </div>
+
+  <h3>Debajo, en este orden</h3>
+  <table>
+    <tr><th style="width:30%">Bloque</th><th>Qué contesta</th></tr>
+    <tr><td><b>Abanico del VAN</b></td><td>¿Cuánto puede salir bien y cuánto mal?</td></tr>
+    <tr><td><b>Ahorro por año</b></td><td>¿Cuándo gano y cuándo no?</td></tr>
+    <tr><td><b>Una semana hora a hora</b></td><td>¿Qué hace exactamente la batería?</td></tr>
+    <tr><td><b>Factura con y sin</b></td><td>¿Cómo queda mi recibo?</td></tr>
+    <tr><td><b>Otras tallas</b></td><td>¿Me sobra o me falta batería?</td></tr>
+  </table>
+
+  <h3>Mientras calcula</h3>
+  <div class="tarjeta plana">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <b style="font-size:9.6pt">Calculando tu estudio</b>
+      <span class="pildora gris">≈ 4 minutos</span>
+    </div>
+    <div style="height:5px;background:var(--muted);border-radius:3px;overflow:hidden;margin-bottom:12px">
+      <div style="width:62%;height:100%;background:var(--acento)"></div>
+    </div>
+    <div class="tenue" style="font-size:9pt">Escenario 12 de 20 · optimizando 7.426 días</div>
+  </div>
+
+  <div class="nota aviso">
+    <b>Cuatro minutos es demasiado para dejar una pantalla en blanco.</b> Hay que enseñar
+    por qué escenario va. Si el usuario cierra la pestaña, el cálculo sigue y el resultado
+    queda guardado: hay que poder volver a él.
+  </div>
+
+  <h3>Y arriba del todo, en pequeño</h3>
+  <p style="font-size:9.4pt">Con qué curva de precio se calculó y de qué día es. La curva se
+     pisa cada mañana, así que dos estudios de días distintos no son estrictamente
+     comparables. Es una línea de texto y evita una discusión.</p>
+
+  <div class="pie"><span>Pantalla 3 · El resultado</span><span class="num">6</span></div>
+</section>
+
+
+<!-- ═══════════════════════════ 7 · POR DENTRO ═════════════════════════════ -->
+<section class="hoja">
+  <div class="sobre">Para quien conecte la web con el servidor</div>
+  <h2>Qué llama a qué</h2>
+
+  <h3>Subida de curvas</h3>
+  <p style="font-size:9.4pt">Devuelve un JSON por curva. <b>La forma es la misma haya ido
+     bien o mal</b>; <code>ok</code> distingue los dos casos. Un front que tiene que
+     manejar dos formas distintas acaba con dos caminos y uno sin probar.</p>
+  <div class="tarjeta plana mono" style="font-size:8.3pt;background:#fbfdfb;line-height:1.55">
+    <span class="tenue">$</span> cargar_curvas.py --json --consumo &lt;fichero&gt; --generacion &lt;fichero&gt;<br><br>
+    [{ <span style="color:#258160">"tipo"</span>: "generacion", <span style="color:#258160">"ok"</span>: true, <span style="color:#258160">"code"</span>: "CURVA-GEN", <span style="color:#258160">"id"</span>: 10,<br>
+    &nbsp;&nbsp; <span style="color:#258160">"problemas"</span>: [],<br>
+    &nbsp;&nbsp; <span style="color:#258160">"curva"</span>: { "desde": "2027-01-01", "hasta": "2027-12-31", "dias": 365,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; "anual_mwh": 177.2, "pico_kw": 207.7, "kwp_equivalentes": 110.8 } }]
+  </div>
+
+  <h3>Lanzar el estudio</h3>
+  <div class="tarjeta plana mono" style="font-size:8.3pt;background:#fbfdfb;line-height:1.7">
+    <span class="tenue">$</span> caso.py bateria &nbsp;&nbsp;&nbsp;--code … --potencia 0.1 --duracion 4<br>
+    <span class="tenue">$</span> caso.py crear &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;--code … --bateria … --consumo … --generacion …<br>
+    <span class="tenue">$</span> caso.py ejecutar &nbsp;&nbsp;--code … --escenarios 20
+  </div>
+
+  <h3>Lo que el servidor decide, y la web no</h3>
+  <table>
+    <tr><th style="width:34%">Parámetro</th><th style="width:22%">Valor</th><th>Por qué no se pregunta</th></tr>
+    <tr><td>Horizonte</td><td class="m">toda la curva</td><td>Es el periodo para el que hay precio</td></tr>
+    <tr><td>Política de carga</td><td class="m">libre</td><td>Restringirla solo puede empeorar el resultado</td></tr>
+    <tr><td>Ventana de ciclo</td><td class="m">7 días</td><td>Detalle interno del optimizador</td></tr>
+    <tr><td>Tasa de descuento</td><td class="m">7 %</td><td>Debe ser la misma en todos los estudios o no se comparan</td></tr>
+    <tr><td>Mantenimiento</td><td class="m">1,5 % del coste</td><td>Ídem</td></tr>
+    <tr><td>Escenarios</td><td class="m">20</td><td>Compromiso entre banda fina y tiempo de espera</td></tr>
+  </table>
+
+  <h3>Dónde queda todo</h3>
+  <table>
+    <tr><th style="width:38%">Tabla</th><th>Qué guarda</th></tr>
+    <tr><td class="m">app_consump_inst · _shape</td><td>La instalación de consumo y su forma horaria</td></tr>
+    <tr><td class="m">app_gen_inst · _shape</td><td>Ídem para la generación</td></tr>
+    <tr><td class="m">app_battery_model</td><td>La ficha de la batería</td></tr>
+    <tr><td class="m">app_study_case</td><td>El estudio: qué batería, qué instalaciones, qué periodo</td></tr>
+    <tr><td class="m">app_case_run</td><td>El resultado. Es lo que se pinta en la pantalla 3</td></tr>
+    <tr><td class="m">app_case_result_annual</td><td>Año a año, para el gráfico de barras</td></tr>
+    <tr><td class="m">app_case_dispatch</td><td>Hora a hora, para el gráfico de carga y descarga</td></tr>
+    <tr><td class="m">app_curve · _hourly</td><td>La curva de precio. Una sola, se pisa cada día a las 11:45</td></tr>
+  </table>
+
+  <div class="nota">
+    Todas las tablas van <b>por usuario</b>. Dos personas pueden tener una instalación
+    llamada igual sin pisarse.
+  </div>
+
+  <div class="pie"><span>Por dentro</span><span class="num">7</span></div>
+</section>
+
+</body>
+</html>
