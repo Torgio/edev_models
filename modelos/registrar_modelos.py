@@ -76,8 +76,10 @@ def catalogo() -> list[dict]:
                 features_dudosas=m.get("features_dudosas", []), notas=m.get("notas"))
 
     # --- bloque estadistico (solo validacion, sin artefacto todavia)
-    for f in sorted((REPO / "modelos" / "ML_Samuel" / "entregables").glob("*/metadata.json")):
+    for f in sorted((REPO / "modelos").glob("**/metadata.json")):
         m = json.loads(f.read_text(encoding="utf-8"))
+        if "modelo_id" not in m:          # metadata de otra cosa, no de un modelo
+            continue
         add(model=m["modelo_id"], seed=-1, familia=m.get("familia", "estadistico"),
             autor=m.get("autor", "Samuel"), matrix="dataset_horario", matrix_hash=None,
             artefacto=None, libreria=m.get("libreria"), python=m.get("python"),

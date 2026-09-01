@@ -53,9 +53,20 @@ def a_largo(ruta, modelo_id):
 
 
 def de_largo(ruta):
-    """Largo (modelo_id, datetime_utc, precio_pred, p10, p90). El formato de la directriz."""
+    """Largo (modelo_id, datetime_utc, precio_pred, p10, p90). El formato de la directriz.
+
+    OJO CON LA ZONA HORARIA. La columna viene en UTC y la matriz guarda `ts` en hora
+    peninsular. Quitar la zona sin convertir (tz_localize(None)) desplaza la serie una
+    hora en invierno y dos en verano: no rompe nada, solo empeora todas las metricas a la
+    vez -- que es peor, porque parece un modelo malo. Se detecto porque los cinco modelos
+    en formato largo compartian firma: captura ~60% y acierto de pico ~33%, frente a
+    ~92% y ~78% de los de formato ancho.
+    """
     d = pd.read_csv(ruta)
-    d["ts"] = pd.to_datetime(d["datetime_utc"]).dt.tz_localize(None)
+    d["ts"] = (pd.to_datetime(d["datetime_utc"], utc=True)
+                 .dt.tz_convert("Europe/Madrid").dt.tz_localize(None))
+    # en octubre la 02:00 local ocurre dos veces; la matriz solo tiene una fila
+    d = d[~d["ts"].duplicated(keep="first")]
     d = d.set_index("ts")
     cols = ["precio_pred"] + [c for c in ("p10", "p90") if c in d and d[c].notna().any()]
     return d[cols]
@@ -133,7 +144,7 @@ def inventario(tramo):
     """Todo lo que hay que evaluar, venga en el formato que venga."""
     sufijo = "val" if tramo == "validation" else "test"
     fuentes = []
-    for r in sorted(glob.glob(str(REPO / "modelos/*/entregables/*/pred_val_2025.csv"))):
+    for r in sorted(glob.glob(str(REPO / "modelos/**/pred_val_2025.csv"), recursive=True)):
         if tramo == "validation":
             fuentes.append((os.path.basename(os.path.dirname(r)), "largo", r))
     for r in sorted(glob.glob(str(REPO / f"data/gold/finales_*/pred_{sufijo}_*.csv"))):
