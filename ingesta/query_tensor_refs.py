@@ -20,11 +20,25 @@ para que "from config import load_config" funcione sin ajustar sys.path.
 """
 
 import json
+import re
 from datetime import datetime
 import os
 
 import psycopg2
 from config import load_config
+
+
+def _safe_basename(path: str) -> str:
+    """
+    Extrae el nombre de archivo sin importar si el path original usaba '/'
+    (Linux, la mayoria de las filas) o '\\' (Windows -- detectado en filas
+    de 2025 en adelante, probablemente insertadas desde un proceso/maquina
+    distinta durante la recarga con --force). os.path.basename() depende
+    del SO donde CORRE el script, no del SO donde se generó el path
+    original -- en Linux nunca reconoce '\\' como separador y devuelve el
+    string completo intacto. Este split cubre ambos casos siempre.
+    """
+    return re.split(r"[\\/]+", path)[-1]
 
 DB_TABLE = "era5_weather_agg"  # debe coincidir exacto con era5_load.py línea 101
 TRAIN_END_TS = "2024-12-31 23:59:59"  # último instante incluido en train
@@ -97,7 +111,7 @@ def _export_refs(refs, path):
     serializable = [
         {
             "ts": r[0].isoformat(),
-            "tensor_filename": os.path.basename(r[1]),
+            "tensor_filename": _safe_basename(r[1]),
             "tensor_index": r[2],
         }
         for r in refs

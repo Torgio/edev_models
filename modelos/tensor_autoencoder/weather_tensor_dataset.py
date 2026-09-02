@@ -52,6 +52,12 @@ class WeatherTensorDataset(Dataset):
         for ch in self.log1p_channels:
             sample[:, :, ch] = np.log1p(sample[:, :, ch])
         sample = (sample - self.mean) / self.std
+        # Canales enteramente NaN en la fuente (p.ej. wind_gust10 en tensores de
+        # Open-Meteo, que no lo archiva) se imputan a 0 DESPUES de normalizar --
+        # 0 en espacio estandarizado es "la media", el valor mas neutro posible
+        # para una red ya entrenada. Generico: cubre cualquier canal futuro con
+        # cobertura parcial, no solo este caso conocido.
+        sample = np.nan_to_num(sample, nan=0.0)
         sample = np.transpose(sample, (2, 0, 1))  # channels-last -> channels-first
         return torch.from_numpy(sample).float()
 

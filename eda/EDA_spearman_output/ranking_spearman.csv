@@ -1,0 +1,129 @@
+variable,bloque,origen,rho,abs_rho,p_valor,n_unicos,frontera,signif_pero_irrelevante
+pt_entsoe_D,precio,"spot_price (Europa, dia D)",0.8833260124744242,0.8833260124744242,0.0,17005,SIMULTANEA (casa a las 12:00),False
+es_esios_D,precio,spot_price (lag),0.8832959963332326,0.8832959963332326,0.0,17074,TARGET disfrazado,False
+es_esios_Dm1,precio,spot_price (lag),0.8133475603983819,0.8133475603983819,0.0,17071,OK (pre-11:00),False
+es_esios_Dm6,precio,spot_price (lag),0.8001910205930607,0.8001910205930607,0.0,17060,OK (pre-11:00),False
+fr_entsoe_D,precio,"spot_price (Europa, dia D)",0.7610497464986812,0.7610497464986812,0.0,21609,SIMULTANEA (casa a las 12:00),False
+it_nord_entsoe_D,precio,"spot_price (Europa, dia D)",0.7170346566336767,0.7170346566336767,0.0,19756,SIMULTANEA (casa a las 12:00),False
+gas_mibgas,combustibles,commodities,0.6852257476487518,0.6852257476487518,0.0,1714,OK (pre-11:00),False
+gas_ttf_m1,combustibles,commodities,0.6744606596703148,0.6744606596703148,0.0,1322,OK (pre-11:00),False
+de_lu_entsoe_D,precio,"spot_price (Europa, dia D)",0.6591382843190415,0.6591382843190415,0.0,21417,SIMULTANEA (casa a las 12:00),False
+pl_entsoe_D,precio,"spot_price (Europa, dia D)",0.5706348323552718,0.5706348323552718,0.0,18645,SIMULTANEA (casa a las 12:00),False
+pdbc_ccgt_mw_D,casacion PDBC,esios_pdbc_gen,0.4993797201313856,0.4993797201313856,0.0,22870,POSTERIOR (no usable),False
+ree_gccgas_mw_Dm1,real desfasado,generation (real D-1/D-6),0.46202979144640266,0.46202979144640266,0.0,40130,OK (pre-11:00),False
+co2_eua_dec,combustibles,commodities,0.46077427370721347,0.46077427370721347,0.0,1316,OK (pre-11:00),False
+pdbc_coal_mw_D,casacion PDBC,esios_pdbc_gen,0.45958750110533264,0.45958750110533264,0.0,1257,POSTERIOR (no usable),False
+ree_gccgas_mw_Dm6,real desfasado,generation (real D-1/D-6),0.44126671546937024,0.44126671546937024,0.0,40106,OK (pre-11:00),False
+bil_generic_sales_mw_D,programa PBF,esios_pbf_bilateral,0.4009317725415732,0.4009317725415732,0.0,27902,POSTERIOR (no usable),False
+bil_retail_free_buy_mw_D,programa PBF,esios_pbf_bilateral,0.3923890591274785,0.3923890591274785,0.0,41566,POSTERIOR (no usable),False
+pdbc_other_renew_mw_D,casacion PDBC,esios_pdbc_gen,0.3893586856809014,0.3893586856809014,0.0,4228,POSTERIOR (no usable),False
+ree_gcoal_mw_Dm6,real desfasado,generation (real D-1/D-6),0.38845862874216824,0.38845862874216824,0.0,11440,OK (pre-11:00),False
+ree_gcoal_mw_Dm1,real desfasado,generation (real D-1/D-6),0.3861348377417359,0.3861348377417359,0.0,11423,OK (pre-11:00),False
+pdbc_pumping_cons_mw_D,casacion PDBC,esios_pbf_gen,0.37276437147117847,0.37276437147117847,0.0,8107,POSTERIOR (no usable),False
+hydro_run_river_mw_Dm1,real desfasado,generation (real D-1/D-6),-0.3700515864423548,0.3700515864423548,0.0,1673,OK (pre-11:00),False
+hydro_run_river_mw_Dm6,real desfasado,generation (real D-1/D-6),-0.3488644347974146,0.3488644347974146,0.0,1673,OK (pre-11:00),False
+biomass_mw_Dm1,real desfasado,generation (real D-1/D-6),0.34202378344624546,0.34202378344624546,0.0,524,OK (pre-11:00),False
+pumping_cons_mw_Dm6,real desfasado,generation (real D-1/D-6),-0.3411686629304376,0.3411686629304376,0.0,4098,OK (pre-11:00),False
+ree_grenov_prev,prevision D+1,forecast,-0.33654215974337265,0.33654215974337265,0.0,42437,OK (pre-11:00),False
+biomass_mw_Dm6,real desfasado,generation (real D-1/D-6),0.33022537569528404,0.33022537569528404,0.0,524,OK (pre-11:00),False
+pdbc_nuclear_mw_D,casacion PDBC,esios_pdbc_gen,-0.322096637128749,0.322096637128749,0.0,15322,POSTERIOR (no usable),False
+pdbc_hydro_no_ugh_mw_D,casacion PDBC,esios_pdbc_gen,-0.31317816499174095,0.31317816499174095,0.0,9528,POSTERIOR (no usable),False
+pumping_cons_mw_Dm1,real desfasado,generation (real D-1/D-6),-0.30883058763140586,0.30883058763140586,0.0,4097,OK (pre-11:00),False
+pdbc_biogas_mw_D,casacion PDBC,esios_pdbc_gen,0.29815362300082615,0.29815362300082615,0.0,1016,POSTERIOR (no usable),False
+pdbc_biomass_mw_D,casacion PDBC,esios_pdbc_gen,0.2773975717800515,0.2773975717800515,0.0,3850,POSTERIOR (no usable),False
+waste_mw_Dm1,real desfasado,generation (real D-1/D-6),0.27374530065438046,0.27374530065438046,0.0,278,OK (pre-11:00),False
+waste_mw_Dm6,real desfasado,generation (real D-1/D-6),0.2559819394791379,0.2559819394791379,0.0,278,OK (pre-11:00),False
+pdbc_waste_mw_D,casacion PDBC,esios_pdbc_gen,0.25204272038103326,0.25204272038103326,0.0,3118,POSTERIOR (no usable),False
+wind100_meteo,meteorologia,era5_weather_agg,-0.23386699632932487,0.23386699632932487,0.0,39836,OK (pre-11:00),False
+ree_demanda_prev,prevision D+1,forecast,0.22581455973813885,0.22581455973813885,0.0,32431,OK (pre-11:00),False
+d1_regimen_tope_gas,calendario,CALENDARIO (calculado),0.22135354115359587,0.22135354115359587,0.0,2,OK (pre-11:00),False
+d1_doy_sin,calendario,CALENDARIO (calculado),-0.2110564737882241,0.2110564737882241,0.0,366,OK (pre-11:00),False
+other_renewable_mw_Dm6,real desfasado,generation (real D-1/D-6),0.20450464204736893,0.20450464204736893,0.0,96,OK (pre-11:00),False
+pdbc_hydro_ugh_mw_D,casacion PDBC,esios_pdbc_gen,-0.2002933008402579,0.2002933008402579,0.0,21221,POSTERIOR (no usable),False
+entsoe_load_Dm6,real desfasado,generation (real D-1/D-6),0.19984035992515498,0.19984035992515498,0.0,16627,OK (pre-11:00),False
+bil_generic_buy_mw_D,programa PBF,esios_pbf_bilateral,-0.19829974831373973,0.19829974831373973,0.0,6567,POSTERIOR (no usable),False
+capdisp_hydro_mw,capacidad,esios_capacity_available,-0.19591954330217173,0.19591954330217173,0.0,6040,OK (pre-11:00),False
+ree_gwind_prev,prevision D+1,forecast,-0.19382082752613522,0.19382082752613522,0.0,29600,OK (pre-11:00),False
+ree_gsolar_prev,prevision D+1,forecast,-0.19056441919532335,0.19056441919532335,0.0,25499,OK (pre-11:00),False
+gen_peninsular_mw_Dm6,real desfasado,generation (real D-1/D-6),0.17928933692402632,0.17928933692402632,0.0,51573,OK (pre-11:00),False
+other_renewable_mw_Dm1,real desfasado,generation (real D-1/D-6),0.1767065386906968,0.1767065386906968,0.0,96,OK (pre-11:00),False
+spread_es_de_D,precio,spot_price (lag),0.17602976687242827,0.17602976687242827,0.0,29495,SIMULTANEA (casa a las 12:00),False
+ssrd_meteo,meteorologia,era5_weather_agg,-0.17444435796822738,0.17444435796822738,0.0,33345,OK (pre-11:00),False
+pdbc_pumping_gen_mw_D,casacion PDBC,esios_pbf_gen,0.1705671998591302,0.1705671998591302,0.0,8182,POSTERIOR (no usable),False
+meteo_es_forecast,otros,DERIVADA (depuracion),-0.16984411899677573,0.16984411899677573,0.0,2,OK (pre-11:00),False
+pdbc_wind_mw_D,casacion PDBC,esios_pdbc_gen,-0.1665351212357168,0.1665351212357168,0.0,41809,POSTERIOR (no usable),False
+solar_fv_mw_Dm6,real desfasado,generation (real D-1/D-6),-0.16569824912494635,0.16569824912494635,0.0,26139,OK (pre-11:00),False
+msl_meteo,meteorologia,era5_weather_agg,0.14999096375298784,0.14999096375298784,1.9880567760130433e-261,46211,OK (pre-11:00),False
+capdisp_coal_antracita_mw,capacidad,esios_capacity_available,-0.14765691477525741,0.14765691477525741,2.478343361007719e-253,206,OK (pre-11:00),False
+ssrd_mean_met_Dm2,meteorologia,era5_weather_agg,-0.1471361062181931,0.1471361062181931,1.5224128160552775e-251,35480,OK (pre-11:00),False
+hora_cos,calendario,CALENDARIO (calculado),0.14616407483861968,0.14616407483861968,3.1820792857195686e-248,22,OK (pre-11:00),False
+tp_acum_30d_met_Dm1,meteorologia,era5_weather_agg,-0.1443556256690883,0.1443556256690883,4.157795473354888e-242,52350,OK (pre-11:00),False
+pdbc_solar_thermal_mw_D,casacion PDBC,esios_pdbc_gen,-0.1440413395171196,0.1440413395171196,4.717268810308222e-241,16492,POSTERIOR (no usable),False
+d1_month,calendario,CALENDARIO (calculado),0.14315403967850668,0.14315403967850668,4.35307051918075e-238,12,OK (pre-11:00),False
+bil_retail_last_resort_mw_D,programa PBF,esios_pbf_bilateral,-0.14152601748328195,0.14152601748328195,1.0706525931596672e-232,8990,POSTERIOR (no usable),False
+spread_es_pt_D,precio,spot_price (lag),0.13773097290269234,0.13773097290269234,2.2265423394344767e-220,2183,SIMULTANEA (casa a las 12:00),False
+d1_is_weekend,calendario,CALENDARIO (calculado),-0.1342891466791442,0.1342891466791442,1.656278159208135e-209,2,OK (pre-11:00),False
+pbfli_net_flow_ad_mw_D,programa PBF,esios_pbf_load_inter,-0.12750110787601207,0.12750110787601207,6.7143830334329485e-189,481,POSTERIOR (no usable),False
+capdisp_ccgt_mw,capacidad,esios_capacity_available,0.11832171272479823,0.11832171272479823,8.81812313997421e-163,4404,OK (pre-11:00),False
+oil_mw_Dm6,real desfasado,generation (real D-1/D-6),0.11374676545696054,0.11374676545696054,1.64229640429605e-150,333,OK (pre-11:00),False
+d1_dow,calendario,CALENDARIO (calculado),-0.1121374531405824,0.1121374531405824,2.593731666905745e-146,7,OK (pre-11:00),False
+d1_dow_sin,calendario,CALENDARIO (calculado),0.10945894224174182,0.10945894224174182,1.845950592037526e-139,7,OK (pre-11:00),False
+tcc_mean_met_Dm2,meteorologia,era5_weather_agg,-0.10613593976708213,0.10613593976708213,3.406340831418337e-131,52321,OK (pre-11:00),False
+entsoe_load_Dm1,real desfasado,generation (real D-1/D-6),0.10351412369711666,0.10351412369711666,7.427353455829547e-125,16615,OK (pre-11:00),False
+pbfli_total_demand_mw_D,programa PBF,esios_pbf_load_inter,0.10291760953536297,0.10291760953536297,1.951785619991346e-123,44505,POSTERIOR (no usable),False
+tp_acum_7d_met_Dm2,meteorologia,era5_weather_agg,-0.0969237313470758,0.0969237313470758,1.235503487473555e-109,52350,OK (pre-11:00),False
+msl_mean_met_Dm2,meteorologia,era5_weather_agg,0.09613842332992628,0.09613842332992628,6.883141681404262e-108,49981,OK (pre-11:00),False
+oil_mw_Dm1,real desfasado,generation (real D-1/D-6),0.09514899291597582,0.09514899291597582,1.0399974113308074e-105,333,OK (pre-11:00),False
+gen_peninsular_mw_Dm1,real desfasado,generation (real D-1/D-6),0.0940192834535156,0.0940192834535156,3.001199812777131e-103,51613,OK (pre-11:00),False
+pbfli_demand_aux_mw_D,programa PBF,esios_pbf_load_inter,-0.09000433804864104,0.09000433804864104,9.552476403489251e-95,1082,POSTERIOR (no usable),False
+bil_retail_free_sales_mw_D,programa PBF,esios_pbf_bilateral,0.08891045080355695,0.08891045080355695,1.7047356960346376e-92,26391,POSTERIOR (no usable),False
+ree_gnuclear_mw_Dm1,real desfasado,generation (real D-1/D-6),0.08759108358723454,0.08759108358723454,8.133319468035704e-90,16819,OK (pre-11:00),False
+pdbc_cogen_mw_D,casacion PDBC,esios_pdbc_gen,0.08233691631466197,0.08233691631466197,1.5006027191685812e-79,20946,POSTERIOR (no usable),False
+ree_gsolter_mw_Dm1,real desfasado,generation (real D-1/D-6),-0.08225486980343152,0.08225486980343152,2.145339750394262e-79,16306,OK (pre-11:00),False
+hydro_dispatch_mw_Dm1,real desfasado,generation (real D-1/D-6),-0.08108501138991869,0.08108501138991869,3.3719215297439295e-77,8026,OK (pre-11:00),False
+bil_direct_consumer_mw_D,programa PBF,esios_pbf_bilateral,0.08054833617284328,0.08054833617284328,3.348617469082078e-76,2832,POSTERIOR (no usable),False
+ree_netflow_ma_Dm1,real desfasado,generation (real D-1/D-6),0.07653802120543095,0.07653802120543095,5.806487908278347e-69,39374,OK (pre-11:00),False
+ree_gsolter_mw_Dm6,real desfasado,generation (real D-1/D-6),-0.07254421167414268,0.07254421167414268,4.017069821353834e-62,16290,OK (pre-11:00),False
+ventana_pisa_apagon,otros,DERIVADA (depuracion),-0.07042810204305304,0.07042810204305304,1.1994590704953764e-58,2,OK (pre-11:00),False
+ree_gnuclear_mw_Dm6,real desfasado,generation (real D-1/D-6),0.07039549839903231,0.07039549839903231,1.3543167984785286e-58,16781,OK (pre-11:00),False
+imputado_apagon,otros,DERIVADA (depuracion),-0.06984851676582368,0.06984851676582368,1.0298813899391511e-57,9,OK (pre-11:00),False
+wind_mw_Dm6,real desfasado,generation (real D-1/D-6),0.061841354946778955,0.061841354946778955,1.3280685749488142e-45,14648,OK (pre-11:00),False
+hora,control,CLAVE,0.060999513028705474,0.060999513028705474,2.0463197423021035e-44,24,OK (pre-11:00),False
+d2m_meteo,meteorologia,era5_weather_agg,0.06097820627742318,0.06097820627742318,2.1919185665862667e-44,41882,OK (pre-11:00),False
+pbfli_total_net_flow_mw_D,programa PBF,esios_pbf_load_inter,0.0608640608545408,0.0608640608545408,3.166400851216115e-44,39930,POSTERIOR (no usable),False
+pbfli_net_flow_pt_mw_D,programa PBF,esios_pbf_load_inter,0.05951130576648569,0.05951130576648569,2.3494123273835388e-42,33168,POSTERIOR (no usable),False
+pbf_completo_D,otros,DERIVADA (testigo de publicacion),0.05887496798357736,0.05887496798357736,1.7230708182995675e-41,2,OK (pre-11:00),False
+hydro_dispatch_mw_Dm6,real desfasado,generation (real D-1/D-6),-0.05736972486173422,0.05736972486173422,1.7634793016423666e-39,8012,OK (pre-11:00),False
+ree_gotherthermal_mw_Dm6,real desfasado,generation (real D-1/D-6),0.054075549604365114,0.054075549604365114,2.914811441085156e-35,21707,OK (pre-11:00),False
+ree_gotherthermal_mw_Dm1,real desfasado,generation (real D-1/D-6),0.052061042809928945,0.052061042809928945,8.35831721307552e-33,21677,OK (pre-11:00),False
+pdbc_unavailable_power_mw_D,casacion PDBC,esios_pbf_gen,0.051619894796786144,0.051619894796786144,2.8049352540223025e-32,11394,POSTERIOR (no usable),False
+d1_es_puente,calendario,CALENDARIO (calculado),0.050385101252321415,0.050385101252321415,7.872034284434285e-31,2,OK (pre-11:00),False
+capinst_waste_nonrenewable_mw,capacidad,esios_capacity_installed,0.04922289978294666,0.04922289978294666,1.6880405633773658e-29,7,OK (pre-11:00),True
+tcc_meteo,meteorologia,era5_weather_agg,-0.046458407762838584,0.046458407762838584,1.8645287014846606e-26,43612,OK (pre-11:00),True
+wind100_mean_met_Dm2,meteorologia,era5_weather_agg,-0.04454817753556427,0.04454817753556427,1.8701636480009913e-24,52300,OK (pre-11:00),True
+pbfli_demand_reference_mw_D,programa PBF,esios_pbf_load_inter,0.04453657306298521,0.04453657306298521,1.9221362081717954e-24,24838,POSTERIOR (no usable),True
+pbfli_demand_direct_mw_D,programa PBF,esios_pbf_load_inter,-0.044232927783510255,0.044232927783510255,3.928212029702014e-24,5644,POSTERIOR (no usable),True
+ree_netflow_ma_Dm6,real desfasado,generation (real D-1/D-6),0.044101338429473926,0.044101338429473926,5.3464594510246936e-24,39350,OK (pre-11:00),True
+d1_is_festivo,calendario,CALENDARIO (calculado),-0.035466063703326375,0.035466063703326375,4.527481510153134e-16,2,OK (pre-11:00),True
+pbfli_net_flow_fr_mw_D,programa PBF,esios_pbf_load_inter,0.03296071093691268,0.03296071093691268,4.373681393844847e-14,15854,POSTERIOR (no usable),True
+d2m_mean_met_Dm2,meteorologia,era5_weather_agg,0.03261823671422326,0.03261823671422326,7.965580780370774e-14,51169,OK (pre-11:00),True
+capdisp_nuclear_mw,capacidad,esios_capacity_available,0.03164255692289888,0.03164255692289888,4.251496803674432e-13,503,OK (pre-11:00),True
+capinst_total_autoconsume_mw,capacidad,esios_capacity_installed,0.030660090874636965,0.030660090874636965,2.184398152463737e-12,72,OK (pre-11:00),True
+capinst_wind_mw,capacidad,esios_capacity_installed,0.030043711246204932,0.030043711246204932,5.9458973110169985e-12,70,OK (pre-11:00),True
+capinst_coal_mw,capacidad,esios_capacity_installed,-0.023620873817911853,0.023620873817911853,6.322043357120628e-08,11,OK (pre-11:00),True
+ree_netflow_pt_Dm1,real desfasado,generation (real D-1/D-6),-0.02181866562240614,0.02181866562240614,5.834490800731608e-07,50019,OK (pre-11:00),True
+total_net_flow_mw_Dm6,real desfasado,generation (real D-1/D-6),-0.02029142763634529,0.02029142763634529,3.3713287943923824e-06,50803,OK (pre-11:00),True
+pdbc_total_gen_mw_D,casacion PDBC,esios_pbf_gen,-0.019996979063142756,0.019996979063142756,4.66420349116257e-06,45839,POSTERIOR (no usable),True
+pbf_publicado_D,otros,DERIVADA (testigo de publicacion),0.0188695544132464,0.0188695544132464,1.5523835037580142e-05,2,OK (pre-11:00),True
+total_net_flow_mw_Dm1,real desfasado,generation (real D-1/D-6),-0.01865010573727802,0.01865010573727802,1.9472169864034326e-05,50801,OK (pre-11:00),True
+wind_mw_Dm1,real desfasado,generation (real D-1/D-6),-0.0179319234724075,0.0179319234724075,4.019278524855887e-05,14651,OK (pre-11:00),True
+hora_sin,calendario,CALENDARIO (calculado),-0.0158045535132968,0.0158045535132968,0.00029558263629080235,20,OK (pre-11:00),True
+ree_netflow_fr_Dm6,real desfasado,generation (real D-1/D-6),-0.01230247849135354,0.01230247849135354,0.004845657140794086,49987,OK (pre-11:00),True
+t2m_meteo,meteorologia,era5_weather_agg,-0.009414045732318223,0.009414045732318223,0.03110952383376,43271,OK (pre-11:00),False
+d1_month_cos,calendario,CALENDARIO (calculado),-0.00900541627481678,0.00900541627481678,0.03919866053459774,11,OK (pre-11:00),False
+ree_netflow_fr_Dm1,real desfasado,generation (real D-1/D-6),-0.008324501840920946,0.008324501840920946,0.056627988688947306,49983,OK (pre-11:00),False
+d1_dow_cos,calendario,CALENDARIO (calculado),-0.008276393418671124,0.008276393418671124,0.05807188738563956,7,OK (pre-11:00),False
+ree_netflow_pt_Dm6,real desfasado,generation (real D-1/D-6),-0.0082216382782739,0.0082216382782739,0.05975236726079095,50008,OK (pre-11:00),False
+capdisp_pump_mw,capacidad,esios_capacity_available,-0.00792863028459218,0.00792863028459218,0.06944397352514907,2112,OK (pre-11:00),False
+t2m_mean_met_Dm2,meteorologia,era5_weather_agg,0.002270024038982148,0.002270024038982148,0.603210586513125,51521,OK (pre-11:00),False
+spread_es_fr_D,precio,spot_price (lag),0.0021122890728425404,0.0021122890728425404,0.6286194333291292,24028,SIMULTANEA (casa a las 12:00),False
