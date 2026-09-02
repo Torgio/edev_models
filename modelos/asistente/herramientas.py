@@ -639,6 +639,64 @@ def buscar_documentacion(pregunta: str, k: int = 3) -> dict:
     }
 
 
+def capacidad_instalada(fecha: str | None = None) -> dict:
+    """Capacidad instalada por tecnologia en España (MW) -- dato administrativo (cuanta potencia
+    HAY instalada), no de generacion real horaria. Usa esta herramienta para "cuanta solar/eolica
+    hay instalada", "capacidad renovable", etc.
+
+    Se añadio tras encontrar el hueco en una prueba real: la pregunta "¿cuánta capacidad solar
+    hay instalada ahora mismo?" caía en `consulta_sql_lectura`, y con el modelo mas barato
+    (Haiku) el LLM respondia que no tenia el dato aunque SI estaba disponible -- con Opus si
+    funcionaba, pero depender de que el modelo "se acuerde" de intentar el SQL generico para
+    algo tan previsible no es fiable. Ahora es una herramienta fija, funciona con cualquier
+    modelo.
+
+    Args:
+        fecha: YYYY-MM-DD. Si se omite, usa la fecha mas reciente con dato (datos desde 2020).
+    """
+    conn = _conectar()
+    try:
+        if fecha:
+            df = pd.read_sql("SELECT * FROM esios_capacity_installed WHERE date = %(f)s",
+                              conn, params={"f": fecha})
+        else:
+            df = pd.read_sql("SELECT * FROM esios_capacity_installed ORDER BY date DESC LIMIT 1", conn)
+    finally:
+        conn.close()
+
+    if df.empty:
+        return {"error": f"No hay dato de capacidad instalada para {fecha or 'ninguna fecha'}. "
+                          f"La serie empieza el 2020-01-01."}
+
+    f = df.iloc[0]
+    total = float(f["total_mw"])
+    # GW ya calculado aqui, no lo hace el LLM: probado que Haiku, redondeando el a ojo,
+    # escribio "54.885 GW" para un valor que son 54.884,7 MW (~54,9 GW) -- misma cifra, unidad
+    # mal puesta. Con las dos unidades ya resueltas no hace falta que el modelo convierta nada.
+    por_tecnologia_mw = {
+        "solar_fotovoltaica": round(float(f["solar_pv_mw"]), 1),
+        "eolica": round(float(f["wind_mw"]), 1),
+        "hidraulica": round(float(f["hydro_mw"]), 1),
+        "nuclear": round(float(f["nuclear_mw"]), 1),
+        "ciclo_combinado_gas": round(float(f["ccgt_mw"]), 1),
+        "carbon": round(float(f["coal_mw"]), 1),
+        "bombeo": round(float(f["pump_mw"]), 1),
+        "baterias_hibridas": round(float(f["battery_hybrid_mw"]), 1),
+        "cogeneracion": round(float(f["cogeneration_mw"]), 1),
+        "solar_termica": round(float(f["solar_thermal_mw"]), 1),
+    }
+    return {
+        "etiqueta": "REFERENCIA -- capacidad instalada administrativa (no es generacion real horaria)",
+        "fecha": str(f["date"]),
+        "total_mw": round(total, 1),
+        "total_gw": round(total / 1000, 2),
+        "total_renovable_mw": round(float(f["total_renewable_mw"]), 1),
+        "porcentaje_renovable": round(100 * float(f["total_renewable_mw"]) / total, 1) if total else None,
+        "por_tecnologia_mw": por_tecnologia_mw,
+        "por_tecnologia_gw": {k: round(v / 1000, 2) for k, v in por_tecnologia_mw.items()},
+    }
+
+
 # Tablas a las que el rol de Postgres `asistente_solo_lectura` tiene GRANT SELECT (y nada mas --
 # ni INSERT/UPDATE/DELETE, ni ninguna otra tabla de la base compartida). Ver
 # sql/registro_cambios_bd.md para el alta del rol, 31-ago-2026. Esta lista en Python es una

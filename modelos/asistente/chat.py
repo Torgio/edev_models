@@ -284,6 +284,22 @@ def prediccion_d_mas_1() -> str:
 
 
 @beta_tool
+def capacidad_instalada(fecha: str | None = None) -> str:
+    """Capacidad instalada por tecnologia en España (MW): solar, eolica, hidraulica, nuclear,
+    ciclo combinado, carbon, baterias hibridas... Usa esta herramienta para "cuanta solar/eolica
+    hay instalada", "capacidad renovable" -- es un dato ADMINISTRATIVO (cuanta potencia hay),
+    no generacion real horaria.
+
+    Devuelve MW y GW ya calculados -- usa el campo que corresponda tal cual, no conviertas
+    tu mismo entre unidades (probado que se equivocaba escribiendo "GW" para un valor en MW).
+
+    Args:
+        fecha: YYYY-MM-DD. Si se omite, usa la fecha mas reciente disponible (serie desde 2020).
+    """
+    return json.dumps(_h.capacidad_instalada(fecha), ensure_ascii=False)
+
+
+@beta_tool
 def consulta_sql_lectura(sql: str) -> str:
     """ULTIMO RECURSO -- ejecuta una consulta SELECT (Postgres) contra un rol de SOLO LECTURA
     limitado a 5 tablas (no puede escribir nada, ni ver el resto de la base compartida). Usala
@@ -330,7 +346,7 @@ def buscar_documentacion(pregunta: str) -> str:
 CODE_EXECUTION = {"type": "code_execution_20260521", "name": "code_execution"}
 TOOLS = [precio_historico_percentiles, precio_tabla_horaria, precio_negativos, precio_horas_negativas,
          simular_bateria, simular_autoconsumo_solar, precio_futuro_curva, extrapolar_consumo_cliente,
-         prediccion_d_mas_1, buscar_documentacion, consulta_sql_lectura]
+         capacidad_instalada, prediccion_d_mas_1, buscar_documentacion, consulta_sql_lectura]
 
 
 def preguntar_con_imagenes(pregunta: str, modelo: str = MODELO_POR_DEFECTO) -> dict:

@@ -1555,3 +1555,42 @@ periódicamente es la forma de detectar qué patrones conviene "promover" a una 
 probada. Se decidió explícitamente NO dejar que el LLM genere y ejecute funciones Python nuevas
 por su cuenta (a diferencia del SQL, sin el mismo perímetro de seguridad) — la promoción a función
 fija la sigue haciendo una persona, revisando el patrón antes de escribirlo.
+
+## 46. Primera ronda de "entrenar" al asistente con preguntas reales — dos huecos cerrados, y un hallazgo importante sobre producción
+
+Se probó el proceso descrito en la nota 45 con un lote de preguntas típicas de cliente, en vez de
+esperar a que lleguen de los compañeros. Dos resultados directos:
+
+**Hueco cerrado — capacidad instalada.** "¿Cuánta solar/eólica hay instalada?" caía en
+`consulta_sql_lectura`, y con el modelo barato (Haiku) el asistente respondía que NO tenía el
+dato, aunque sí estaba disponible (con Opus sí lo encontraba). Depender de que el modelo se
+acuerde de intentar el SQL genérico para algo tan previsible no es fiable — se añadió
+`capacidad_instalada()` como función fija, y ya funciona igual de bien con el modelo barato.
+
+**Bug encontrado en la propia redacción del modelo, no en los datos.** Al probarlo, Haiku escribió
+"54.885 GW" para un valor que son 54.884,7 MW (~54,9 GW) — la cifra estaba bien, la unidad mal
+puesta, porque el modelo convertía él mismo sobre la marcha. Se corrigió dándole el valor ya
+calculado en MW y en GW en la propia respuesta de la herramienta, para que nunca tenga que hacer
+la conversión — verificado que ya no se equivoca.
+
+**Hallazgo importante, verificado de forma independiente — los modelos en producción apenas
+superan a la persistencia.** Al probar "¿qué tan preciso es el modelo comparado con los precios
+reales del último mes?", el asistente (vía `consulta_sql_lectura`, cruzando `predictions` con
+`spot_price` del 4-ago al 3-sep-2026) encontró que el mejor modelo de producción (GRU) tiene un
+MAE de 17,79 €/MWh — **verificado de forma independiente, calculando lo mismo yo mismo sin pasar
+por el LLM: coincide exactamente**, cifra a cifra, para los 13 modelos. Lo relevante:
+
+- En test, el mejor modelo (LightGBM horario afinado) mejoraba a la persistencia (copiar el
+  precio de hace 24h) en ~37% (12,55 vs 19,88 de MAE). **En producción, el mejor modelo solo
+  mejora a la persistencia en torno a un 6-8%** (el asistente calculó persistencia=18,89; mi
+  verificación independiente dio 19,26 — pequeña diferencia de método, pero la conclusión no
+  cambia con ninguna de las dos cifras).
+- Sesgo sistemático: casi todos los modelos predijeron por debajo del precio real durante agosto
+  (un mes caro y volátil), no es solo ruido.
+- El ensemble no fue el mejor del mes (quedó detrás de 4 modelos sueltos) — GRU sí lo fue.
+
+**Esto es un hallazgo que vale la pena llevar al equipo**, no una conclusión cerrada aquí: el
+margen del modelo sobre el baseline ingenuo se estrecha mucho fuera de la ventana de test, que es
+justo el tipo de degradación que un TFM debería documentar con honestidad. Antes de citarlo en la
+memoria final, conviene contrastarlo con el script de evaluación oficial del equipo (`evaluar_diario`,
+mencionado en los últimos commits de main) para confirmar que ambos caminos dan el mismo número.
