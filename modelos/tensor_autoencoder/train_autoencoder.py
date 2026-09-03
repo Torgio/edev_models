@@ -35,7 +35,10 @@ CHECKPOINT_PATH = "encoder_best.pt"
 # ERA5 en ESTA máquina (Colab, VPS, laptop — lo que sea). Los JSON de refs
 # solo traen el nombre de archivo, así que esta es la única variable que
 # cambia entre entornos, sin parches de reemplazo de string.
-TENSOR_BASE_DIR = "/content/drive/MyDrive/tfm_tensors/era5"
+# Obligatorio: fijar antes de correr este script -- no hay default valido,
+# depende de donde corras esto (Colab, VPS, laptop...). Sin esto, antes se
+# intentaba abrir una ruta de Colab que no existe en otros entornos.
+TENSOR_BASE_DIR = None
 
 
 def load_refs(path):
@@ -46,6 +49,14 @@ def load_refs(path):
 def build_dataset(refs, base_dir=None, stats_path="era5_channel_stats.json"):
     if base_dir is None:
         base_dir = TENSOR_BASE_DIR  # se lee en el momento de la llamada, no al definir la función
+    if base_dir is None:
+        raise RuntimeError(
+            "TENSOR_BASE_DIR no esta fijado. Antes de llamar a train_autoencoder.main(), "
+            "asigna la carpeta real donde estan los .npy en ESTE entorno, por ejemplo:\n"
+            "    import train_autoencoder as ta\n"
+            "    ta.TENSOR_BASE_DIR = '/ruta/real/de/los/tensores'\n"
+            "    ta.main()"
+        )
     tensor_paths = [os.path.join(base_dir, r["tensor_filename"]) for r in refs]
     tensor_indices = [r["tensor_index"] for r in refs]
     return WeatherTensorDataset.from_stats_file(tensor_paths, tensor_indices, stats_path)
