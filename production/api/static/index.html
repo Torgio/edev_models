@@ -85,6 +85,67 @@
     margin-top:26px; padding:14px 16px; border:1px solid var(--linea);
     border-radius:9px; color:var(--tenue); font-size:13px;
   }
+
+  /* asistente */
+  .asistente{
+    margin-top:32px; border-top:1px solid var(--linea); padding-top:22px;
+  }
+  .asistente h2{font-size:14px; font-weight:600; margin:0 0 4px; letter-spacing:.2px}
+  .asistente .sub{color:var(--tenue); font-size:12.5px; margin:0 0 14px}
+  .caja-pregunta{display:flex; gap:8px}
+  .caja-pregunta textarea{
+    flex:1; resize:none; background:var(--panel); color:var(--texto);
+    border:1px solid var(--linea); border-radius:8px; padding:10px 12px;
+    font:inherit; font-size:13px; line-height:1.4; min-height:20px; max-height:120px;
+  }
+  .caja-pregunta textarea:focus{outline:none; border-color:#3a3a44}
+  .caja-pregunta button{
+    background:var(--panel); color:var(--texto); border:1px solid var(--linea);
+    border-radius:8px; padding:0 18px; font:inherit; font-size:13px; cursor:pointer;
+    transition:border-color .12s,background .12s;
+  }
+  .caja-pregunta button:hover:not(:disabled){border-color:#3a3a44; background:#16161c}
+  .caja-pregunta button:disabled{opacity:.4; cursor:not-allowed}
+  .respuesta-asistente{
+    margin-top:14px; padding:14px 16px; background:var(--panel); border:1px solid var(--linea);
+    border-radius:9px; font-size:13.5px; line-height:1.6;
+    display:none;
+  }
+  .respuesta-asistente img{
+    display:block; max-width:100%; margin-top:12px; border-radius:8px; border:1px solid var(--linea);
+  }
+  .respuesta-asistente.mostrando{display:block}
+  .respuesta-asistente.cargando{color:var(--tenue)}
+  .respuesta-asistente.error{border-color:#7a2e2e; color:#e08a8a}
+  /* Markdown que devuelve el asistente: la respuesta llega en texto con tablas/negritas
+     de markdown -- esto la renderiza como HTML de verdad en vez de pipes en crudo. */
+  .respuesta-asistente p{margin:0 0 10px}
+  .respuesta-asistente p:last-child{margin-bottom:0}
+  .respuesta-asistente h1,.respuesta-asistente h2,.respuesta-asistente h3{
+    margin:16px 0 8px; font-size:14.5px; color:var(--real);
+  }
+  .respuesta-asistente h1:first-child,.respuesta-asistente h2:first-child,
+  .respuesta-asistente h3:first-child{margin-top:0}
+  .respuesta-asistente strong{color:var(--real)}
+  .respuesta-asistente .tabla-scroll{overflow-x:auto; margin:10px 0}
+  .respuesta-asistente table{
+    border-collapse:collapse; width:100%; font-size:13px; font-variant-numeric:tabular-nums;
+  }
+  .respuesta-asistente th,.respuesta-asistente td{
+    padding:6px 10px; border-bottom:1px solid var(--linea); text-align:left; white-space:nowrap;
+  }
+  .respuesta-asistente th{color:var(--tenue); font-weight:600}
+  .respuesta-asistente blockquote{
+    margin:10px 0; padding:8px 12px; border-left:2px solid var(--linea);
+    color:var(--tenue); font-size:13px;
+  }
+  .sugerencias{display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 0}
+  .sugerencia{
+    background:var(--panel); border:1px solid var(--linea); border-radius:20px;
+    padding:5px 12px; font-size:12px; color:var(--tenue); cursor:pointer;
+    transition:border-color .12s,color .12s;
+  }
+  .sugerencia:hover{border-color:#3a3a44; color:var(--texto)}
 </style>
 </head>
 <body>
@@ -107,6 +168,21 @@
   </div>
   <div class="leyenda" id="leyenda"></div>
   <div class="pista">Pulsa una serie para ocultarla · flechas ← → para cambiar de día</div>
+
+  <div class="asistente">
+    <h2>Asistente del proyecto</h2>
+    <p class="sub">Pregunta sobre precios históricos, baterías, autoconsumo solar o el proyecto en general.</p>
+    <div class="caja-pregunta">
+      <textarea id="preguntaAsistente" rows="1" placeholder="Escribe tu pregunta..."></textarea>
+      <button id="enviarAsistente">Preguntar</button>
+    </div>
+    <div class="sugerencias">
+      <span class="sugerencia" data-q="¿Cuántas horas de precio negativo ha habido este año?">Horas negativas este año</span>
+      <span class="sugerencia" data-q="Tengo una batería de 2 MW y 4 MWh al 90% de eficiencia. ¿Cuánto habría ganado en 2023?">Simular una batería</span>
+      <span class="sugerencia" data-q="¿Por qué no se usa un Transformer en el proyecto?">¿Por qué no Transformer?</span>
+    </div>
+    <div class="respuesta-asistente" id="respuestaAsistente"></div>
+  </div>
 </main>
 
 <script>
@@ -324,6 +400,108 @@ addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') mover(1);
 });
 addEventListener('resize', pintar);
+
+// --- Asistente del proyecto (LLM + herramientas por debajo, ver /api/asistente) ---
+const cajaPregunta = document.getElementById('preguntaAsistente');
+const botonPreguntar = document.getElementById('enviarAsistente');
+const cajaRespuesta = document.getElementById('respuestaAsistente');
+
+function escaparHtml(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Markdown minimo, sin dependencias -- el asistente devuelve texto con tablas, negritas
+// y encabezados de markdown (ver modelos/asistente/chat.py), y esto es lo unico que hace
+// falta traducir a HTML de verdad. No es un parser de markdown completo a proposito: es
+// justo lo que el asistente genera, ni mas ni menos.
+function renderizarMarkdown(texto){
+  const lineas = texto.split('\n');
+  let html = '', parrafo = [], filaTabla = [];
+
+  const cerrarParrafo = () => {
+    if (!parrafo.length) return;
+    // El asistente ya entrega sus graficas aparte (imagenes_base64) -- si el modelo
+    // igualmente escribe una referencia markdown de imagen, no apunta a nada real desde
+    // aqui, asi que se descarta en vez de mostrar el markdown en crudo.
+    const sinImagenes = parrafo.join(' ').replace(/!\[[^\]]*\]\([^)]*\)/g, '').trim();
+    if (!sinImagenes) { parrafo = []; return; }
+    const linea = escaparHtml(sinImagenes).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html += `<p>${linea}</p>`;
+    parrafo = [];
+  };
+  const cerrarTabla = () => {
+    if (!filaTabla.length) return;
+    const filas = filaTabla.filter(f => !/^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/.test(f));
+    const celdas = l => l.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+    const [cab, ...resto] = filas.map(celdas);
+    html += '<div class="tabla-scroll"><table><thead><tr>' +
+      cab.map(c => `<th>${escaparHtml(c).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')}</th>`).join('') +
+      '</tr></thead><tbody>' +
+      resto.map(f => '<tr>' + f.map(c =>
+        `<td>${escaparHtml(c).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')}</td>`).join('') + '</tr>').join('') +
+      '</tbody></table></div>';
+    filaTabla = [];
+  };
+
+  for (const linea of lineas) {
+    const l = linea.trim();
+    if (l.startsWith('|')) { cerrarParrafo(); filaTabla.push(l); continue; }
+    cerrarTabla();
+    if (!l) { cerrarParrafo(); continue; }
+    const encabezado = l.match(/^(#{1,3})\s+(.*)/);
+    if (encabezado) {
+      cerrarParrafo();
+      const nivel = encabezado[1].length;
+      const txt = escaparHtml(encabezado[2]).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      html += `<h${nivel}>${txt}</h${nivel}>`;
+      continue;
+    }
+    if (l.startsWith('>')) {
+      cerrarParrafo();
+      const txt = escaparHtml(l.replace(/^>\s?/, '')).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      html += `<blockquote>${txt}</blockquote>`;
+      continue;
+    }
+    parrafo.push(l);
+  }
+  cerrarParrafo(); cerrarTabla();
+  return html || escaparHtml(texto);
+}
+
+async function preguntarAsistente(texto){
+  if (!texto || !texto.trim()) return;
+  cajaRespuesta.className = 'respuesta-asistente mostrando cargando';
+  cajaRespuesta.textContent = 'Pensando...';
+  botonPreguntar.disabled = true;
+  try {
+    const r = await fetch('/api/asistente', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({pregunta: texto}),
+    });
+    const datos = await r.json();
+    if (!r.ok) throw new Error(datos.detail || 'Error del asistente.');
+    cajaRespuesta.className = 'respuesta-asistente mostrando';
+    cajaRespuesta.innerHTML = renderizarMarkdown(datos.respuesta);
+    for (const b64 of (datos.imagenes_base64 || [])) {
+      const img = document.createElement('img');
+      img.src = 'data:image/png;base64,' + b64;
+      cajaRespuesta.appendChild(img);
+    }
+  } catch (e) {
+    cajaRespuesta.className = 'respuesta-asistente mostrando error';
+    cajaRespuesta.textContent = 'No se pudo obtener respuesta: ' + e.message;
+  } finally {
+    botonPreguntar.disabled = false;
+  }
+}
+
+botonPreguntar.onclick = () => preguntarAsistente(cajaPregunta.value);
+cajaPregunta.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); preguntarAsistente(cajaPregunta.value); }
+});
+document.querySelectorAll('.sugerencia').forEach(s => {
+  s.onclick = () => { cajaPregunta.value = s.dataset.q; preguntarAsistente(s.dataset.q); };
+});
 
 (async () => {
   const r = await fetch('/api/rango');

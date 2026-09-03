@@ -27,9 +27,11 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.append(str(REPO / "ingesta"))
+sys.path.append(str(REPO / "modelos" / "asistente"))
 
 TZ = "Europe/Madrid"
 ESTATICOS = Path(__file__).parent / "static"
@@ -138,6 +140,42 @@ def por_dia(dia: date):
         "series": series,
         "mae_dia": mae,
     })
+
+
+class PreguntaAsistente(BaseModel):
+    pregunta: str
+    # Opcional: para comparar coste/calidad entre modelos desde la propia pagina sin tocar
+    # codigo. Si se omite, chat.py usa MODELO_POR_DEFECTO (claude-opus-5).
+    modelo: str | None = None
+
+
+MODELOS_PERMITIDOS = {"claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"}
+
+
+@app.post("/api/asistente")
+def asistente(cuerpo: PreguntaAsistente):
+    """Reenvia la pregunta al asistente (LLM + herramientas, ver modelos/asistente/chat.py).
+
+    Requiere `anthropic_api_key` en el credentials.json de la maquina donde corre esto -- cada
+    persona usa su propia clave local, no una compartida en el servidor (ver nota 33/decision de
+    seguridad: es una clave con creditos reales, a diferencia del resto de credenciales del
+    proyecto). Si no esta configurada, se devuelve un error claro en vez de que la pagina falle
+    en silencio.
+    """
+    from chat import preguntar_con_imagenes, MODELO_POR_DEFECTO
+    if cuerpo.modelo and cuerpo.modelo not in MODELOS_PERMITIDOS:
+        raise HTTPException(400, f"Modelo '{cuerpo.modelo}' no reconocido. "
+                                  f"Usa uno de: {sorted(MODELOS_PERMITIDOS)}.")
+    try:
+        r = preguntar_con_imagenes(cuerpo.pregunta, modelo=cuerpo.modelo or MODELO_POR_DEFECTO)
+    except FileNotFoundError:
+        raise HTTPException(500, "No hay credentials.json en esta maquina.")
+    except KeyError:
+        raise HTTPException(500, "Falta 'anthropic_api_key' en credentials.json -- "
+                                  "cada persona necesita la suya propia para usar el asistente.")
+    except Exception as e:
+        raise HTTPException(500, f"Error del asistente: {e}")
+    return {"respuesta": r["texto"], "imagenes_base64": r["imagenes_base64"]}
 
 
 # El estudio de bateria va en su propio modulo y se engancha aqui. Asi el panel de

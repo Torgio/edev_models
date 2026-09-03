@@ -1118,3 +1118,517 @@ adelante, 1.308 días, excluye por completo la crisis de 2021-2022) rindió peor
 nota 22 (un modelo sin exposición a la crisis pierde contra la persistencia) — es una segunda
 confirmación, con datos de otra fuente, de que recortar la ventana de entrenamiento para "evitar"
 la crisis sale caro, no barato.
+
+---
+
+## 33. Cierre formal del Transformer, y primer paso del asistente (LLM + herramientas, no RAG documental)
+
+**Transformer**: se documentó en `notebooks/06_justificacion_no_transformer.ipynb` (con datos
+reales, no ilustrativos) la decisión de no seguir invirtiendo tiempo en F13. Cinco líneas de
+evidencia independientes: (1) el equipo ya comparó 7 arquitecturas de deep learning con 3
+semillas cada una sobre la misma matriz, sin que el Transformer explore territorio nuevo; (2) el
+ruido de inicialización del propio equipo (hasta ~1,2 €/MWh entre semillas del mismo modelo) hace
+que cualquier mejora futura del Transformer necesite validación multi-semilla para ser creíble;
+(3) el objetivo del proyecto es captura de arbitraje, no MAE, y ahí tampoco gana con claridad; (4)
+nuestra propia curva de entrenamiento se estanca por encima de LightGBM sin señales de que más
+épocas lo resuelvan; (5) la literatura (Zeng et al., AAAI 2023) ya anticipaba este resultado antes
+de correr un solo experimento. Sumado al calendario (F13 declarado prescindible en tres informes
+sucesivos del equipo, cierre total el 9 de septiembre), la decisión es no retomarlo salvo que
+sobre tiempo el 11 de septiembre.
+
+**Asistente (LLM + herramientas)**: se aclaró con el usuario que lo que se necesita no es RAG
+documental clásico (recuperar y citar texto) sino un patrón de **"tool use" / function calling**:
+el modelo de lenguaje entiende la pregunta y llama a funciones deterministas que hacen el cálculo
+real — los números nunca salen del LLM. Distinción central del diseño, para que el sistema sea
+defendible ante el tribunal: **"predicción"** solo existe para D+1 (el único horizonte real del
+proyecto, sale del modelo entrenado) — cualquier otro horizonte (una semana, un mes, un rango de
+años) se responde como **"referencia histórica"** (percentiles del precio real ya ocurrido en
+circunstancias parecidas), nunca disfrazado de predicción del modelo.
+
+Primera pieza construida y probada: `modelos/asistente/herramientas.py` — tres funciones
+deterministas (`precio_historico_percentiles`, `precio_historico_serie`, `simular_bateria` con
+parámetros de batería a elección, y `prediccion_d_mas_1`).
+
+**Hallazgo real al probar `prediccion_d_mas_1`, no ocultado**: el dataset usa `DATASET_END`, una
+constante fija (hoy "2026-08-15") que el equipo congeló a propósito para que la comparación de
+matrices del 30-31 de agosto sea reproducible. Como consecuencia, la función daba la predicción
+del día siguiente a esa fecha congelada, no de mañana en sentido literal — exactamente la pieza
+que el propio equipo ya tiene identificada como pendiente ("features de D+1 desde Postgres", P1
+en las tareas del 29-ago). No se tocó `DATASET_END` (rompería la comparación de todo el equipo el
+día que se elige el modelo principal) — en su lugar, la función ahora compara la fecha objetivo
+contra "mañana" real y devuelve una `advertencia` explícita cuando no coinciden, en vez de fingir
+que da una predicción actual.
+
+**Primera conversación real con el asistente ya conectado** (`modelos/asistente/chat.py`, patrón
+"tool use" del SDK oficial de Anthropic — `@beta_tool` + `tool_runner`, modelo `claude-opus-5`):
+se le preguntó *"¿Cuánto ha costado la luz históricamente los domingos de agosto entre las 20h y
+las 21h?"* y respondió correctamente citando los percentiles reales de ambas horas, etiquetando
+todo como *"Referencia histórica (no es una predicción del modelo)"* sin que se le insistiera, y
+añadió por su cuenta un matiz honesto sobre el tamaño de muestra (32 horas, sin acotar por año) —
+exactamente el comportamiento que el system prompt pedía. Confirma que el diseño (herramientas
+deterministas + regla explícita de "predicción vs. referencia histórica" en el prompt) funciona
+en la práctica, no solo en el papel.
+
+**Nueva herramienta**: `precio_negativos(anio)` — el precio spot español sí puede ser negativo
+(exceso de renovables sin demanda que lo absorba, no es un error de datos). Dato real encontrado
+al probarla: en 2026, **681 de 5.831 horas (11,68%)** tuvieron precio negativo, con un mínimo de
+**-9,83 €/MWh el 29 de marzo a las 14:00** — frente a **0 horas negativas en 2023**. Confirma con
+un número concreto la tendencia, ya intuida en el EDA del equipo, de que las horas de precio
+negativo se han vuelto mucho más frecuentes con el crecimiento de la solar.
+
+**RAG documental construido**: `modelos/asistente/indexar_documentacion.py` trocea
+`notas_memoria_tfm.md` y `columnas_pendientes_equipo.md` por nota numerada (42 chunks en total,
+cada nota ya es una unidad semántica coherente, no hizo falta partir por tamaño de texto), genera
+embeddings con un modelo local y multilingüe (`fastembed`,
+`paraphrase-multilingual-MiniLM-L12-v2`, 384 dimensiones — sin necesidad de una segunda clave de
+API de pago, ya que Anthropic no ofrece embeddings propios) y los guarda en Postgres con
+`pgvector`. Probado con *"¿por qué no se usa un Transformer en el proyecto?"*: recuperó
+exactamente las notas 31 y 33 (las correctas) como las más similares, y el asistente completo
+sintetizó una respuesta correcta citando las fuentes, sin inventar nada. Con esto el asistente ya
+cubre las dos mitades del diseño original: herramientas deterministas para datos/predicción, y
+RAG semántico para metodología/decisiones.
+
+**Hallazgo colateral, mismo patrón que la nota 28**: al construir el simulador de autoconsumo
+solar apareció otro hueco de 1 hora en `spot_price`, esta vez en el cambio de hora de **octubre
+de 2024** (`2024-10-27 00:00 UTC`) — el mismo patrón exacto que ya se había documentado para 2025.
+Confirma que es un hueco recurrente cada año en la transición de octubre, no un incidente aislado.
+Se hizo tolerante con `interpolate(limit=1)` en vez de fallar la simulación por un hueco de una
+sola hora, con una comprobación explícita de que no se cuele un hueco más grande sin avisar.
+
+## 34. Simulador de autoconsumo solar + batería — primera versión, para mostrar avance al equipo
+
+Extiende `simular_bateria` con generación solar real (ERA5, `ssrd_mean`) y un perfil de consumo,
+simulando hora a hora: la solar cubre primero el consumo directo, el excedente carga la batería,
+el déficit lo cubre la batería o -si no alcanza- el mercado. Probado con un caso realista (300 kWp
+solar + batería 0,5 MW/1 MWh, empresa de 500 MWh/año, backtest 2024): **26.138 € de ahorro anual,
+77,9% de autoconsumo**, sobre un coste de referencia de 31.429 € comprando todo al mercado.
+
+**Documentado como versión 1, con limitaciones explícitas que el asistente siempre repite en la
+respuesta** (no las omite ni las resume): perfil de consumo plano (no la curva real del cliente),
+generación solar simplificada (sin pérdidas por temperatura/orientación/inversor), sin
+degradación de batería ni costes de operación.
+
+**Siguiente mejora concreta, ya con un diseño claro**: sustituir el perfil plano por la curva de
+consumo real que aporte el cliente, y sobre esa curva aplicar la misma idea que la capa de
+incertidumbre de LightGBM (notas 20-21) — no predecir el precio, sino **extrapolar el consumo
+propio del cliente** a uno o dos años con rangos (p10/p50/p90) en vez de un único número, usando
+su propio histórico como base. Es la aplicación correcta de "extrapolar con percentiles" que se
+había planteado antes para baterías a 20 años (nota 33) — aquí sí encaja, porque parte de datos
+reales que el cliente aporta, no de una serie que no existe.
+
+**Construida y probada**: `extrapolar_consumo_cliente(historico_mensual_mwh, anios_a_futuro)`.
+Casualmente, el mismo día un compañero de equipo construyó `scripts/curva_precios.py` con
+exactamente la misma filosofía para el precio a 20 años (nivel × estacionalidad + residuo →
+percentiles, con el nivel explícitamente "NO SE PREDICE, SE APORTA" desde fuera) — confirma de
+forma independiente que el enfoque era el correcto. Se reutilizó la misma lógica para consumo:
+nivel = el más reciente del cliente (sin asumir tendencia de crecimiento), estacionalidad = la del
+propio histórico, y la banda p10/p90 sale de la variabilidad real mes a mes, no de un supuesto.
+Probado con un caso sintético (24 meses, pico de climatización en verano): proyectó correctamente
+el patrón estacional con bandas estrechas (esperable con solo 2 años de histórico, tal como avisa
+la propia herramienta en sus `limitaciones`).
+
+---
+
+## 35. Fuga meteorológica corregida por el equipo — verificado que NO afecta a `nucleo` ni a nuestro modelo
+
+El equipo corrigió una fuga real: los lags meteorológicos (`_met_Dm1`, `_met_Dm2`) salían de ERA5
+(reanálisis, publicado con 5 días de retraso) incluso en fechas donde ya existía previsión ECMWF
+real — a las 11:00 de D esos valores de ERA5 todavía no existían. La corrección hace que, desde
+que hay ECMWF disponible (abril de 2024 en adelante), los lags usen ECMWF.
+
+**Antes de asumir que había que reentrenar, se verificó directamente**: se comparó celda a celda
+las 8 columnas meteorológicas de lag entre `matriz_nucleo` (la que usa nuestro LightGBM) y la
+nueva `matriz_produccion` (donde sí se aplicó la corrección), sobre las 57.521 filas que ambas
+comparten — **cero diferencias**. La corrección no cambió ningún valor en el período que ya
+teníamos entrenado; su efecto real está en la parte más nueva de los datos, ya incorporada en
+`matriz_produccion` pero no en `matriz_nucleo`. Conclusión: nuestro modelo actual sigue siendo
+válido, no hace falta reentrenar por este motivo.
+
+**También llegó al repo**: `production/api/` (panel FastAPI + tabla `predictions` en Postgres,
+para mostrar predicciones de varios modelos en un mismo gráfico) y `scripts/curva_precios.py`
+(la curva de precio a 20 años con la metodología de percentiles ya descrita en la nota 34).
+
+## 36. El asistente entra en el panel del equipo — sin marca de Claude visible
+
+En vez de una página aparte, el asistente se integró directamente en `production/api` (el panel
+del equipo que llegó en la nota 35) — así la página sigue siendo del grupo, sin ningún indicio de
+qué modelo hay detrás:
+
+- **Backend**: un endpoint nuevo, `POST /api/asistente` (`production/api/main.py`), que reenvía
+  la pregunta a `modelos/asistente/chat.py` y devuelve la respuesta. Los dos endpoints que ya
+  existían (`/api/rango`, `/api/dia/{dia}`) no se tocaron.
+- **Frontend**: una sección "Asistente del proyecto" añadida a `production/api/static/index.html`,
+  con el mismo estilo visual oscuro que el resto del panel (mismos colores, misma tipografía) —
+  caja de pregunta, tres sugerencias de ejemplo, y el área de respuesta.
+- **Probado de punta a punta**: servidor local (`uvicorn production.api.main:app --port 8000`),
+  pregunta real vía `POST /api/asistente` → respuesta correcta con los datos reales (681 horas
+  negativas, -9,83 €/MWh). La página y `/api/docs` se siguen sirviendo con normalidad.
+
+**Nota de seguridad, ya decidida en la nota 33 y que sigue aplicando aquí**: cada persona necesita
+su propia `anthropic_api_key` en su `credentials.json` local para que el endpoint funcione en su
+máquina — no se sube ninguna clave al servidor compartido todavía. Si el equipo decide llevar esto
+al VPS de producción, hay que decidir antes cómo se gestiona esa clave (ver la propia nota 33).
+
+## 37. Dos cierres antes de enseñar el asistente al equipo: alcance cerrado y gráficas en la respuesta
+
+**Alcance cerrado, verificado con una pregunta real**: se probó *"¿cuál es la capital de Francia?"*
+y el asistente respondió "París" antes de redirigir — es decir, el modelo de lenguaje sí puede
+contestar cultura general con su propio conocimiento de entrenamiento (no busca en internet, pero
+tampoco se queda en blanco). Para una pregunta de datos fuera del alcance (*"¿precio del petróleo
+Brent?"*) sí se comportó bien: se negó a inventar una cifra y explicó por qué. Se cerró la primera
+grieta añadiendo una regla explícita al system prompt — verificado de nuevo, ahora la pregunta de
+Francia también se rechaza. Para explicarlo con precisión si alguien del equipo pregunta: el
+asistente **nunca fabrica datos/números** (eso ya estaba garantizado por diseño, herramientas
+deterministas), pero sin esta regla sí podía "charlar" de temas ajenos al proyecto usando
+conocimiento general del modelo — ya cerrado.
+
+**Gráficas en la respuesta**: se añadió la herramienta server-side `code_execution` (matplotlib
+preinstalado en el sandbox de Anthropic) a las herramientas disponibles. El asistente, cuando la
+pregunta pide ver una curva, primero llama a la herramienta de datos correspondiente (nunca
+inventa números para graficar) y con esos números reales genera la figura. Probado con *"muéstrame
+una gráfica de cómo varía el precio histórico según la hora del día en 2025"*: generó la imagen y
+un análisis correcto (valle solar 10h-16h con p25 prácticamente en 0 €/MWh, pico de noche
+19h-22h). La imagen se recupera vía `client.beta.files.download()`, se codifica en base64, y tanto
+`production/api/main.py` como el widget de `index.html` ya la muestran — probado de punta a punta
+por la API real, no solo en terminal.
+
+**Decisión de alcance para `preguntar()`**: se mantuvo la función original devolviendo solo texto
+(para no romper el uso ya existente en terminal) y se añadió `preguntar_con_imagenes()` aparte,
+que es la que usa el endpoint de la API.
+
+## 38. La fuente del RAG documental no puede ser solo mis notas — se amplió con el código del equipo
+
+Al mostrar el artifact del asistente, surgió la pregunta correcta: *"¿la documentación que usa el
+asistente nace de mis propias notas?"*. Respuesta honesta: sí, hasta ahora el corpus del RAG eran
+únicamente `notas_memoria_tfm.md` y `columnas_pendientes_equipo.md` — verificados contra la base de
+datos punto por punto, pero escritos por una sola persona y no revisados por el resto del equipo.
+No es una fuente "oficial", y es exactamente lo que preguntaba también un compañero: *"¿con qué se
+está alimentando esta IA?"*.
+
+**Mejora concreta ya aplicada**: se añadió al índice el docstring de cabecera de cada script del
+equipo (`scripts/*.py`, `production/api/main.py` — 25 archivos con documentación técnica real en su
+propio código, escrita por varias personas distintas, no solo yo). Es una fuente más objetiva
+porque está verificada por el hecho de que el código corre y hace lo que el docstring dice — no es
+interpretación de una sola persona. El corpus pasó de 42 a 71 fragmentos (`buscar_documentacion`
+ya devuelve resultados mezclando notas propias y docstrings de compañeros — probado con una
+pregunta sobre `matriz_nucleo`, que trajo la nota 30 junto con los docstrings de
+`construir_matriz_produccion.py`, `rejilla_matrices.py`, `depurar_matriz.py` y
+`preparar_tensores.py`).
+
+**Lo que esto NO resuelve**: sigue sin ser un documento aprobado explícitamente por el equipo en
+una reunión — solo es más objetivo y multi-autor que antes. La pregunta de fondo ("¿qué fuente de
+información sobre el proyecto consideramos oficial?") queda pendiente de discutir en vivo con el
+equipo, no es algo que se pueda resolver unilateralmente aquí.
+
+**Sobre la extrapolación de consumo a 5-10 años (pregunta de un compañero)**: `extrapolar_consumo_
+cliente()` **no usa ninguno de los modelos de predicción de precio cargados en el servidor**. Es
+completamente independiente del LightGBM/ensemble: toma solo el histórico de consumo mensual que
+aporte el propio cliente y aplica una descomposición estadística (nivel + estacionalidad +
+percentiles del residuo), la misma familia de método que `scripts/curva_precios.py` usa para la
+curva de precios a 20 años — deliberadamente NO encadena el modelo D+1 hacia el futuro (el propio
+script de precios documenta por qué: el error se acumula año a año). Caveat importante para la
+reunión con el equipo: lo probado y validado hasta ahora son horizontes de 1-2 años; extender a
+5-10 años debilita bastante los dos supuestos del método (nivel del último año se mantiene
+constante, y la estacionalidad se calcula sobre el propio histórico del cliente) — con pocos años
+de historial de partida, cuanto más lejos se proyecta, menos fiables son las bandas p10/p90.
+
+## 39. Pendiente a futuro (no es nuestro trabajo ahora): parámetros de batería en la interfaz + €/MWh capturado
+
+Un compañero, sin ser parte del trabajo de este bloque (la interfaz web no la construimos
+nosotros), adelantó una idea de diseño para cuando se aborde: dejar espacio en los laterales de
+la página para que el usuario introduzca las características reales de su batería, y que la
+simulación diaria devuelva, además del ahorro en euros, un valor de **€/MWh capturado** — el
+precio medio efectivo que la operación de la batería logró aprovechar (diferencia entre el precio
+al que vendió/descargó y al que compró/cargó), en vez de solo el ahorro total. Es una métrica más
+comparable entre baterías de distinto tamaño.
+
+Los parámetros de batería que propuso, para tenerlos en cuenta si esto avanza:
+- Número de horas de autonomía de la batería.
+- Potencia (MW) — con la duda, sin resolver todavía, de si el dato correcto a pedir es potencia o
+  MWh (capacidad); habría que revisarlo cuando se diseñe el formulario.
+- Degradación cada 1.000 ciclos.
+- Ciclos máximos de vida.
+- Porcentaje de carga máxima y mínima (los límites de SoC — no cargar al 100% ni descargar al 0%
+  alarga la vida útil real).
+
+Ninguno de estos parámetros está hoy en `simular_bateria` ni en `simular_autoconsumo_solar`
+(ambas asumen eficiencia de ida/vuelta fija y ningún límite de degradación o de SoC) — queda
+anotado aquí para cuando se decida ampliar el simulador, no como algo que haya que construir ya.
+
+## 40. Prueba en vivo con el equipo: dos huecos corregidos en el asistente, y un hallazgo importante
+
+Prueba en vivo con un compañero, con dos consecuencias directas y un hallazgo pendiente de acordar
+en equipo.
+
+**Hueco 1, corregido — "lista las horas con los precios más negativos de 2026"**: el asistente
+respondió que no podía mostrar esto, y era cierto para las herramientas que existían: `precio_
+negativos` solo daba el conteo total y el mínimo absoluto del año, no el detalle. El dato SÍ
+estaba en la base de datos. Se añadió `precio_horas_negativas(año, límite)`, que devuelve la
+lista día a día (hasta 500 horas) ordenada de más negativa a menos, para tabular o graficar.
+Verificado con la misma pregunta: ahora responde con la tabla correcta (las 10 más negativas de
+2026 se concentran en domingos de finales de marzo/principios de abril, 12h-16h — canibalización
+solar).
+
+**Hallazgo importante — `scripts/curva_precios.py` / `notebooks/07_curva_precios.ipynb`**: un
+compañero construyó, de forma independiente, la metodología correcta para "precio a 2027-2046"
+que a nuestro asistente le faltaba. Hasta ahora, para cualquier pregunta de precio a largo plazo
+el asistente solo tenía `precio_historico_percentiles` (patrones YA ocurridos) — no una curva de
+escenario a futuro. `curva_precios.py` sí lo es, y está **validado por backtest** (notebook,
+sección 8b: simulando 2025 "a ciegas" con datos hasta 2024, la cobertura P1-P99 sale ~98% y
+P10-P90 ~80%, justo lo esperado). La descomposición es `precio(día,hora) = nivel(año) × factor
+estacional + forma intradiaria + residuo remuestreado de días reales completos`, con dos
+decisiones que vale la pena que quede en la memoria:
+- El **nivel** (precio medio del año) NO se predice — lo aporta el equipo (futuros MIBEL o un
+  escenario), porque encadenar el modelo D+1 hacia 20 años acumula error hasta aplanarse en la
+  media.
+- La **forma intradiaria se toma de los ÚLTIMOS 2 años**, no de todo el histórico, porque se está
+  deformando: el valle de mediodía pasó de -0,29 €/MWh (2020) a -49,08 (2026) por canibalización
+  solar — promediar con 2020 daría una forma que ya no existe. Es, según sus propias palabras, "el
+  argumento del capítulo de baterías": lo que hace rentable una batería no es que el precio suba,
+  es que el spread se abra.
+
+Se añadió `precio_futuro_curva(desde, hasta, nivel_por_año)` envolviendo esta herramienta, y el
+system prompt ahora dirige cualquier pregunta de precio a meses/años vista hacia ella en vez de
+hacia los percentiles históricos. Probado con un escenario de nivel 2027-2046: el precio medio cae
+un 22% pero el spread (p90-p10) se ensancha — exactamente el patrón que motiva el caso de negocio
+de baterías, ahora con evidencia del propio equipo en la respuesta del asistente.
+
+**Bug encontrado y corregido en el propio wrapper**: la función `curva()` exige el nivel de TODOS
+los años del rango, no solo unas anclas — dar solo `{2027: 66, 2030: 60}` la rompía con un
+`ValueError`. El script YA trae el helper `por_anclas()` para interpolar entre anclas (así lo usa
+el notebook), pero nuestra primera versión del wrapper no lo llamaba. Corregido: ahora se acepta
+dar solo 2-4 años de ancla, como en el uso real del script.
+
+**Pendiente de diseño, no construido todavía — el plan de "rango de vida de la batería"**: en la
+misma reunión se esbozó una idea más ambiciosa: que el cliente aporte las condiciones de su
+batería y un rango de fechas (pasado o futuro), y el asistente calcule su vida útil combinando la
+curva de precio (histórica si existe, o `curva_precios` si es a futuro) con una lógica de
+carga/descarga que se adelante al precio — cargar en las horas baratas, descargar en las caras
+(esto último ya lo hace `simular_bateria` día a día, pero solo sobre histórico real, nunca sobre
+un escenario futuro). Para el cálculo de "vida" hace falta además lo que quedó anotado en la nota
+39 (ciclos máximos, degradación cada 1.000 ciclos, %SoC min/max) — nada de eso existe hoy en el
+simulador. Es una pieza grande que toca tres cosas a la vez (curva a futuro + optimización de
+despacho + degradación), así que antes de construirla conviene acotar el alcance con el equipo en
+vez de improvisarlo.
+
+## 41. Actualización de `main`: nuestro modelo ya está integrado, y es el mejor de los siete — con un bug de checkout que lo escondía
+
+Al traer los últimos cambios de `main` (hotfix de SARIMA, manejo de los dos días del cambio de
+hora, reselección de representantes tras reentrenar con ECMWF) aparecieron dos scripts nuevos de
+despliegue: `scripts/desplegar_modelos.py` (copia a `production/models` el representante de cada
+familia de redes, por MAE de validación, vaciando la carpeta antes para que no quede un modelo
+viejo con nombre nuevo) y `scripts/modelos_equipo.py` — este último carga los modelos de
+compañeros con el mismo contrato que usa el ensemble del equipo (`predecir(T, m)`).
+
+**Buena noticia, verificada, no solo anunciada**: `scripts/modelos_equipo.py` ya carga nuestro
+`lgbm_nucleo` (el export nativo que hicimos para poder subirlo sin pasar por Keras) y lo evalúa
+junto a los seis modelos de Magdalena. Corriendo `--evaluar` sobre los 365 días de validación,
+**nuestro modelo queda primero de los siete**:
+
+| Modelo | Autor | MAE |
+|---|---|---|
+| **lgbm_nucleo__s0** | **Willy** | **12,917** |
+| xgboost__s2 | Magdalena | 13,024 |
+| lightgbm__s1 | Magdalena | 13,048 |
+| lightgbm__s0 | Magdalena | 13,150 |
+| lightgbm__s2 | Magdalena | 13,192 |
+| xgboost__s0 | Magdalena | 13,301 |
+| xgboost__s1 | Magdalena | 13,343 |
+| naive (precio de D) | — | 19,946 |
+
+**Pero al primer intento `--evaluar` no arrancaba** — LightGBM abortaba el proceso entero con
+"Model format error, expect a tree here", sin traza útil. Causa: el equipo ya había diagnosticado
+y documentado este mismo problema en `.gitattributes` (fechado ayer) — los `.txt` de LightGBM se
+guardan en su formato de texto nativo, y con `core.autocrlf=true` (el valor por defecto de git en
+Windows) un `checkout` les mete `CRLF`, que el parser de LightGBM no tolera. La regla `-text` ya
+cubre `modelos/**/*.txt`, pero **solo protege checkouts nuevos** — los archivos que ya estaban en
+disco de antes (nuestro propio `modelo.txt`, y los tres `.txt` de Magdalena) seguían con el `CRLF`
+viejo. Corregido localmente quitando los `\r` sueltos y verificado con `git diff`/`git hash-object`
+que el contenido coincide exactamente con lo que hay en git — no hizo falta commitear nada, era
+puramente un artefacto del checkout, no un problema del repositorio. Vale la pena que el equipo
+sepa que esto le puede pasar a cualquiera en Windows: si un `.txt` de modelo "no carga" sin motivo
+aparente, mirar primero si tiene `CRLF` (`file archivo.txt`) antes de sospechar del modelo.
+
+## 42. Otro hueco real en el asistente: "los precios de hoy por hora" tampoco se podía responder
+
+Mismo patrón que la nota 40 (la lista de horas negativas): no era el modelo de lenguaje
+"negándose" a algo que sabía, era que la herramienta de consulta tenía un bug que la dejaba sin
+datos que devolver. Encontrado: la función que trae precio real entre dos fechas construía la
+consulta SQL con `BETWEEN fecha_desde AND fecha_hasta`, y en Postgres una fecha sin hora se
+interpreta como su medianoche — así que el día `hasta` casi entero quedaba fuera del rango (y
+preguntar por un solo día, `desde == hasta`, devolvía prácticamente 0 filas). Confirmado con una
+prueba directa: pedir 5 días completos devolvía 97 horas de las 120 esperadas. Corregido en las
+tres consultas que compartían el mismo patrón, usando "el día `hasta` completo" como límite en vez
+de su medianoche.
+
+Además, no existía ninguna herramienta que devolviera el precio hora a hora **sin resumir** — solo
+había percentiles (para patrones históricos) y una lista de horas negativas (solo esas). Se añadió
+`precio_tabla_horaria`, y ya se probó con la pregunta exacta que falló en la demo ("una tabla con
+los precios de hoy por hora"): responde con la tabla completa del día y un resumen correcto.
+
+## 43. El asistente ya puede escribir su propio SQL — con un perímetro de seguridad real, no solo confiado
+
+Hasta ahora, si una pregunta no encajaba en ninguna de las funciones ya programadas, el asistente
+simplemente no podía responderla (así pasó dos veces: horas negativas y precios de hoy). Añadir
+una función nueva cada vez que aparece un hueco no escala a "cualquier pregunta imaginable". Se
+planteó la alternativa — darle al modelo de lenguaje una herramienta de SQL genérico, que él mismo
+escriba — y se decidió con el equipo, entre tres opciones, ir por la versión acotada: SQL de solo
+lectura, limitado a las 5 tablas que el asistente ya usa.
+
+**La parte importante no es el código, es el perímetro.** Las credenciales normales del proyecto
+son del usuario `postgres` — superusuario, acceso total a la base compartida. Dejar que un LLM
+escriba SQL al vuelo con esas credenciales sería peligroso: un error en la consulta (no
+malicia, simplemente un fallo) podría tocar cualquier tabla de cualquier compañero. Se creó un
+rol nuevo de Postgres, `asistente_solo_lectura`, que **solo puede hacer SELECT sobre 5 tablas** y
+nada más — documentado con el comando exacto en `sql/registro_cambios_bd.md` (entrada 3), como
+corresponde a cualquier cambio sobre la base compartida.
+
+**Verificado con pruebas reales, no dado por hecho:** un `INSERT` con este rol lo rechaza
+Postgres directamente ("permission denied"), y un `SELECT` sobre una tabla fuera de la lista
+(`ttf_m1`, de otro compañero) también. Es decir, aunque el código Python que revisa la consulta
+antes de ejecutarla tuviera un fallo, el límite real lo pone el permiso de la base de datos, no
+una validación que se pueda saltar con una consulta rara.
+
+**Con una advertencia explícita en cada respuesta**: a diferencia de las otras 9 herramientas
+(cada una escrita y probada por una persona de antemano), el SQL de esta se genera al vuelo, sin
+revisión previa — el asistente tiene instrucción de decir siempre que ese dato concreto viene de
+una "consulta generada dinámicamente", y de usarla solo como último recurso cuando ninguna otra
+herramienta ya cubre la pregunta. Probado con una pregunta real que ninguna función existente
+cubría ("compárame el precio de España y Portugal hora a hora"): generó el SQL correcto y de paso
+encontró un dato real — ese día concreto los dos mercados fueron idénticos hora a hora (sin
+desacoplamiento MIBEL).
+
+## 44. Cómo llega el asistente a "Pulso Energía" — y por qué no es tan simple como CORS
+
+Un compañero preguntó si se podía enchufar el asistente a **Pulso Energía**, la web de cliente
+que ha construido Magui (`pulso-energia-tfm.maguicervinio.chatgpt.site`). Al investigar apareció
+información nueva sobre cómo está montado el despliegue del equipo, que vale la pena dejar clara:
+
+**Dos servicios distintos en el mismo servidor**: `pulso-api` (el backend de Magui, con el login
+de equipo) va en el puerto 8000; nuestro API del TFM (predicciones + estudio de batería +
+asistente) va en el **8010**, solo accesible a través de nginx — nunca expuesto directamente.
+
+**La sesión de Pulso no cruza dominios, a propósito.** Su cookie es `samesite=strict`: el
+navegador solo la envía si la página que llama está en el MISMO dominio donde se creó. Como Pulso
+hoy vive en `chatgpt.site` (externo) y nuestro API vive en el dominio del VPS, ningún endpoint
+protegido (ni siquiera `/bateria/`, la pantalla de estudio que ya existe) es alcanzable
+directamente desde el sitio de Magui todavía — no es un descuido, nginx usa `auth_request` contra
+`pulso-api` precisamente para que solo entre quien ya inició sesión de equipo, y eso exige mismo
+dominio. El propio equipo ya lo documentó en el código: *"cuando Magui despliegue su front en este
+dominio, esto sobra"* — o sea, el plan es que su front-end acabe sirviéndose desde el mismo sitio.
+
+**Decisión tomada**: se dejó preparada la ruta `/api/asistente` en nginx, con el mismo patrón que
+ya usa el estudio de batería (reutiliza la sesión de Pulso, con su propia zona de límite de
+peticiones porque cada pregunta gasta créditos reales de la API de Claude, a diferencia del resto
+del proyecto que es cálculo propio sin coste). Queda protegida y lista, pero **no funcional
+todavía** mientras Pulso siga en `chatgpt.site` — funcionará el día que se despliegue en el mismo
+dominio, sin tocar nada más. La alternativa (CORS abierto ya mismo hacia `chatgpt.site`, sin
+pasar por el login) se descartó por ahora: dejaría el asistente accesible sin sesión a quien
+encontrara la URL del servidor.
+
+## 45. El frontend real de Pulso ya se está construyendo dentro del repo — y el widget del asistente queda listo
+
+Revisando la rama `magui_test` (sin fusionar todavía) apareció la pieza que faltaba de la nota
+44: Magui está construyendo el front-end **de verdad** de Pulso Energía como una app de Next.js
+dentro de este mismo repositorio (`app/`, ~18.000 líneas), con su propio backend de solo lectura
+(`api/dashboard_api.py`) — que, por su login de equipo y su endpoint `/health`, es casi seguro el
+"`pulso-api`" que ya menciona `nginx-tfm.conf`. O sea: el sitio de `chatgpt.site` es un
+paso intermedio, y el plan real es desplegar este Next.js en el mismo dominio del VPS — que es
+justo la condición que hacía falta para que `/api/asistente` (nota 44) se pueda usar de verdad.
+
+Se dejó preparado `docs/web/AsistenteWidget.tsx`: un componente de React listo para pegar en su
+app, con sus propios tokens de diseño (leídos de su `globals.css`, no inventados) y sin ninguna
+marca de Claude visible. Se detectó y corrigió un detalle antes de dárselo: nginx no devuelve un
+401 limpio cuando la sesión caduca, sino que redirige (302) a la pantalla de login en HTML — el
+componente lo detecta por el `content-type` de la respuesta, no por el código de estado.
+
+**Coordinación pendiente con Magui, no resuelta aquí**: su `dashboard_api.py` también pide un rol
+de Postgres de solo lectura (`.env.dashboard.local`), construido de forma independiente al
+`asistente_solo_lectura` de la nota 43 — misma idea, dos veces por separado. Queda como pregunta
+abierta si conviene un único rol de solo lectura compartido entre ambos servicios o si cada uno
+mantiene el suyo, acotado a lo que necesita.
+
+**Sobre el diseño de "más funciones" del asistente**: se aclaró que `consulta_sql_lectura` ya
+funciona como la "función genérica de emergencia" que se pedía — cuando una pregunta cae en ella
+queda registrada en `historial.jsonl` con la pregunta exacta, así que revisar ese historial
+periódicamente es la forma de detectar qué patrones conviene "promover" a una función fija y
+probada. Se decidió explícitamente NO dejar que el LLM genere y ejecute funciones Python nuevas
+por su cuenta (a diferencia del SQL, sin el mismo perímetro de seguridad) — la promoción a función
+fija la sigue haciendo una persona, revisando el patrón antes de escribirlo.
+
+## 46. Primera ronda de "entrenar" al asistente con preguntas reales — dos huecos cerrados, y un hallazgo importante sobre producción
+
+Se probó el proceso descrito en la nota 45 con un lote de preguntas típicas de cliente, en vez de
+esperar a que lleguen de los compañeros. Dos resultados directos:
+
+**Hueco cerrado — capacidad instalada.** "¿Cuánta solar/eólica hay instalada?" caía en
+`consulta_sql_lectura`, y con el modelo barato (Haiku) el asistente respondía que NO tenía el
+dato, aunque sí estaba disponible (con Opus sí lo encontraba). Depender de que el modelo se
+acuerde de intentar el SQL genérico para algo tan previsible no es fiable — se añadió
+`capacidad_instalada()` como función fija, y ya funciona igual de bien con el modelo barato.
+
+**Bug encontrado en la propia redacción del modelo, no en los datos.** Al probarlo, Haiku escribió
+"54.885 GW" para un valor que son 54.884,7 MW (~54,9 GW) — la cifra estaba bien, la unidad mal
+puesta, porque el modelo convertía él mismo sobre la marcha. Se corrigió dándole el valor ya
+calculado en MW y en GW en la propia respuesta de la herramienta, para que nunca tenga que hacer
+la conversión — verificado que ya no se equivoca.
+
+**Hallazgo importante, verificado de forma independiente — los modelos en producción apenas
+superan a la persistencia.** Al probar "¿qué tan preciso es el modelo comparado con los precios
+reales del último mes?", el asistente (vía `consulta_sql_lectura`, cruzando `predictions` con
+`spot_price` del 4-ago al 3-sep-2026) encontró que el mejor modelo de producción (GRU) tiene un
+MAE de 17,79 €/MWh — **verificado de forma independiente, calculando lo mismo yo mismo sin pasar
+por el LLM: coincide exactamente**, cifra a cifra, para los 13 modelos. Lo relevante:
+
+- En test, el mejor modelo (LightGBM horario afinado) mejoraba a la persistencia (copiar el
+  precio de hace 24h) en ~37% (12,55 vs 19,88 de MAE). **En producción, el mejor modelo solo
+  mejora a la persistencia en torno a un 6-8%** (el asistente calculó persistencia=18,89; mi
+  verificación independiente dio 19,26 — pequeña diferencia de método, pero la conclusión no
+  cambia con ninguna de las dos cifras).
+- Sesgo sistemático: casi todos los modelos predijeron por debajo del precio real durante agosto
+  (un mes caro y volátil), no es solo ruido.
+- El ensemble no fue el mejor del mes (quedó detrás de 4 modelos sueltos) — GRU sí lo fue.
+
+**Esto es un hallazgo que vale la pena llevar al equipo**, no una conclusión cerrada aquí: el
+margen del modelo sobre el baseline ingenuo se estrecha mucho fuera de la ventana de test, que es
+justo el tipo de degradación que un TFM debería documentar con honestidad. Antes de citarlo en la
+memoria final, conviene contrastarlo con el script de evaluación oficial del equipo (`evaluar_diario`,
+mencionado en los últimos commits de main) para confirmar que ambos caminos dan el mismo número.
+
+## 47. Tres quejas reales de una prueba en vivo — dos bugs de interfaz y una pregunta sobre si "hay un modelo mejor"
+
+Una pregunta real ("precio medio en 2026, y una estimación de agosto 2027") sirvió para encontrar
+tres problemas concretos, no hipotéticos.
+
+**Bug 1 — las tablas no se veían como tablas.** El asistente SÍ generaba tablas en markdown, pero
+la caja de chat del panel (`production/api/static/index.html`) las pintaba con `.textContent`,
+que muestra el markdown en crudo (los `|` literales) en vez de una tabla real. Corregido con un
+renderizador de markdown mínimo, sin dependencias externas (tablas, negrita, encabezados,
+citas) — coherente con que el resto del archivo no carga ninguna librería.
+
+**Bug 2 — no había ninguna herramienta para ver la TENDENCIA de un año**, solo el número agregado
+(`precio_historico_percentiles`) o el detalle hora a hora de un rango corto
+(`precio_tabla_horaria`). Preguntar "precio medio en 2026" no dejaba ver que el año tuvo un
+invierno-primavera muy barato (febrero con mediana de 2,9 €/MWh) y una escalada fuerte desde
+junio (julio-agosto por encima de 100 €/MWh) — información real y relevante que se perdía en un
+solo promedio. Se añadió `precio_tendencia_mensual()`. De paso, se hizo que el asistente genere
+gráfica de forma más proactiva: antes solo dibujaba si se pedía explícitamente "una gráfica";
+ahora también lo hace sola para preguntas de tendencia/evolución/estimación, sin que haga falta
+pedirlo con esa palabra exacta.
+
+**Efecto colateral encontrado y corregido de paso**: al añadir gráficas más a menudo, el modelo
+empezó a escribir `![...](archivo.png)` en el texto de la respuesta — una referencia de markdown
+que no apunta a nada real, porque la imagen ya se entrega aparte (`imagenes_base64`). Se corrigió
+con una instrucción explícita en el system prompt, y de paso con una limpieza defensiva en el
+propio renderizador del frontend (por si el modelo lo vuelve a hacer, no se muestra el markdown
+en crudo).
+
+**La pregunta de fondo — "¿no tenemos un modelo mejor para estimar agosto 2027 en vez de una
+fórmula?"**: se verificó con datos, no en teoría. El SARIMA que ya tiene el equipo
+(`modelos/validacion_sarima_364d.py`, MAE 17,19 sobre 365 días validados) **también es un modelo
+de D+1** — se reentrena cada día sobre una ventana móvil de 90 días y solo predice 24 horas
+adelante, exactamente la misma categoría que LightGBM. No existe ninguna versión que prediga 14
+meses vista de forma nativa, así que extrapolarlo tendría el mismo problema ya documentado (nota
+sobre `curva_precios.py`): el error se compone y las variables de entrada no existen tan lejos.
+`precio_futuro_curva` sigue siendo la respuesta correcta del equipo a esa pregunta concreta, no
+una alternativa de segunda por falta de algo mejor.
