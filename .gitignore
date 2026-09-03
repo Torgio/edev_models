@@ -46,3 +46,21 @@ data/gold/z_*/
 data/gold/finales_nucleo_ANTES_del_arreglo/
 __pycache__/
 *.pyc
+.pnpm-store/
+
+# Entorno local del dashboard y credenciales: solo viajan plantillas sin secretos.
+.env*
+!.env.example
+!.env.dashboard.example
+.venv/
+.venv-dashboard/
+*.tsbuildinfo
+.DS_Store
+pulso-api-auth.json
+team-auth
+
+# Respaldos de trabajo: no deben compartirse ni desplegarse.
+/.pulso-local-backup*/
+
+# Maqueta exportable separada de la aplicación principal.
+/app/demo/
