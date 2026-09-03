@@ -73,6 +73,26 @@
 30 13 * * * cd /home/ubuntu/scripts && /home/ubuntu/tfm-env/bin/python -u scripts/evaluar_diario.py >> /home/ubuntu/scripts/logs/cron_evaluar.log 2>&1
 
 
+# ── AÑADIR · 11:35 · planificar la bateria (bess_plan sigue vacia) ──────────────────
+#
+# `bess_plan` nunca se ha escrito: `planificar()` existe desde hace dias pero vive dentro
+# de `run_diario.py`, que ademas reconstruye la matriz y vuelve a predecir -- y eso ya lo
+# hacen las 11:15 y las 11:30 por su cuenta. Colgar `run_diario.py` entero como un cuarto
+# paso repetiria ese trabajo solo para llegar al paso 5. `scripts/planificar_diario.py` es
+# solo eso: importa `campeon()` y `planificar()` de `run_diario` (no los reimplementa) y
+# lee lo que `predictions` ya tiene para mañana.
+#
+#     11:15  construir_matriz_produccion    reconstruye la matriz
+#     11:30  guardar_predicciones --equipo  la prediccion de D+1
+#     11:35  planificar_diario              el plan de bateria en bess_plan
+#     11:45  cron_diario --solo-curva       la curva de 20 años
+#
+# A las 11:35 y no antes: cinco minutos de margen para que la fila de las 11:30 exista,
+# igual que separa la curva (11:45) de la prediccion. Idempotente (upsert por datetime+model).
+#
+35 11 * * * cd /home/ubuntu/scripts && /home/ubuntu/tfm-env/bin/python -u scripts/planificar_diario.py >> /home/ubuntu/scripts/logs/cron_planificar.log 2>&1
+
+
 # ── REVISAR · el cupo de Open-Meteo esta en conflicto ───────────────────────────────
 #
 # Los dos comparten el mismo cupo diario de 10.000 unidades:
@@ -89,6 +109,15 @@
 # repartir el cupo bajando el del tensor a 7000.
 #
 # 30 2 * * * ... ecmwf_tensor_historico.py --a-postgres --sustituir --cupo 7000 ...
+
+
+# ── REVISAR · las lineas de 11:30 y 11:45 estan duplicadas en el crontab instalado ──
+#
+# `crontab -l` del 3-sep muestra `guardar_predicciones --equipo` (11:30) y
+# `cron_diario --solo-curva` (11:45) pegadas DOS VECES cada una. No rompe nada -- las dos
+# tablas van por upsert -- pero cada dia se sirven las predicciones dos veces y se
+# recalcula la curva dos veces sin necesidad. Borrar la copia de mas la proxima vez que se
+# edite el crontab con `crontab -e`.
 
 
 # ── OPCIONAL · domingos 05:00 · limpieza de logs ────────────────────────────────────
