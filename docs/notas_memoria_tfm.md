@@ -1662,3 +1662,11 @@ nginx) devolvió una respuesta real y correcta ("¿horas negativas en 2023?" →
 exactamente con lo ya encontrado en la nota 25/etc. de esta memoria). Después, una llamada desde
 fuera a la URL pública sin sesión de Pulso devolvió el `302` esperado hacia la pantalla de login
 — confirma que la ruta está protegida de verdad, no abierta por accidente.
+
+**Y el tercer y último paso, con sesión real de Pulso iniciada** (login en `/bateria/entrar.html`
++ `fetch('/api/asistente', ...)` desde la consola del navegador, en la misma pestaña): misma
+pregunta, misma respuesta correcta. Cierra el círculo completo -- interno, protegido por fuera, y
+usable de verdad con la cookie de sesión real, exactamente como lo usaría cualquiera del equipo.
+Todavía no hay ninguna pantalla con un botón (ni la nuestra, que no está ruteada en el dominio a
+propósito para no comerse el sitio de Magui, ni la de ella, que aún no se despliega ahí) -- pero
+el asistente en sí, de backend a backend, ya está verificado en producción de punta a punta.
