@@ -39,6 +39,10 @@ SALIDA_DIR = "moldes_error_ecmwf"
 INICIO_SOLAPE = "2024-04-01 00:00:00"
 FIN_SOLAPE = "2024-12-31 23:59:59"  # nunca más allá de train — mismo corte de siempre
 
+TENSOR_VAR_ORDER = ["t2m", "d2m", "u10", "v10", "u100", "v100", "wind_gust10",
+                    "ssrd", "tcc", "tp", "msl"]
+_IDX_WIND_GUST10 = TENSOR_VAR_ORDER.index("wind_gust10")
+
 
 def _cargar_tensor(base_dir, raw_path, index):
     """raw_path viene de la DB tal cual se guardó -- puede ser absoluto de otro
@@ -83,7 +87,15 @@ def procesar(era5_refs, ecmwf_refs, era5_base_dir=None, ecmwf_base_dir=None,
         pos_dia = ts.hour // 3
         ecmwf_t = _cargar_tensor(ecmwf_base_dir, ecmwf_path, ecmwf_idx)
         era5_t = _cargar_tensor(era5_base_dir, era5_path, era5_idx)
-        por_dia[fecha][pos_dia] = ecmwf_t - era5_t
+        error = ecmwf_t - era5_t
+        # wind_gust10 nunca esta archivada en Open-Meteo Previous Runs (siempre NaN
+        # en ecmwf_t) -- la resta seria NaN sin excepcion, y ese NaN se propagaria a
+        # los 275 moldes y de ahi a TODO pseudo-tensor generado en la Fase B. Sin
+        # dato real de prevision para este canal, no hay error real que inyectar:
+        # se deja en 0 (el pseudo-tensor pasa el ERA5 real sin modificar en este
+        # canal especifico, en vez de fabricar un sesgo que nunca se observo).
+        error[:, :, _IDX_WIND_GUST10] = 0.0
+        por_dia[fecha][pos_dia] = error
 
     os.makedirs(salida_dir, exist_ok=True)
     indice = []
