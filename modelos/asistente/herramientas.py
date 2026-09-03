@@ -160,6 +160,42 @@ def precio_tabla_horaria(desde: str, hasta: str) -> dict:
     }
 
 
+def precio_tendencia_mensual(desde: str, hasta: str) -> dict:
+    """Evolucion del precio medio MES A MES en un rango -- para ver la TENDENCIA a lo largo
+    del tiempo (sube/baja, estacionalidad), no un solo numero resumen ni el detalle hora a
+    hora. Usa esta herramienta cuando la pregunta sea sobre como ha evolucionado el precio en
+    un periodo largo (un año o mas) -- ej. "precio medio en 2026" se responde mejor con esto
+    (mes a mes) que solo con el numero agregado de `precio_historico_percentiles`, porque deja
+    ver si el año fue estable o tuvo meses muy distintos entre si.
+
+    Se añadio porque una prueba real mostro el hueco: preguntar "el precio medio en 2026" solo
+    devolvia un numero agregado, sin dar pie a ver la evolucion -- ni en tabla ni en grafica.
+
+    Args:
+        desde: Fecha de inicio, YYYY-MM-DD.
+        hasta: Fecha de fin, YYYY-MM-DD.
+    """
+    df = precio_historico_serie(desde, hasta)
+    if df.empty:
+        return {"error": f"No hay precio real publicado entre {desde} y {hasta}."}
+
+    local = df["datetime"].dt.tz_convert("Europe/Madrid")
+    df = df.assign(mes=local.dt.to_period("M").astype(str))
+    resumen = df.groupby("mes")["precio"].agg(media="mean", mediana="median",
+                                                minimo="min", maximo="max", horas="count").round(2)
+    return {
+        "etiqueta": "REFERENCIA HISTORICA (precio real ya ocurrido, no es una prediccion)",
+        "desde": desde, "hasta": hasta,
+        "por_mes": [
+            {"mes": m, "precio_medio_eur_mwh": round(float(r["media"]), 2),
+             "mediana_eur_mwh": round(float(r["mediana"]), 2),
+             "minimo_eur_mwh": round(float(r["minimo"]), 2),
+             "maximo_eur_mwh": round(float(r["maximo"]), 2), "horas": int(r["horas"])}
+            for m, r in resumen.iterrows()
+        ],
+    }
+
+
 def precio_negativos(anio: int | None = None) -> dict:
     """Cuenta horas de precio negativo y el minimo (mas negativo) del año -- REFERENCIA
     HISTORICA, sobre precio real ya ocurrido. Si `anio` es None, usa el año en curso.

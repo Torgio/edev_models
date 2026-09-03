@@ -1594,3 +1594,41 @@ margen del modelo sobre el baseline ingenuo se estrecha mucho fuera de la ventan
 justo el tipo de degradación que un TFM debería documentar con honestidad. Antes de citarlo en la
 memoria final, conviene contrastarlo con el script de evaluación oficial del equipo (`evaluar_diario`,
 mencionado en los últimos commits de main) para confirmar que ambos caminos dan el mismo número.
+
+## 47. Tres quejas reales de una prueba en vivo — dos bugs de interfaz y una pregunta sobre si "hay un modelo mejor"
+
+Una pregunta real ("precio medio en 2026, y una estimación de agosto 2027") sirvió para encontrar
+tres problemas concretos, no hipotéticos.
+
+**Bug 1 — las tablas no se veían como tablas.** El asistente SÍ generaba tablas en markdown, pero
+la caja de chat del panel (`production/api/static/index.html`) las pintaba con `.textContent`,
+que muestra el markdown en crudo (los `|` literales) en vez de una tabla real. Corregido con un
+renderizador de markdown mínimo, sin dependencias externas (tablas, negrita, encabezados,
+citas) — coherente con que el resto del archivo no carga ninguna librería.
+
+**Bug 2 — no había ninguna herramienta para ver la TENDENCIA de un año**, solo el número agregado
+(`precio_historico_percentiles`) o el detalle hora a hora de un rango corto
+(`precio_tabla_horaria`). Preguntar "precio medio en 2026" no dejaba ver que el año tuvo un
+invierno-primavera muy barato (febrero con mediana de 2,9 €/MWh) y una escalada fuerte desde
+junio (julio-agosto por encima de 100 €/MWh) — información real y relevante que se perdía en un
+solo promedio. Se añadió `precio_tendencia_mensual()`. De paso, se hizo que el asistente genere
+gráfica de forma más proactiva: antes solo dibujaba si se pedía explícitamente "una gráfica";
+ahora también lo hace sola para preguntas de tendencia/evolución/estimación, sin que haga falta
+pedirlo con esa palabra exacta.
+
+**Efecto colateral encontrado y corregido de paso**: al añadir gráficas más a menudo, el modelo
+empezó a escribir `![...](archivo.png)` en el texto de la respuesta — una referencia de markdown
+que no apunta a nada real, porque la imagen ya se entrega aparte (`imagenes_base64`). Se corrigió
+con una instrucción explícita en el system prompt, y de paso con una limpieza defensiva en el
+propio renderizador del frontend (por si el modelo lo vuelve a hacer, no se muestra el markdown
+en crudo).
+
+**La pregunta de fondo — "¿no tenemos un modelo mejor para estimar agosto 2027 en vez de una
+fórmula?"**: se verificó con datos, no en teoría. El SARIMA que ya tiene el equipo
+(`modelos/validacion_sarima_364d.py`, MAE 17,19 sobre 365 días validados) **también es un modelo
+de D+1** — se reentrena cada día sobre una ventana móvil de 90 días y solo predice 24 horas
+adelante, exactamente la misma categoría que LightGBM. No existe ninguna versión que prediga 14
+meses vista de forma nativa, así que extrapolarlo tendría el mismo problema ya documentado (nota
+sobre `curva_precios.py`): el error se compone y las variables de entrada no existen tan lejos.
+`precio_futuro_curva` sigue siendo la respuesta correcta del equipo a esa pregunta concreta, no
+una alternativa de segunda por falta de algo mejor.

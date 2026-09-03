@@ -120,11 +120,22 @@ Para preguntas de "por que", "como se decidio" o "que es X" sobre el proyecto (m
 decisiones de diseño, hallazgos), usa `buscar_documentacion` y basa tu respuesta en lo que
 devuelva, citando de que nota/documento sale -- no la uses para preguntas de precios o numeros.
 
-Cuando el usuario pida ver una curva, grafica o evolucion de algo (precios, consumo, ahorro por
-duracion de bateria...), llama PRIMERO a la herramienta de datos correspondiente, y con esos
-numeros reales usa `code_execution` para dibujar un grafico simple con matplotlib (una figura,
-ejes con nombre, nada de colores decorativos) -- nunca dibujes con datos que no vengan de una
-herramienta.
+SIEMPRE que respondas con datos numericos, formatea con markdown -- tablas ("| col | col |"),
+negrita en las cifras clave, encabezados con "#"/"##" -- la interfaz lo renderiza como HTML de
+verdad, nunca lo dejes en texto corrido cuando hay una tabla natural que mostrar (percentiles,
+comparativas, series por mes/hora...).
+
+Ademas de la tabla, dibuja una GRAFICA con `code_execution` (matplotlib: una figura, ejes con
+nombre, nada de colores decorativos) siempre que la pregunta sea sobre una TENDENCIA o EVOLUCION
+en el tiempo (precio a lo largo de un año, consumo mes a mes...), una COMPARACION entre periodos
+o escenarios, o una ESTIMACION/extrapolacion a futuro -- no hace falta que el usuario lo pida
+explicitamente con la palabra "grafica", esas preguntas se entienden mejor con una imagen que
+solo con numeros. Para una respuesta de un solo numero (ej. "cuanta capacidad solar hay
+instalada") no hace falta grafica. Llama PRIMERO a la herramienta de datos correspondiente y
+dibuja SOLO con esos numeros reales -- nunca con datos que no vengan de una herramienta. La
+imagen generada se muestra aparte automaticamente despues de tu texto -- NO escribas
+"![...](...)" en la respuesta ni menciones el nombre del fichero, no apunta a nada desde la
+interfaz.
 
 Si la pregunta pide datos en crudo (tabla o grafica) que ninguna herramienta anterior cubre, usa
 `consulta_sql_lectura` como ULTIMO RECURSO -- nunca antes de comprobar si alguna de las otras
@@ -186,6 +197,20 @@ def precio_tabla_horaria(desde: str, hasta: str) -> str:
         hasta: Fecha de fin, YYYY-MM-DD (inclusive). Para "hoy", pon la misma fecha en ambas.
     """
     return json.dumps(_h.precio_tabla_horaria(desde, hasta), ensure_ascii=False)
+
+
+@beta_tool
+def precio_tendencia_mensual(desde: str, hasta: str) -> str:
+    """Evolucion del precio medio MES A MES en un rango largo (un año o mas) -- usa esta
+    herramienta en vez de (o ademas de) `precio_historico_percentiles` cuando la pregunta sea
+    sobre como ha ido el precio en un periodo largo ("precio medio en 2026", "como fue el año
+    pasado"), para poder mostrar la tendencia, no solo un numero agregado.
+
+    Args:
+        desde: Fecha de inicio, YYYY-MM-DD.
+        hasta: Fecha de fin, YYYY-MM-DD.
+    """
+    return json.dumps(_h.precio_tendencia_mensual(desde, hasta), ensure_ascii=False)
 
 
 @beta_tool
@@ -344,9 +369,10 @@ def buscar_documentacion(pregunta: str) -> str:
 
 
 CODE_EXECUTION = {"type": "code_execution_20260521", "name": "code_execution"}
-TOOLS = [precio_historico_percentiles, precio_tabla_horaria, precio_negativos, precio_horas_negativas,
-         simular_bateria, simular_autoconsumo_solar, precio_futuro_curva, extrapolar_consumo_cliente,
-         capacidad_instalada, prediccion_d_mas_1, buscar_documentacion, consulta_sql_lectura]
+TOOLS = [precio_historico_percentiles, precio_tabla_horaria, precio_tendencia_mensual, precio_negativos,
+         precio_horas_negativas, simular_bateria, simular_autoconsumo_solar, precio_futuro_curva,
+         extrapolar_consumo_cliente, capacidad_instalada, prediccion_d_mas_1, buscar_documentacion,
+         consulta_sql_lectura]
 
 
 def preguntar_con_imagenes(pregunta: str, modelo: str = MODELO_POR_DEFECTO) -> dict:
