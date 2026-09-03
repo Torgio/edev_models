@@ -1632,3 +1632,33 @@ meses vista de forma nativa, así que extrapolarlo tendría el mismo problema ya
 sobre `curva_precios.py`): el error se compone y las variables de entrada no existen tan lejos.
 `precio_futuro_curva` sigue siendo la respuesta correcta del equipo a esa pregunta concreta, no
 una alternativa de segunda por falta de algo mejor.
+
+## 48. El asistente ya está desplegado en producción de verdad — con clave de equipo, verificado paso a paso
+
+Primer despliegue real en el VPS, no solo en local. Decisión tomada con el equipo: en vez de que
+cada persona necesite su propia cuenta de Anthropic, se creó una clave **de equipo** (dedicada,
+no la personal de Willy que ya se usaba para las pruebas de esta sesión) con límite de gasto en
+la consola, colocada **solo en el servidor** (`ingesta/credentials.json` del VPS) — nadie más
+necesita clave propia para usar el asistente vía Pulso. Si alguien quiere correrlo también en su
+local, se le pasa la clave por privado, nunca por el chat de grupo.
+
+El despliegue no funcionó al primer intento, y cada fallo se diagnosticó con el error real, no
+adivinando:
+1. `Method Not Allowed` — el código del servidor estaba desactualizado (sin `git pull` desde que
+   se fusionó el asistente a `main`). Se corrigió con `git pull` + reinicio del servicio
+   (`systemctl restart`, necesario porque `uvicorn` corre sin `--reload` en producción).
+2. `Internal Server Error` sin detalle — `ModuleNotFoundError: No module named 'anthropic'`,
+   visto en el log real del servicio (`logs/api.log`). Las dependencias nuevas (`anthropic`,
+   `fastembed`, `pgvector`, ya en `requirements.txt`) nunca se habían instalado en el entorno
+   del servidor. Corregido con `pip install -r requirements.txt` en el venv del VPS.
+3. `zero size shared memory zone "tfm_asistente"` al recargar nginx — la zona de límite de
+   peticiones que añadí en el snippet (nota 44) necesitaba declararse aparte, en el bloque
+   `http{}` real del servidor (`/etc/nginx/conf.d/tfm-limits.conf`, donde ya vivían las zonas de
+   `/bateria/` y `/api/bat/`) — el propio snippet ya avisaba de esto en un comentario, pero
+   faltaba aplicarlo.
+
+**Verificado en cada paso, no dado por bueno**: primero una llamada directa al puerto 8010 (sin
+nginx) devolvió una respuesta real y correcta ("¿horas negativas en 2023?" → 0, coincide
+exactamente con lo ya encontrado en la nota 25/etc. de esta memoria). Después, una llamada desde
+fuera a la URL pública sin sesión de Pulso devolvió el `302` esperado hacia la pantalla de login
+— confirma que la ruta está protegida de verdad, no abierta por accidente.
