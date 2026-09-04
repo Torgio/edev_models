@@ -21,6 +21,10 @@ export type PerformancePayload = {
   series: PerformancePoint[]; naive_rule: string | null; definition: string;
 };
 
+export type PerformanceOptionsPayload = {
+  origin: 'model_metrics_daily'; source: 'production'; available: PerformanceModel[];
+};
+
 export const performanceIdentity = (model: string, seed: number) => `${encodeURIComponent(model)}:${seed}`;
 export function parsePerformanceIdentity(value: string) {
   const separator = value.lastIndexOf(':');
@@ -29,6 +33,14 @@ export function parsePerformanceIdentity(value: string) {
   if (!Number.isInteger(seed)) return null;
   try { return { model: decodeURIComponent(value.slice(0, separator)), seed }; }
   catch { return null; }
+}
+
+export function preferredPerformanceIdentity(available: PerformanceModel[], current: string) {
+  const selected = parsePerformanceIdentity(current);
+  const valid = selected && available.some(row => row.model === selected.model && row.seed === selected.seed);
+  return valid || !available.length
+    ? current
+    : performanceIdentity(available[0].model, available[0].seed);
 }
 
 export function clippedSkill(value: number | null, limit = 80) {

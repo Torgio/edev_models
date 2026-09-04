@@ -1,6 +1,6 @@
 const COOKIE = 'pulso_session';
 const SESSION_SECONDS = 8 * 60 * 60;
-const READ_PATH = /^(session|health|days|leaderboard|performance-history|peak-accuracy|(?:predictions|bess)\/\d{4}-\d{2}-\d{2})$/;
+const READ_PATH = /^(session|health|days|leaderboard|performance-history|performance-options|peak-accuracy|(?:predictions|bess)\/\d{4}-\d{2}-\d{2})$/;
 
 function reply(value: unknown, status = 200) {
   return Response.json(value, { status, headers: { 'Cache-Control': 'private, no-store', Vary: 'Cookie', 'X-Content-Type-Options': 'nosniff' } });
