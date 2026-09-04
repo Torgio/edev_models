@@ -5,7 +5,7 @@ import { Database, TrendingUp, Zap } from 'lucide-react';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { metric, numeric } from '@/lib/stored-evaluations';
-import { batteryModels, storedPlanSummary } from '@/lib/stored-battery';
+import { batteryModels, preferredBatteryModel, storedPlanSummary } from '@/lib/stored-battery';
 import type { BatteryPayload } from '@/lib/battery-types';
 const hour = new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const timestamp = new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -27,7 +27,7 @@ export function StoredBattery({ day, data, status }: { day: string; data: Batter
   if (!data.results.length && !data.plan.length) return null;
 
   const models = batteryModels(data.plan, data.results);
-  const model = models.includes(chosenModel) ? chosenModel : models.includes('ensemble') ? 'ensemble' : models[0];
+  const model = preferredBatteryModel(data.plan, data.results, chosenModel);
   const plan = data.plan.filter(row => row.model === model).sort((a, b) => Date.parse(a.datetime) - Date.parse(b.datetime));
   const result = data.results.find(row => row.model === model);
   const assumptions = plan[0]?.simulador ?? result?.simulador;
