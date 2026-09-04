@@ -16,7 +16,7 @@ def main():
         try:
             with opener.open("http://127.0.0.1:8000/session", timeout=3) as response:
                 state = json.load(response)
-            if state != {"authenticated": False, "auth_required": True}:
+            if state.get("authenticated") is not False or state.get("auth_required") is not True:
                 raise SystemExit("La API no está protegida como se esperaba.")
             break
         except (URLError, TimeoutError):
@@ -29,7 +29,7 @@ def main():
     except HTTPError as exc:
         if exc.code != 401:
             raise SystemExit(f"Respuesta inesperada sin sesión: HTTP {exc.code}.")
-    request = Request("http://127.0.0.1:8000/health", headers={"Cookie": f"{COOKIE_NAME}={auth.issue()}"})
+    request = Request("http://127.0.0.1:8000/health", headers={"Cookie": f"{COOKIE_NAME}={auth.issue(auth.verification_username())}"})
     try:
         with opener.open(request, timeout=25) as response:
             health = json.load(response)

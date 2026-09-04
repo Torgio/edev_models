@@ -12,3 +12,5 @@ Arrancar esta copia no actualiza la web publicada ni instala servicios en el VPS
 
 La instalación publicada se documenta en el
 [manual de despliegue](docs/manual_despliegue_pulso_energia.md).
+El comportamiento visible, las fuentes y los límites de la aplicación se describen en la
+[definición funcional de Pulso Energía](docs/definicion_funcional_pulso_energia.md).

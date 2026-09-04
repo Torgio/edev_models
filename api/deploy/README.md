@@ -34,15 +34,15 @@ en modo de solo lectura. Esto complementa, no sustituye, los permisos SELECT del
 
 ## Acceso del equipo
 
-La API valida una contraseña de equipo con PBKDF2-SHA256 (600.000 iteraciones,
-sal aleatoria) y emite una cookie firmada de 8 horas, Secure, HttpOnly y SameSite=Strict.
-No hay usuarios individuales: quien conozca la contraseña tiene acceso de lectura.
+La API admite cuentas individuales con PBKDF2-SHA256 (600.000 iteraciones y una
+sal aleatoria por usuario) y emite una cookie firmada de 8 horas, Secure, HttpOnly
+y SameSite=Strict. Todas las cuentas tienen acceso de lectura; no existen roles.
 El cierre de sesión borra la cookie de ese navegador; no revoca otras sesiones.
 Rotar las credenciales y reiniciar el servicio invalida las sesiones anteriores.
 
-`configure_auth.py`, ejecutado como módulo con sudo, solicita la contraseña sin
-mostrarla y crea `/etc/pulso-api-auth.json` con modo 600. Nunca sobrescribe una
-credencial existente. Systemd la entrega al servicio mediante `LoadCredential`;
+`configure_users.py` solicita cada usuario y contraseña sin mostrarlas y crea un
+archivo nuevo con modo 600. Nunca sobrescribe una credencial existente. Systemd
+entrega `/etc/pulso-api-auth.json` al servicio mediante `LoadCredential`;
 la cuenta `ubuntu` no necesita permiso para leer el original. En modo de servidor,
 la falta de la credencial impide arrancar; no se permite un arranque desprotegido.
 

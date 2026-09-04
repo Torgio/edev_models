@@ -109,7 +109,8 @@ async def protect_data(request: Request, call_next):
 @app.get("/session")
 def session(request: Request):
     auth = auth_config()
-    return {"authenticated": auth is None or auth.valid(request.cookies.get(COOKIE_NAME)), "auth_required": auth is not None}
+    username = auth.authenticated_user(request.cookies.get(COOKIE_NAME)) if auth else None
+    return {"authenticated": auth is None or username is not None, "auth_required": auth is not None, "username": username}
 
 
 @app.post("/login")
@@ -129,15 +130,20 @@ async def login(request: Request):
     import json
     try:
         payload = json.loads(body)
+        username = payload.get("username") if isinstance(payload, dict) else None
         password = payload.get("password") if isinstance(payload, dict) else None
     except (ValueError, UnicodeError):
+        username = None
         password = None
+    if username is not None and (not isinstance(username, str) or not 1 <= len(username) <= 64):
+        raise HTTPException(400, "Usuario no válido.")
     if not isinstance(password, str) or not 1 <= len(password) <= 128:
         raise HTTPException(400, "Contraseña no válida.")
-    if not await run_in_threadpool(auth.verify_password, password):
-        raise HTTPException(401, "Contraseña incorrecta.")
-    response = JSONResponse({"authenticated": True, "auth_required": True})
-    response.set_cookie(COOKIE_NAME, auth.issue(), max_age=SESSION_SECONDS, httponly=True, secure=True, samesite="strict", path="/")
+    authenticated_username = await run_in_threadpool(auth.verify_credentials, username, password)
+    if authenticated_username is None:
+        raise HTTPException(401, "Usuario o contraseña incorrectos.")
+    response = JSONResponse({"authenticated": True, "auth_required": True, "username": authenticated_username})
+    response.set_cookie(COOKIE_NAME, auth.issue(authenticated_username), max_age=SESSION_SECONDS, httponly=True, secure=True, samesite="strict", path="/")
     return response
 
 

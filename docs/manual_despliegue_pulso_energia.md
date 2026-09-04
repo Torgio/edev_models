@@ -15,7 +15,7 @@ Pulso Energía permite consultar previsiones horarias del precio eléctrico, com
 - API de producción: <https://vps-16d0afbc.vps.ovh.net>.
 - Servidor: `91.134.143.153`, usuario de administración `ubuntu`.
 - Base de datos: PostgreSQL, `tfm_energia`.
-- Acceso: contraseña compartida del equipo, con sesiones de ocho horas.
+- Acceso: cuentas individuales de usuario, con sesiones de ocho horas.
 
 La web funciona sin que el ordenador de desarrollo esté encendido. Depende del alojamiento de Sites y de que el VPS, Nginx, la API y PostgreSQL estén disponibles.
 
@@ -119,11 +119,12 @@ Revisarlas es una tarea de seguridad separada. No cerrarlas sin identificar ante
 Repositorio: `/Users/magui/git/edev_models`.
 
 - `api/dashboard_api.py`: consultas y rutas FastAPI.
-- `api/auth.py`: contraseña, firma de sesiones y límite de intentos.
+- `api/auth.py`: usuarios, hashes de contraseña, firma de sesiones y límite de intentos.
 - `requirements-dashboard.txt`: dependencias Python de la API.
 - `api/deploy/pulso-api.service`: unidad de servicio.
 - `api/deploy/pulso-api.env.example`: ejemplo sin credenciales reales.
 - `api/deploy/configure_auth.py`: creación interactiva de la credencial.
+- `api/deploy/configure_users.py`: creación interactiva del archivo de cuentas individuales.
 - `api/deploy/check_auth.py`: comprobación local de autenticación y PostgreSQL.
 - `api/deploy/install_auth_update.sh`: actualización acotada de código y unidad.
 - `app/components/team-access.tsx`: pantalla de acceso y cierre de sesión.
@@ -140,7 +141,7 @@ La carpeta `app/` tiene su propio repositorio Git. Publicar la web no equivale a
 - `/home/ubuntu/pulso-api/.venv/`: entorno Python aislado.
 - `/etc/systemd/system/pulso-api.service`: servicio activo.
 - `/etc/pulso-api.env`: variables de PostgreSQL; propietario root, permisos 600.
-- `/etc/pulso-api-auth.json`: hash de contraseña y secreto de firma; propietario root, permisos 600.
+- `/etc/pulso-api-auth.json`: usuarios, hashes de contraseña y secreto de firma; propietario root, permisos 600.
 - `/etc/nginx/sites-available/pulso-api`: configuración HTTPS añadida.
 - `/etc/nginx/sites-enabled/pulso-api`: enlace que habilita el sitio.
 - `/var/www/html`: raíz HTTP conservada para las validaciones ACME.
@@ -174,7 +175,7 @@ Valor de producción final:
 DASHBOARD_API_URL=https://vps-16d0afbc.vps.ovh.net
 ```
 
-Es una variable del servidor web, no un secreto. Sites no guarda la contraseña del equipo ni la contraseña de PostgreSQL. No introducirlas en `NEXT_PUBLIC_*` ni en código del navegador.
+Es una variable del servidor web, no un secreto. Sites no guarda las contraseñas de acceso ni la contraseña de PostgreSQL. No introducirlas en `NEXT_PUBLIC_*` ni en código del navegador.
 
 Al cierre, el comentario de `app/.env.example` y el valor de respaldo del código aún mencionan la IP inicial. No usarlos como referencia de producción: prevalece la variable de Sites indicada arriba. La IP directa no sirve para este intermediario alojado.
 
@@ -184,13 +185,13 @@ Al cierre, el comentario de `app/.env.example` y el valor de respaldo del códig
 
 - **Contraseña de Ubuntu:** administración por SSH/sudo.
 - **Contraseña de `pulso_dashboard`:** conexión de la API a PostgreSQL.
-- **Contraseña del equipo:** acceso al dashboard.
+- **Contraseña individual:** acceso de cada persona al dashboard.
 
 No son intercambiables ni deben reutilizarse entre sí.
 
-### Contraseña del equipo y sesiones
+### Usuarios, contraseñas y sesiones
 
-La contraseña se creó con entre 16 y 128 caracteres. Se guarda un derivado PBKDF2-HMAC-SHA256 de 600.000 iteraciones con sal aleatoria, no la contraseña en texto plano. El archivo también contiene un secreto de firma: aunque no tenga la contraseña original, sigue siendo material sensible.
+Cada contraseña tiene entre 12 y 128 caracteres. Se guarda un derivado PBKDF2-HMAC-SHA256 de 600.000 iteraciones con una sal distinta por usuario, nunca la contraseña en texto plano. El archivo también contiene un secreto de firma y sigue siendo material sensible.
 
 La cookie `pulso_session` está firmada con HMAC-SHA256, tiene una duración fija de ocho horas y utiliza `Secure`, `HttpOnly` y `SameSite=Strict`. No se guarda la contraseña en `localStorage`.
 
@@ -202,14 +203,14 @@ El enlace es público, pero las consultas a los datos requieren sesión. CORS no
 
 ### Límites y alcance
 
-- No hay cuentas individuales, roles por persona, MFA ni revocación selectiva.
-- Quien conozca la contraseña compartida puede consultar los datos publicados por la API.
-- Cerrar sesión elimina la cookie de ese navegador; no revoca otras sesiones ni una cookie previamente copiada.
+- Hay cuentas individuales, pero todas tienen el mismo permiso funcional de lectura; no hay roles ni MFA.
+- Deshabilitar un usuario o cambiar su contraseña invalida sus sesiones cuando se instala el nuevo archivo de credenciales y se reinicia la API.
+- Cerrar sesión elimina la cookie de ese navegador; no revoca otras sesiones válidas del mismo usuario.
 - El límite de login es de 10 intentos por cliente y 30 globales por minuto. Los visitantes pueden compartir la IP de salida del intermediario.
 - El limitador está en memoria y diseñado para un solo worker. No aumentar workers sin revisar este mecanismo.
 - La excepción sin contraseña del desarrollo local no debe activarse en producción.
 
-Para cambiar la contraseña se necesita una intervención administrativa: respaldar la credencial en una ubicación root protegida, generar una nueva con el auxiliar, verificarla y reiniciar solo la API. Esto invalida las sesiones anteriores. El auxiliar actual no sobrescribe archivos existentes: **no basta con volver a ejecutarlo y no se debe borrar la credencial a ciegas**. Preparar la rotación y su recuperación antes de hacerla.
+Para crear las cuentas se ejecuta `api.deploy.configure_users` de forma interactiva. El auxiliar no acepta contraseñas por argumentos y no sobrescribe archivos existentes. Para añadir, deshabilitar o cambiar una cuenta se genera primero un archivo nuevo, se respalda la credencial activa, se valida la nueva configuración y se reinicia exclusivamente la API. No borrar la credencial activa a ciegas.
 
 ### Permisos de base de datos y servicio
 
@@ -265,7 +266,7 @@ Así Nginx carga el certificado renovado solo si su configuración es válida. E
 
 ## 8. Uso y límites funcionales del dashboard
 
-1. Abrir la URL de la web e introducir la contraseña compartida.
+1. Abrir la URL de la web e introducir el usuario y la contraseña individual.
 2. Elegir el día, avanzar o retroceder y seleccionar los modelos visibles.
 3. Consultar curvas horarias, precios reales cuando estén disponibles y tabla de resultados.
 4. Revisar el ranking MAE y el plan BESS por modelo y duración.
@@ -417,7 +418,7 @@ Comprobar `/session` directamente en el nombre del VPS y después a través de `
 
 ### HTTP 401
 
-Sin sesión es el comportamiento correcto. Tras ocho horas es necesario volver a entrar. Si ocurre después de introducir la contraseña, comprobar que se usa la contraseña del equipo y que el navegador admite la cookie; no desactivar autenticación para diagnosticarlo.
+Sin sesión es el comportamiento correcto. Tras ocho horas es necesario volver a entrar. Si ocurre después de introducir las credenciales, comprobar el usuario y la contraseña individual y que el navegador admite la cookie; no desactivar autenticación para diagnosticarlo.
 
 ### HTTP 429 al entrar
 
@@ -425,7 +426,7 @@ Se alcanzó el límite de intentos. Esperar un minuto y evitar intentos simultá
 
 ### Nginx devuelve HTTP 502 o la API no arranca
 
-Consultar estado y registros de `pulso-api.service`, comprobar las credenciales por su existencia/permisos sin mostrarlas y validar conexión PostgreSQL. Una credencial de equipo ausente o inválida bloquea deliberadamente el arranque.
+Consultar estado y registros de `pulso-api.service`, comprobar las credenciales por su existencia/permisos sin mostrarlas y validar conexión PostgreSQL. Un archivo de usuarios ausente o inválido bloquea deliberadamente el arranque.
 
 ### No aparecen datos nuevos
 

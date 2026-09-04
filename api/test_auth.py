@@ -3,7 +3,9 @@ import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
-from api.auth import COOKIE_NAME, SESSION_SECONDS, LoginLimiter, TeamAuth, auth_config, new_credentials
+from api.auth import (COOKIE_NAME, SESSION_SECONDS, LoginLimiter, TeamAuth,
+                      UserAuth, UserCredential, auth_config, new_credentials,
+                      new_user_credentials)
 from api.dashboard_api import app
 
 PASSWORD = "test-only-password-123456"
@@ -52,6 +54,38 @@ class AuthTests(unittest.TestCase):
         response = self.client.post("/login", json={"password": "wrong"})
         self.assertEqual(response.status_code, 401)
         self.assertNotIn("set-cookie", response.headers)
+
+    def test_individual_user_login_and_identity(self):
+        data = new_user_credentials([
+            ("magui", "one-test-password-123"),
+            ("equipo2", "two-test-password-456"),
+        ])
+        users = tuple(UserCredential(item["username"], item["salt"], item["password_hash"], item["enabled"])
+                      for item in data["users"])
+        multi_auth = UserAuth(users, data["session_secret"])
+        with patch("api.dashboard_api.auth_config", return_value=multi_auth):
+            client = TestClient(app, base_url="https://testserver")
+            response = client.post("/login", json={"username": "MAGUI", "password": "one-test-password-123"})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["username"], "magui")
+            session = client.get("/session").json()
+            self.assertTrue(session["authenticated"])
+            self.assertEqual(session["username"], "magui")
+            self.assertEqual(client.post("/login", json={"username": "equipo2", "password": "wrong"}).status_code, 401)
+            self.assertEqual(client.post("/login", json={"username": "unknown", "password": "one-test-password-123"}).status_code, 401)
+
+    def test_disabled_user_and_password_rotation_invalidate_session(self):
+        data = new_user_credentials([("magui", "one-test-password-123")])
+        item = data["users"][0]
+        enabled = UserAuth((UserCredential(item["username"], item["salt"], item["password_hash"], True),), data["session_secret"])
+        token = enabled.issue("magui", now=1000)
+        self.assertEqual(enabled.authenticated_user(token, now=1001), "magui")
+        disabled = UserAuth((UserCredential(item["username"], item["salt"], item["password_hash"], False),), data["session_secret"])
+        self.assertFalse(disabled.valid(token, now=1001))
+        rotated_data = new_user_credentials([("magui", "rotated-password-789")])
+        rotated_item = rotated_data["users"][0]
+        rotated = UserAuth((UserCredential(rotated_item["username"], rotated_item["salt"], rotated_item["password_hash"], True),), data["session_secret"])
+        self.assertFalse(rotated.valid(token, now=1001))
 
     def test_expired_and_tampered_session(self):
         token = self.auth.issue(now=1000)
