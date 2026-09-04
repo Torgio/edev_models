@@ -49,6 +49,7 @@
 #
 #     11:15  construir_matriz_produccion    reconstruye la matriz
 #     11:30  guardar_predicciones --equipo  la prediccion de D+1
+#     11:35  planificar_diario              el plan de bateria
 #     11:45  cron_diario --solo-curva       la curva de 20 años
 #     ------------------------------------------------------ 13:00 OMIE publica el PMD
 #     13:30  evaluar_diario                 lo predicho contra lo que salio

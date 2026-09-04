@@ -196,7 +196,7 @@ def revisar(con, objetivo):
         bp = cur.fetchall()
     print(f"\n  bess_plan para {objetivo}: " +
           (", ".join(f"{m} ({n} horas)" for m, n in bp) if bp else "vacio"))
-    print(f"  campeon que decidiria el plan: {campeon(con)}")
+    print(f"  campeon que decidiria el plan: {campeon(con, objetivo) or 'NINGUNO disponible'}")
 
 
 def choque(con, objetivo, forzar: bool) -> bool:
@@ -252,17 +252,40 @@ def predecir(con, objetivo: date):
 
 
 # ------------------------------------------------------------------ 5  la bateria
-def campeon(con) -> str:
+def campeon(con, objetivo: date | None = None) -> str | None:
     """Quien decide el plan de la bateria.
 
-    Sale de `models.estado`, no de una constante aqui: el campeon cambia cuando cambian
-    las metricas, y si estuviera escrito en el codigo habria dos verdades. Si aun no hay
-    ninguno declarado, manda el ensemble -- que es la eleccion conservadora, no la mejor.
+    Sale de `models.estado`, no de una constante aqui: el campeon cambia cuando cambian las
+    metricas, y si estuviera escrito en el codigo habria dos verdades.
+
+    EL RESPALDO NO PUEDE SER UN NOMBRE FIJO, Y ESO SE APRENDIO ROMPIENDOLO. Aqui ponia
+    "ensemble" a secas. Cuando la cadena del servidor paso a correr con `--equipo`, la media
+    empezo a guardarse como `ensemble11` -- `ensemble` es la de ocho y sigue grabada, por eso
+    no se pisa -- y el respaldo quedo apuntando a un modelo que ya nadie escribia. El plan
+    dejo de generarse en silencio: `bess_plan` con 24 filas de un solo dia, sin un error.
+
+    Asi que el respaldo se MIDE contra la tabla: de los candidatos, el primero que de verdad
+    tenga el dia completo. Y si ninguno lo tiene, devuelve None en vez de un nombre inventado.
     """
     with con.cursor() as cur:
         cur.execute("SELECT model FROM models WHERE estado = 'campeon' ORDER BY model LIMIT 1")
         r = cur.fetchone()
-    return r[0] if r else "ensemble"
+    if r:
+        return r[0]
+    if objetivo is None:
+        return "ensemble11"
+    for cand in ("ensemble11", "ensemble", "gru"):
+        with con.cursor() as cur:
+            cur.execute("""
+                SELECT count(*) FROM predictions
+                 WHERE model = %s AND source = 'production'
+                   AND (datetime AT TIME ZONE 'Europe/Madrid')::date = %s""",
+                        (cand, objetivo))
+            if cur.fetchone()[0] >= 23:
+                if cand != "ensemble11":
+                    _log("5 bateria", f"sin campeon declarado y sin `ensemble11`: se usa {cand}")
+                return cand
+    return None
 
 
 def planificar(con, objetivo: date, modelo: str) -> int:
@@ -379,8 +402,11 @@ def main():
             raise SystemExit(1)
         predecir(con, objetivo)
         con.commit()
-        m = campeon(con)
-        planificar(con, objetivo, m)
+        m = campeon(con, objetivo)
+        if m is None:
+            _log("5 bateria", f"ningun candidato tiene {objetivo} completo: no se planifica")
+        else:
+            planificar(con, objetivo, m)
     finally:
         con.close()
 

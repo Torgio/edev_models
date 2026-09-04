@@ -62,7 +62,15 @@ def main():
             rd.revisar(con, objetivo)
             return
 
-        modelo = a.modelo or rd.campeon(con)
+        # `objetivo` no es decorativo: sin el, el respaldo devuelve un nombre fijo que
+        # puede no estar escribiendose. Con el, comprueba contra la tabla y devuelve None
+        # si ningun candidato tiene el dia completo.
+        modelo = a.modelo or rd.campeon(con, objetivo)
+        if modelo is None:
+            print(f"  Ningun candidato tiene {objetivo} completo en `predictions`.")
+            print("  Declara un campeon:  UPDATE models SET estado='campeon' WHERE model='...';")
+            print("  o fuerza uno:        --modelo <nombre>")
+            raise SystemExit(1)
 
         if a.simulacro:
             with con.cursor() as cur:
