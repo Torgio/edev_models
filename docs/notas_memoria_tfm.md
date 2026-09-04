@@ -1670,3 +1670,27 @@ usable de verdad con la cookie de sesión real, exactamente como lo usaría cual
 Todavía no hay ninguna pantalla con un botón (ni la nuestra, que no está ruteada en el dominio a
 propósito para no comerse el sitio de Magui, ni la de ella, que aún no se despliega ahí) -- pero
 el asistente en sí, de backend a backend, ya está verificado en producción de punta a punta.
+
+## 49. Una pregunta de fuga de datos verificada como falsa alarma, y un bug que se coló al widget de Magui
+
+**La supuesta fuga (`es_esios_D` / `pt_entsoe_D`) no es fuga — verificado con datos, no con el
+nombre de la columna.** Un compañero vio que un XGBoost concentraba casi toda la ganancia en
+esas dos columnas y sospechó sobreajuste por fuga. `scripts/auditoria_frontera.py` no las cubre
+automáticamente (no están en ninguno de sus bloques de columnas conocidas), así que se comprobó a
+mano con la misma lógica del script: comparar el valor de la matriz contra `spot_price` en varios
+desfases de día. Resultado limpio — **99,85% de coincidencia con el día D** (el día anterior al
+objetivo D+1, publicado la tarde antes), **1,73% con D+1** (que sería la fuga real). Es decir, es
+el precio de ayer, información legítima y disponible a la hora de predecir — no el precio del día
+que se está prediciendo. Que el modelo se apoye tanto en ella es coherente con lo que ya sabemos
+del proyecto (el propio baseline de persistencia funciona razonablemente bien porque el precio
+tiene autocorrelación fuerte día a día) — no invalida el hallazgo de que valdría la pena investigar
+si el modelo está *demasiado* apoyado en una sola variable (menos robusto ante cambios de
+régimen), pero esa es una pregunta de diseño del modelo, no una fuga de datos.
+
+**Bug real encontrado en el widget que se le dio a Magui.** La corrección de renderizado de
+markdown (nota 47) se aplicó en `production/api/static/index.html`, pero se me olvidó portarla a
+`docs/web/AsistenteWidget.tsx` — el componente de React seguía mostrando el texto en crudo
+(`{resultado.respuesta}`), y en una prueba real del equipo en Pulso se vio exactamente ese
+problema: las tablas salían con los `|` literales. Corregido con el mismo parser, adaptado a TSX
+(mismo enfoque: sin dependencias nuevas, usando `dangerouslySetInnerHTML` sobre HTML que la propia
+función ya escapa antes de insertar, nunca el texto del asistente sin pasar por `escaparHtml()`).
