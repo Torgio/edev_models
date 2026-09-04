@@ -9,7 +9,7 @@ import {
   Zap,
 } from 'lucide-react';
 import {
-  Area, CartesianGrid, Line, LineChart, ReferenceArea, ReferenceDot, ResponsiveContainer, Tooltip,
+  Area, CartesianGrid, Line, LineChart, ReferenceArea, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip,
   XAxis, YAxis,
 } from 'recharts';
 
@@ -27,6 +27,7 @@ import { predictionUpdate } from '@/lib/prediction-update';
 import { initialDashboardDay, type AvailableDay } from '@/lib/initial-day';
 import { marketHourLabel } from '@/lib/market-hour';
 import { modelColor } from '@/lib/model-color';
+import { forecastRamp, negativePriceHours } from '@/lib/market-signals';
 import { modelsToPlot } from '@/lib/visible-models';
 import type { BatteryPayload } from '@/lib/battery-types';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
@@ -77,6 +78,40 @@ function MetricCard({ icon: Icon, eyebrow, value, detail, tone = 'neutral' }: {
   );
 }
 
+function DateNavigator({ date, days, coverageLabel, ariaLabel, onChange }: {
+  date: Date; days: AvailableDay[]; coverageLabel: string; ariaLabel: string; onChange: (date: Date) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const available = new Set(days.map(item => item.date));
+  const closed = days.filter(item => item.closed).map(item => new Date(`${item.date}T12:00:00`));
+  const partial = days.filter(item => !item.closed && item.actual_hours > 0).map(item => new Date(`${item.date}T12:00:00`));
+  const pending = days.filter(item => !item.actual_hours).map(item => new Date(`${item.date}T12:00:00`));
+  return <div className="date-stepper" aria-label={ariaLabel}>
+    <Button variant="ghost" size="icon-lg" aria-label="Día anterior" onClick={() => onChange(addDays(date, -1))}><ChevronLeft /></Button>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger className="date-picker-trigger" aria-label="Elegir fecha en el calendario">
+        <CalendarDays aria-hidden="true" />
+        <span>{format(date, "EEEE, d 'de' MMMM", { locale: es })}</span>
+        <strong>{coverageLabel}</strong>
+      </PopoverTrigger>
+      <PopoverContent className="date-calendar-popover" align="center" sideOffset={8}>
+        <Calendar key={format(date, 'yyyy-MM-dd')} mode="single" selected={date} defaultMonth={date} locale={es}
+          disabled={candidate => !available.has(format(candidate, 'yyyy-MM-dd'))}
+          modifiers={{ closed, partial, pending }}
+          modifiersClassNames={{ closed: 'calendar-day-closed', partial: 'calendar-day-partial', pending: 'calendar-day-pending' }}
+          onSelect={candidate => {
+            if (!candidate || !available.has(format(candidate, 'yyyy-MM-dd'))) return;
+            onChange(candidate); setOpen(false);
+          }} />
+        <div className="calendar-status-legend" aria-label="Estado de las fechas">
+          <span className="closed">Cerrado</span><span className="partial">Parcial</span><span className="pending">Previsto</span>
+        </div>
+      </PopoverContent>
+    </Popover>
+    <Button variant="ghost" size="icon-lg" aria-label="Día siguiente" onClick={() => onChange(addDays(date, 1))}><ChevronRight /></Button>
+  </div>;
+}
+
 export default function Home() {
   return <TeamAccess>{(controls) => <Dashboard {...controls} />}</TeamAccess>;
 }
@@ -85,7 +120,6 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
   const [date, setDate] = useState(new Date());
   const day = format(date, 'yyyy-MM-dd');
   const [availableDays, setAvailableDays] = useState<AvailableDay[]>([]);
-  const [calendarOpen, setCalendarOpen] = useState(false);
   const [visible, setVisible] = useState<ModelKey[]>([]);
   const [view, setView] = useState<'prediction' | 'evaluation' | 'battery' | 'assistant'>('prediction');
   const [referenceModel, setReferenceModel] = useState('');
@@ -120,10 +154,6 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
     ? `${isClosed ? 'día cerrado' : actualHours ? 'cierre parcial' : 'precio real pendiente'} · ${actualHours}/${expectedHours} h reales`
     : format(date, 'yyyy');
   const visibleModels = modelsToPlot(availableModels, visible, selectedModel);
-  const availableDateKeys = new Set(availableDays.map(item => item.date));
-  const closedCalendarDays = availableDays.filter(item => item.closed).map(item => new Date(`${item.date}T12:00:00`));
-  const partialCalendarDays = availableDays.filter(item => !item.closed && item.actual_hours > 0).map(item => new Date(`${item.date}T12:00:00`));
-  const pendingCalendarDays = availableDays.filter(item => !item.actual_hours).map(item => new Date(`${item.date}T12:00:00`));
 
   useEffect(() => {
     if (!API_URL) return;
@@ -182,6 +212,8 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
   const validReference = data.filter(row => Number.isFinite(row.predictions[selectedModel]));
   const peak = validReference.reduce<ChartRow | null>((best, row) => !best || row.predictions[selectedModel] > best.predictions[selectedModel] ? row : best, null);
   const max = peak?.predictions[selectedModel];
+  const ramp = forecastRamp(data, selectedModel);
+  const negatives = negativePriceHours(data, selectedModel);
   const lastPredictionUpdate = predictionUpdate(current?.updated ?? null, current !== null);
   const currentBattery = batteryState.day === day ? batteryState : { day, data: null, status: 'loading' as const };
   const batteryPlan = currentBattery.data?.plan.filter(row => row.model === selectedModel) ?? [];
@@ -238,37 +270,7 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
               ? `Compara lo previsto con las ${expectedHours} horas reales del mercado. Los días futuros con predicciones siguen disponibles con la flecha.`
               : 'Este día aún no tiene el precio real completo; muestra el plan previsto y deja pendientes los resultados.'}</p>
           </div>
-          <div className="date-stepper" aria-label="Navegación por fecha">
-            <Button variant="ghost" size="icon-lg" aria-label="Día anterior" onClick={() => setDate((day) => addDays(day, -1))}><ChevronLeft /></Button>
-            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-              <PopoverTrigger className="date-picker-trigger" aria-label="Elegir fecha en el calendario">
-                <CalendarDays aria-hidden="true" />
-                <span>{format(date, "EEEE, d 'de' MMMM", { locale: es })}</span>
-                <strong>{dayCoverageLabel}</strong>
-              </PopoverTrigger>
-              <PopoverContent className="date-calendar-popover" align="center" sideOffset={8}>
-                <Calendar
-                  key={day}
-                  mode="single"
-                  selected={date}
-                  defaultMonth={date}
-                  locale={es}
-                  disabled={candidate => !availableDateKeys.has(format(candidate, 'yyyy-MM-dd'))}
-                  modifiers={{ closed: closedCalendarDays, partial: partialCalendarDays, pending: pendingCalendarDays }}
-                  modifiersClassNames={{ closed: 'calendar-day-closed', partial: 'calendar-day-partial', pending: 'calendar-day-pending' }}
-                  onSelect={candidate => {
-                    if (!candidate || !availableDateKeys.has(format(candidate, 'yyyy-MM-dd'))) return;
-                    setDate(candidate);
-                    setCalendarOpen(false);
-                  }}
-                />
-                <div className="calendar-status-legend" aria-label="Estado de las fechas">
-                  <span className="closed">Cerrado</span><span className="partial">Parcial</span><span className="pending">Previsto</span>
-                </div>
-              </PopoverContent>
-            </Popover>
-            <Button variant="ghost" size="icon-lg" aria-label="Día siguiente" onClick={() => setDate((day) => addDays(day, 1))}><ChevronRight /></Button>
-          </div>
+          <DateNavigator date={date} days={availableDays} coverageLabel={dayCoverageLabel} ariaLabel="Navegación por fecha" onChange={setDate} />
         </div>
 
         <section className="forecast-workspace" aria-labelledby="forecast-title">
@@ -302,6 +304,7 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
               <div className="chart-legend">
                 <span className="consensus-legend" title="Rango central entre modelos; no es un intervalo predictivo."><i />Dispersión central</span>
                 {hasActual && <span className="actual-legend"><i />Precio real</span>}
+                {negatives.entries.length > 0 && <span className="negative-price-legend"><i />Horas bajo cero</span>}
                 {batteryMarks.some(mark => mark.action === 'charge') && <span className="battery-overlay-legend charge"><i />Carga BESS</span>}
                 {batteryMarks.some(mark => mark.action === 'discharge') && <span className="battery-overlay-legend discharge"><i />Descarga BESS</span>}
               </div>
@@ -319,6 +322,10 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
                     contentStyle={{ borderRadius: 14, border: '1px solid #d8e0dc', boxShadow: '0 12px 35px rgba(16,43,36,.12)' }}
                     formatter={(value, name) => [Array.isArray(value) ? `${Number(value[0]).toFixed(1)}–${Number(value[1]).toFixed(1)} €/MWh` : `${Number(value).toFixed(1)} €/MWh`, String(name)]} />
                   <Area type="monotone" dataKey="consensusBand" name="Dispersión central" stroke="none" fill="#43a99f" fillOpacity={0.12} activeDot={false} />
+                  <ReferenceLine y={0} stroke="#aab6b1" strokeDasharray="3 4" />
+                  {negatives.entries.map(mark => <ReferenceArea key={`negative:${mark.index}`} x1={mark.index - .45} x2={mark.index + .45}
+                    fill={mark.actual ? '#b85f3b' : '#e8a36f'} fillOpacity={mark.actual && mark.predicted ? .16 : .1} strokeOpacity={0} ifOverflow="hidden" />)}
+                  {ramp && <ReferenceArea x1={ramp.from} x2={ramp.to} fill="#6689a8" fillOpacity={.08} strokeOpacity={0} ifOverflow="hidden" />}
                   {batteryMarks.map(mark => <ReferenceArea key={`${mark.action}:${mark.index}`} x1={mark.index - .45} x2={mark.index + .45}
                     fill={mark.action === 'charge' ? '#43a99f' : '#e58b45'} fillOpacity={.14} strokeOpacity={0} ifOverflow="hidden" />)}
                   {MODELS.filter(model => visibleModels.includes(model.key)).map(model => (
@@ -328,11 +335,17 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
                   ))}
                   {hasActual && <Line type="monotone" dataKey="actual" name="Precio real" stroke="#142e28" strokeWidth={2.4} strokeDasharray="4 4" dot={false} />}
                   {minimum && <ReferenceDot x={minimum.index} y={minimum.value} r={5} fill="#e58b45" stroke="#142e28" ifOverflow="extendDomain"
-                    label={{ value: 'Mínimo', position: 'top', fontSize: 11, fill: '#142e28' }} />}
+                    label={{ value: 'Valle previsto', position: 'top', fontSize: 11, fill: '#142e28' }} />}
+                  {ramp && <ReferenceDot x={ramp.to} y={ramp.value} r={4} fill="#6689a8" stroke="#fff" ifOverflow="extendDomain" />}
                 </LineChart>
               </ResponsiveContainer>
             </div>
-            <p className="chart-caption">La banda representa el rango central entre los modelos recibidos; no es un intervalo de confianza. El modelo de referencia aparece destacado.</p>
+            <div className="market-signals" aria-label="Señales calculadas de la curva">
+              <span><small>Valle previsto</small><strong>{minimum ? `${data[minimum.index]?.label} · ${minimum.value.toFixed(1)} €/MWh` : '—'}</strong></span>
+              <span><small>Mayor rampa prevista</small><strong>{ramp ? `${data[ramp.from]?.label}→${data[ramp.to]?.label} · +${ramp.increase.toFixed(1)} €/MWh` : '—'}</strong></span>
+              <span><small>Horas negativas</small><strong>Previstas {negatives.predicted} · reales {negatives.actual}</strong></span>
+            </div>
+            <p className="chart-caption">Valle, rampa y horas bajo cero se calculan para este día y el modelo de referencia; describen la curva, no atribuyen su causa. La banda es dispersión central entre modelos, no un intervalo de confianza.</p>
           </div>
 
           <aside className="forecast-rail" aria-label="Indicadores del día">
@@ -383,11 +396,7 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
           <div className="battery-view">
             <div className="view-datebar">
               <div><p className="kicker">Operación diaria</p><h2>Plan BESS guardado</h2><p>Consulta la decisión horaria y su resultado económico sin recalcular la estrategia.</p></div>
-              <div className="date-stepper" aria-label="Navegación por fecha BESS">
-                <Button variant="ghost" size="icon-lg" aria-label="Día anterior" onClick={() => setDate((day) => addDays(day, -1))}><ChevronLeft /></Button>
-                <div><CalendarDays aria-hidden="true" /><span>{format(date, "EEEE, d 'de' MMMM", { locale: es })}</span><strong>{dayCoverageLabel}</strong></div>
-                <Button variant="ghost" size="icon-lg" aria-label="Día siguiente" onClick={() => setDate((day) => addDays(day, 1))}><ChevronRight /></Button>
-              </div>
+              <DateNavigator date={date} days={availableDays} coverageLabel={dayCoverageLabel} ariaLabel="Navegación por fecha BESS" onChange={setDate} />
             </div>
             <StoredBattery day={day} data={currentBattery.data} status={currentBattery.status} />
           </div> :
