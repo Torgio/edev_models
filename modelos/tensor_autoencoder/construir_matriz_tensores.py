@@ -57,8 +57,13 @@ def unir(matriz_path=MATRIZ_ORIGINAL, embeddings_path=EMBEDDINGS, salida_path=SA
 
     emb = pd.read_parquet(embeddings_path)
 
-    matriz["ts"] = pd.to_datetime(matriz["ts"])
-    emb["ts"] = pd.to_datetime(emb["ts"])
+    # .astype("datetime64[ns]") explicito ademas de pd.to_datetime(): pandas
+    # reciente distingue datetime64[ns] de datetime64[us] como tipos DISTINTOS
+    # para merge_asof -- si la matriz original (parquet de produccion) y los
+    # embeddings (convertidos desde strings ISO) quedan en precisiones
+    # distintas, merge_asof rechaza el merge aunque representen lo mismo.
+    matriz["ts"] = pd.to_datetime(matriz["ts"]).astype("datetime64[ns]")
+    emb["ts"] = pd.to_datetime(emb["ts"]).astype("datetime64[ns]")
 
     # merge_asof exige ambos lados ordenados por la clave de union
     matriz = matriz.sort_values("ts").reset_index(drop=True)
