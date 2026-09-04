@@ -5,13 +5,13 @@ import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { bestMae, evaluationGroup, metric, numeric, rankedEvaluations, type Evaluation, type Order } from '@/lib/stored-evaluations';
 import { PerformanceHistory } from '@/components/performance-history';
+import { modelColor } from '@/lib/model-color';
 
 const orderLabels: Record<Order, string> = {
   captura_pct: 'Captura',
   mae: 'MAE',
   skill_vs_naive: 'Skill vs. naive',
 };
-const modelColor = (model: string) => `hsl(${[...model].reduce((value, letter) => (value * 31 + letter.charCodeAt(0)) % 360, 0)} 46% 46%)`;
 const seed = (value: number) => value === -1 ? 'No aplica' : String(value);
 const bestBy = (rows: Evaluation[], key: 'captura_pct' | 'skill_vs_naive') =>
   rows.filter(row => numeric(row[key])).sort((a, b) => b[key]! - a[key]!)[0];

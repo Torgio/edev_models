@@ -8,8 +8,8 @@ import {
 import { Activity, CalendarCheck2, TrendingUp } from 'lucide-react';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import {
-  clippedSkill, parsePerformanceIdentity, performanceIdentity,
-  type PerformancePayload, type PerformancePoint,
+  clippedSkill, parsePerformanceIdentity, performanceIdentity, preferredPerformanceIdentity,
+  type PerformanceOptionsPayload, type PerformancePayload, type PerformancePoint, type PerformanceModel,
 } from '@/lib/performance-history';
 
 const percent = (value: number | null) => value === null || !Number.isFinite(value)
@@ -37,10 +37,34 @@ function HistoryTooltip({ active, payload }: { active?: boolean; payload?: Array
 
 export function PerformanceHistory({ onSessionExpired }: { onSessionExpired: () => void }) {
   const [choice, setChoice] = useState(performanceIdentity('gru', 44));
+  const [available, setAvailable] = useState<PerformanceModel[]>([]);
+  const [optionsStatus, setOptionsStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
   const [payload, setPayload] = useState<PerformancePayload | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
   useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/dashboard/performance-options?source=production', { signal: controller.signal, cache: 'no-store' })
+      .then(async response => {
+        if (response.status === 401) onSessionExpired();
+        if (!response.ok) throw new Error();
+        return await response.json() as PerformanceOptionsPayload;
+      })
+      .then(result => {
+        if (controller.signal.aborted || result.origin !== 'model_metrics_daily' || !Array.isArray(result.available)) return;
+        setAvailable(result.available);
+        if (!result.available.length) { setPayload(null); setOptionsStatus('empty'); return; }
+        setChoice(current => preferredPerformanceIdentity(result.available, current));
+        setOptionsStatus('ready');
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) { setAvailable([]); setPayload(null); setOptionsStatus('error'); }
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (optionsStatus !== 'ready') return;
     const selected = parsePerformanceIdentity(choice);
     if (!selected) return;
     const controller = new AbortController();
@@ -58,7 +82,7 @@ export function PerformanceHistory({ onSessionExpired }: { onSessionExpired: () 
       })
       .catch(() => { if (!controller.signal.aborted) { setPayload(null); setStatus('error'); } });
     return () => controller.abort();
-  }, [choice]);
+  }, [choice, optionsStatus]);
 
   const summary = payload?.summary;
   const chart: ChartPoint[] = payload?.series.map(row => ({
@@ -71,17 +95,21 @@ export function PerformanceHistory({ onSessionExpired }: { onSessionExpired: () 
       <div><p className="section-label">Rendimiento en el tiempo · fuente model_metrics_daily</p>
         <h2 id="history-title">¿Sigue mereciendo la pena el modelo?</h2>
         <p>Ventaja de error frente al precio de la misma hora del día anterior. Por encima de cero, el modelo mejora al naive.</p></div>
-      {payload?.available.length ? <label>Modelo evaluado
+      {available.length ? <label>Modelo evaluado
         <NativeSelect value={choice} onChange={event => setChoice(event.target.value)}>
-          {payload.available.map(row => <NativeSelectOption key={performanceIdentity(row.model, row.seed)} value={performanceIdentity(row.model, row.seed)}>
+          {available.map(row => <NativeSelectOption key={performanceIdentity(row.model, row.seed)} value={performanceIdentity(row.model, row.seed)}>
             {modelLabel(row.model)} · semilla {row.seed === -1 ? 'N/A' : row.seed} · {row.days} días
           </NativeSelectOption>)}
         </NativeSelect>
       </label> : null}
     </div>
 
-    {status !== 'ready' || !payload || !summary ? <div className="history-empty" role="status">
-      {status === 'loading' ? 'Construyendo la serie desde las métricas guardadas…' : 'La serie histórica no está disponible.'}
+    {optionsStatus !== 'ready' || status !== 'ready' || !payload || !summary ? <div className="history-empty" role="status">
+      {optionsStatus === 'loading' ? 'Consultando las series históricas disponibles…'
+        : optionsStatus === 'empty' ? 'Todavía no hay métricas históricas guardadas.'
+          : optionsStatus === 'error' ? 'No se pudieron consultar las métricas históricas.'
+            : status === 'loading' ? 'Construyendo la serie desde las métricas guardadas…'
+              : 'La serie elegida no está disponible. Puedes seleccionar otra combinación.'}
     </div> : <>
       <div className="history-kpis">
         <article><Activity aria-hidden="true" /><span>Ventaja · 30 días</span><strong className={(summary.skill_pct ?? 0) >= 0 ? 'good' : 'bad'}>{percent(summary.skill_pct)}</strong>

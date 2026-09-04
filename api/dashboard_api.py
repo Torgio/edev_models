@@ -25,7 +25,7 @@ from starlette.concurrency import run_in_threadpool
 
 from api.auth import COOKIE_NAME, SESSION_SECONDS, LoginLimiter, auth_config
 from api.peak_accuracy import evaluation_window, hour_slots, midnight, peak_accuracy
-from api.stored_results import evaluations, battery, performance_history
+from api.stored_results import evaluations, battery, performance_history, performance_options
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.append(str(REPO / "ingesta"))
@@ -304,6 +304,14 @@ def model_performance_history(
     if result is None:
         raise HTTPException(404, "No hay una serie guardada para ese modelo y semilla.")
     return result
+
+
+@app.get("/performance-options")
+def model_performance_options(source: Literal["production"] = Query("production")):
+    try:
+        return performance_options(_connection, source)
+    except Exception:
+        raise HTTPException(503, "No se pudieron consultar las series históricas disponibles.") from None
 
 
 @app.get("/bess/{target_date}")

@@ -57,8 +57,10 @@ Con sesión válida:
 - `GET /health`: número total de filas y última actualización de `predictions`; no filtra por `source`.
 - `GET /days?source=production`: fechas y cobertura disponibles.
 - `GET /predictions/AAAA-MM-DD?source=production`: previsiones y precios reales del día.
-- `GET /leaderboard?source=production&days=30`: ranking de error absoluto medio.
-- `GET /bess/AAAA-MM-DD?source=production&model=gru&duration=2`: simulación diaria BESS.
+- `GET /leaderboard`: evaluaciones guardadas en `model_metrics`, sin filtros.
+- `GET /performance-options?source=production`: modelos y semillas con métricas diarias disponibles.
+- `GET /performance-history?model=gru&seed=44&days=30&source=production`: serie histórica guardada.
+- `GET /bess/AAAA-MM-DD`: plan y resultado BESS guardados para el día.
 
 En la web se accede a estas rutas con el prefijo `/api/dashboard`. No se publicaron interfaces Swagger, ReDoc ni el esquema OpenAPI de FastAPI.
 

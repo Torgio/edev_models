@@ -14,6 +14,8 @@ import {
 } from 'recharts';
 
 import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TeamAccess } from '@/components/team-access';
 import { AsistenteWidget } from '@/components/asistente-widget';
 import { PeakAccuracy } from '@/components/peak-accuracy';
@@ -24,6 +26,8 @@ import { StoredBattery } from '@/components/stored-battery';
 import { predictionUpdate } from '@/lib/prediction-update';
 import { initialDashboardDay, type AvailableDay } from '@/lib/initial-day';
 import { marketHourLabel } from '@/lib/market-hour';
+import { modelColor } from '@/lib/model-color';
+import { modelsToPlot } from '@/lib/visible-models';
 import type { BatteryPayload } from '@/lib/battery-types';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import {
@@ -81,6 +85,7 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
   const [date, setDate] = useState(new Date());
   const day = format(date, 'yyyy-MM-dd');
   const [availableDays, setAvailableDays] = useState<AvailableDay[]>([]);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const [visible, setVisible] = useState<ModelKey[]>([]);
   const [view, setView] = useState<'prediction' | 'evaluation' | 'battery' | 'assistant'>('prediction');
   const [referenceModel, setReferenceModel] = useState('');
@@ -91,7 +96,7 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
   const priceHours = current?.hours ?? [];
   const availableModels = [...new Set(priceHours.flatMap(point => Object.keys(point.predictions)))].sort();
   const MODELS = availableModels.map(key => MODEL_STYLES.find(model => model.key === key) ?? {
-    key, label: key, color: `hsl(${[...key].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 360, 0)} 45% 45%)`,
+    key, label: key, color: modelColor(key),
   });
   const selectedModel = availableModels.includes(referenceModel) ? referenceModel : availableModels.includes('ensemble') ? 'ensemble' : availableModels[0] ?? '';
   const currentMinimum = current ? forecastMinimum(priceHours, selectedModel) : null;
@@ -114,8 +119,11 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
   const dayCoverageLabel = hasDayCoverage
     ? `${isClosed ? 'día cerrado' : actualHours ? 'cierre parcial' : 'precio real pendiente'} · ${actualHours}/${expectedHours} h reales`
     : format(date, 'yyyy');
-  const plotted = visible.filter(key => availableModels.includes(key));
-  const visibleModels = plotted.length ? plotted : availableModels.slice(0, 3);
+  const visibleModels = modelsToPlot(availableModels, visible, selectedModel);
+  const availableDateKeys = new Set(availableDays.map(item => item.date));
+  const closedCalendarDays = availableDays.filter(item => item.closed).map(item => new Date(`${item.date}T12:00:00`));
+  const partialCalendarDays = availableDays.filter(item => !item.closed && item.actual_hours > 0).map(item => new Date(`${item.date}T12:00:00`));
+  const pendingCalendarDays = availableDays.filter(item => !item.actual_hours).map(item => new Date(`${item.date}T12:00:00`));
 
   useEffect(() => {
     if (!API_URL) return;
@@ -188,6 +196,7 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
   const dischargeLabels = batteryMarks.filter(mark => mark.action === 'discharge').map(mark => mark.label);
 
   function toggleModel(key: ModelKey) {
+    if (key === selectedModel) return;
     setVisible(visibleModels.includes(key)
       ? visibleModels.length === 1 ? visibleModels : visibleModels.filter(item => item !== key)
       : [...visibleModels, key]);
@@ -231,7 +240,33 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
           </div>
           <div className="date-stepper" aria-label="Navegación por fecha">
             <Button variant="ghost" size="icon-lg" aria-label="Día anterior" onClick={() => setDate((day) => addDays(day, -1))}><ChevronLeft /></Button>
-            <div><CalendarDays aria-hidden="true" /><span>{format(date, "EEEE, d 'de' MMMM", { locale: es })}</span><strong>{dayCoverageLabel}</strong></div>
+            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+              <PopoverTrigger className="date-picker-trigger" aria-label="Elegir fecha en el calendario">
+                <CalendarDays aria-hidden="true" />
+                <span>{format(date, "EEEE, d 'de' MMMM", { locale: es })}</span>
+                <strong>{dayCoverageLabel}</strong>
+              </PopoverTrigger>
+              <PopoverContent className="date-calendar-popover" align="center" sideOffset={8}>
+                <Calendar
+                  key={day}
+                  mode="single"
+                  selected={date}
+                  defaultMonth={date}
+                  locale={es}
+                  disabled={candidate => !availableDateKeys.has(format(candidate, 'yyyy-MM-dd'))}
+                  modifiers={{ closed: closedCalendarDays, partial: partialCalendarDays, pending: pendingCalendarDays }}
+                  modifiersClassNames={{ closed: 'calendar-day-closed', partial: 'calendar-day-partial', pending: 'calendar-day-pending' }}
+                  onSelect={candidate => {
+                    if (!candidate || !availableDateKeys.has(format(candidate, 'yyyy-MM-dd'))) return;
+                    setDate(candidate);
+                    setCalendarOpen(false);
+                  }}
+                />
+                <div className="calendar-status-legend" aria-label="Estado de las fechas">
+                  <span className="closed">Cerrado</span><span className="partial">Parcial</span><span className="pending">Previsto</span>
+                </div>
+              </PopoverContent>
+            </Popover>
             <Button variant="ghost" size="icon-lg" aria-label="Día siguiente" onClick={() => setDate((day) => addDays(day, 1))}><ChevronRight /></Button>
           </div>
         </div>
@@ -256,8 +291,9 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
                 <summary>Series visibles <strong>{visibleModels.length}</strong></summary>
                 <div className="model-toggles" aria-label="Modelos visibles">
                   {MODELS.map(model => (
-                    <button key={model.key} type="button" className={visibleModels.includes(model.key) ? 'selected' : ''}
-                      onClick={() => toggleModel(model.key)} aria-pressed={visibleModels.includes(model.key)}>
+                    <button key={model.key} type="button" className={`${visibleModels.includes(model.key) ? 'selected' : ''} ${model.key === selectedModel ? 'reference-series' : ''}`}
+                      onClick={() => toggleModel(model.key)} aria-pressed={visibleModels.includes(model.key)}
+                      disabled={model.key === selectedModel} title={model.key === selectedModel ? 'El modelo de referencia siempre permanece visible' : undefined}>
                       <span style={{ background: model.color }} />{model.label}
                     </button>
                   ))}

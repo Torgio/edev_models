@@ -41,6 +41,7 @@ class StoredResultsTests(unittest.TestCase):
         self.cursor.description = []
         self.cursor.fetchall.return_value = []
         self.assertEqual(self.client.get('/leaderboard').json()['models'], [])
+        self.assertEqual(self.client.get('/performance-options').json()['available'], [])
         self.assertEqual(self.client.get('/performance-history?model=missing&seed=1').status_code, 404)
         payload = self.client.get('/bess/2026-08-31').json()
         self.assertEqual(payload['plan'], [])
@@ -49,6 +50,18 @@ class StoredResultsTests(unittest.TestCase):
         for call in queries:
             self.assertEqual(call.args[1], (date(2026, 8, 31),))
             self.assertNotIn('predictions', call.args[0])
+
+    def test_performance_options_expose_real_combinations_in_priority_order(self):
+        self.cursor.description = [(name,) for name in ('model', 'seed', 'days', 'start_date', 'end_date')]
+        self.cursor.fetchall.return_value = [
+            ('boosting', 42, 30, date(2026, 8, 3), date(2026, 9, 1)),
+            ('gru', 7, 20, date(2026, 8, 13), date(2026, 9, 1)),
+        ]
+        response = self.client.get('/performance-options')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['available'][0]['model'], 'boosting')
+        self.assertEqual(response.json()['available'][1]['seed'], 7)
+        self.assertIn('ORDER BY count(*) DESC, model, seed', self.cursor.execute.call_args.args[0])
 
     def test_battery_reads_stored_values_without_recomputing(self):
         def execute(query, parameters):

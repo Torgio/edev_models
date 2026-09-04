@@ -28,7 +28,7 @@ class AuthTests(unittest.TestCase):
 
     def test_all_data_routes_require_session(self):
         with patch("api.dashboard_api._connection") as connect:
-            for path in ("/health", "/days", "/predictions/2026-08-31", "/leaderboard", "/bess/2026-08-31", "/peak-accuracy"):
+            for path in ("/health", "/days", "/predictions/2026-08-31", "/leaderboard", "/performance-options", "/bess/2026-08-31", "/peak-accuracy"):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 401, path)
                 self.assertIn("no-store", response.headers["cache-control"])

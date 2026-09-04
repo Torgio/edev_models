@@ -66,17 +66,27 @@ def performance_summary(rows, window_days, start, end):
     }
 
 
+def _performance_options(cursor, source):
+    cursor.execute("""
+        SELECT model, seed, count(*) AS days, min(fecha) AS start_date,
+               max(fecha) AS end_date
+        FROM model_metrics_daily
+        WHERE source = %s AND mae IS NOT NULL AND mae_naive IS NOT NULL
+        GROUP BY model, seed
+        ORDER BY count(*) DESC, model, seed
+    """, (source,))
+    return records(cursor)
+
+
+def performance_options(connection, source="production"):
+    with connection() as con, con.cursor() as cur:
+        available = _performance_options(cur, source)
+    return {"origin": "model_metrics_daily", "source": source, "available": available}
+
+
 def performance_history(connection, model, seed, days, source="production"):
     with connection() as con, con.cursor() as cur:
-        cur.execute("""
-            SELECT model, seed, count(*) AS days, min(fecha) AS start_date,
-                   max(fecha) AS end_date
-            FROM model_metrics_daily
-            WHERE source = %s AND mae IS NOT NULL AND mae_naive IS NOT NULL
-            GROUP BY model, seed
-            ORDER BY count(*) DESC, model, seed
-        """, (source,))
-        available = records(cur)
+        available = _performance_options(cur, source)
         if not any(row["model"] == model and row["seed"] == seed for row in available):
             return None
 
