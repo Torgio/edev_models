@@ -18,3 +18,25 @@ export function storedPlanSummary(rows: PlanValue[]) {
 export function batteryModels(plan: Array<{ model: string }>, results: Array<{ model: string }>) {
   return [...new Set([...plan.map(row => row.model), ...results.map(row => row.model)])].sort();
 }
+
+/**
+ * Open BESS on an operational plan, not on the first alphabetic evaluation.
+ * A deliberate user choice is preserved even when that model only has a result.
+ */
+export function preferredBatteryModel(
+  plan: Array<{ model: string }>,
+  results: Array<{ model: string }>,
+  chosenModel = '',
+) {
+  const models = batteryModels(plan, results);
+  if (chosenModel && models.includes(chosenModel)) return chosenModel;
+
+  const planModels = batteryModels(plan, []);
+  return (planModels.includes('ensemble11') ? 'ensemble11' : undefined)
+    ?? (planModels.includes('ensemble') ? 'ensemble' : undefined)
+    ?? planModels[0]
+    ?? (models.includes('ensemble11') ? 'ensemble11' : undefined)
+    ?? (models.includes('ensemble') ? 'ensemble' : undefined)
+    ?? models[0]
+    ?? '';
+}
