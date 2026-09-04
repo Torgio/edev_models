@@ -15,6 +15,7 @@ import {
 
 import { Button } from '@/components/ui/button';
 import { TeamAccess } from '@/components/team-access';
+import { AsistenteWidget } from '@/components/asistente-widget';
 import { PeakAccuracy } from '@/components/peak-accuracy';
 import { forecastMinimum } from '@/lib/forecast-minimum';
 import { dailyPrice } from '@/lib/daily-price';
@@ -22,6 +23,7 @@ import { StoredEvaluations } from '@/components/stored-evaluations';
 import { StoredBattery } from '@/components/stored-battery';
 import { predictionUpdate } from '@/lib/prediction-update';
 import { initialDashboardDay, type AvailableDay } from '@/lib/initial-day';
+import { marketHourLabel } from '@/lib/market-hour';
 import type { BatteryPayload } from '@/lib/battery-types';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import {
@@ -75,12 +77,12 @@ export default function Home() {
   return <TeamAccess>{(controls) => <Dashboard {...controls} />}</TeamAccess>;
 }
 
-function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => void; onLogout: () => Promise<void> }) {
+function Dashboard({ username, onSessionExpired, onLogout }: { username: string | null; onSessionExpired: () => void; onLogout: () => Promise<void> }) {
   const [date, setDate] = useState(new Date());
   const day = format(date, 'yyyy-MM-dd');
   const [availableDays, setAvailableDays] = useState<AvailableDay[]>([]);
   const [visible, setVisible] = useState<ModelKey[]>([]);
-  const [view, setView] = useState<'prediction' | 'evaluation' | 'battery'>('prediction');
+  const [view, setView] = useState<'prediction' | 'evaluation' | 'battery' | 'assistant'>('prediction');
   const [referenceModel, setReferenceModel] = useState('');
   const [dayState, setDayState] = useState<{ day: string; hours: PriceHour[]; updated: string | null } | null>(null);
   const [dataStatus, setDataStatus] = useState<'loading' | 'live' | 'error'>('loading');
@@ -98,7 +100,7 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
   const comparisonPredicted = averages?.pairedHours ? averages.pairedPrediction : averages?.predicted;
   const comparisonActual = averages?.pairedReal;
   const data: ChartRow[] = priceHours.map((point, index) => ({
-    datetime: point.datetime, hour: index, label: point.hour, actual: point.actual,
+    datetime: point.datetime, hour: index, label: marketHourLabel(index), actual: point.actual,
     consensusBand: consensusBand(Object.values(point.predictions).filter((x): x is number => typeof x === 'number')),
     predictions: point.predictions as Record<string, number>,
   }));
@@ -202,6 +204,7 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
           <button type="button" className={view === 'prediction' ? 'active' : ''} aria-pressed={view === 'prediction'} onClick={() => setView('prediction')}>Predicción</button>
           <button type="button" className={view === 'evaluation' ? 'active' : ''} aria-pressed={view === 'evaluation'} onClick={() => setView('evaluation')}>Evaluación</button>
           <button type="button" className={view === 'battery' ? 'active' : ''} aria-pressed={view === 'battery'} onClick={() => setView('battery')}>BESS</button>
+          <button type="button" className={view === 'assistant' ? 'active' : ''} aria-pressed={view === 'assistant'} onClick={() => setView('assistant')}>Asistente</button>
         </nav>
         <div className="system-status">
           <Clock3 size={16} aria-hidden="true" />
@@ -210,7 +213,7 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
       </header>
 
       <section className="content-wrap" id="prevision">
-        <div className="access-toolbar"><span>Acceso del equipo</span><Button variant="outline" size="sm" onClick={() => void onLogout()}>Cerrar sesión</Button></div>
+        <div className="access-toolbar"><span>{username ? `Sesión: ${username}` : 'Acceso del equipo'}</span><Button variant="outline" size="sm" onClick={() => void onLogout()}>Cerrar sesión</Button></div>
         {view === 'prediction' ? <>
         <div className="page-heading">
           <div>
@@ -274,7 +277,7 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={340}>
                 <LineChart data={data} margin={{ top: 28, right: 20, left: 4, bottom: 4 }}>
                   <CartesianGrid vertical={false} stroke="#e2e9e5" />
-                  <XAxis dataKey="hour" tickFormatter={index => data[Number(index)]?.label ?? ''} axisLine={false} tickLine={false} interval={2} tick={{ fill: '#66736f', fontSize: 12 }} />
+                  <XAxis dataKey="hour" tickFormatter={index => data[Number(index)]?.label ?? ''} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={20} tick={{ fill: '#66736f', fontSize: 12 }} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fill: '#66736f', fontSize: 12 }} domain={['dataMin - 8', 'dataMax + 8']} width={62} />
                   <Tooltip labelFormatter={index => data[Number(index)]?.label ?? ''} cursor={{ stroke: '#9aaba5', strokeDasharray: '3 4' }}
                     contentStyle={{ borderRadius: 14, border: '1px solid #d8e0dc', boxShadow: '0 12px 35px rgba(16,43,36,.12)' }}
@@ -313,7 +316,7 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
                 value={averages ? `${averages.pairedHours}/${averages.expectedHours}` : '—'}
                 detail="Horas con predicción y precio real" />
               <MetricCard icon={ArrowDownRight} eyebrow="Mínimo previsto"
-                value={minimum ? `${minimum.value.toFixed(1)} €/MWh` : '—'} detail={minimum ? minimum.hour : 'Sin datos'} tone="warm" />
+                value={minimum ? `${minimum.value.toFixed(1)} €/MWh` : '—'} detail={minimum ? data[minimum.index]?.label ?? 'Sin datos' : 'Sin datos'} tone="warm" />
               <MetricCard icon={ArrowUpRight} eyebrow="Máximo previsto"
                 value={max == null ? '—' : `${max.toFixed(1)} €/MWh`} detail={peak?.label ?? 'Sin datos'} tone="warm" />
             </div>
@@ -328,7 +331,7 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
           </summary>
           <div className="table-scroll">
             <Table>
-              <TableHeader><TableRow><TableHead>Hora</TableHead>{MODELS.map(model => <TableHead key={model.key}>{model.label}</TableHead>)}<TableHead>Real</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Hora mercado</TableHead>{MODELS.map(model => <TableHead key={model.key}>{model.label}</TableHead>)}<TableHead>Real</TableHead></TableRow></TableHeader>
               <TableBody>{data.map(row => (
                 <TableRow key={row.hour} className={row.hour === minimum?.index || row.hour === peak?.hour ? 'highlight-row' : ''}>
                   <TableCell className="hour-cell">{row.label}</TableCell>
@@ -340,7 +343,7 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
           </div>
         </details>
 
-        </> : view === 'evaluation' ? <div className="evaluation-view"><StoredEvaluations onSessionExpired={onSessionExpired} /></div> :
+        </> : view === 'evaluation' ? <div className="evaluation-view"><StoredEvaluations onSessionExpired={onSessionExpired} /></div> : view === 'battery' ?
           <div className="battery-view">
             <div className="view-datebar">
               <div><p className="kicker">Operación diaria</p><h2>Plan BESS guardado</h2><p>Consulta la decisión horaria y su resultado económico sin recalcular la estrategia.</p></div>
@@ -351,6 +354,14 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
               </div>
             </div>
             <StoredBattery day={day} data={currentBattery.data} status={currentBattery.status} />
+          </div> :
+          <div className="assistant-view">
+            <div className="assistant-heading">
+              <p className="kicker">Consulta guiada · herramientas del proyecto</p>
+              <h2>Pregunta a los datos de Pulso.</h2>
+              <p>Consulta precios, predicciones, batería y metodología. La respuesta identifica la fuente utilizada y diferencia las funciones verificadas de las consultas dinámicas.</p>
+            </div>
+            <AsistenteWidget onSessionExpired={onSessionExpired} />
           </div>}
       </section>
 

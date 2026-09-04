@@ -1,4 +1,5 @@
 const COOKIE = 'pulso_session';
+const SESSION_SECONDS = 8 * 60 * 60;
 const READ_PATH = /^(session|health|days|leaderboard|performance-history|peak-accuracy|(?:predictions|bess)\/\d{4}-\d{2}-\d{2})$/;
 
 function reply(value: unknown, status = 200) {
@@ -9,6 +10,16 @@ function sessionCookie(request: Request) {
   const entry = request.headers.get('cookie')?.split(';').map((item) => item.trim()).find((item) => item.startsWith(`${COOKIE}=`));
   const value = entry?.slice(COOKIE.length + 1);
   return value && /^[A-Za-z0-9_.-]{1,1024}$/.test(value) ? `${COOKIE}=${value}` : '';
+}
+
+function browserSessionCookie(raw: string | null, path: string, secure: boolean) {
+  if (!raw?.startsWith(`${COOKIE}=`)) return '';
+  if (path === 'logout') {
+    return `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
+  }
+  const encoded = raw.slice(COOKIE.length + 1).split(';', 1)[0].replace(/^"|"$/g, '');
+  if (!/^[A-Za-z0-9_.-]{1,1024}$/.test(encoded)) return '';
+  return `${COOKIE}=${encoded}; Path=/; Max-Age=${SESSION_SECONDS}; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}`;
 }
 
 /** Proxy cerrado: solo rutas conocidas, nunca una URL proporcionada por el visitante. */
@@ -47,7 +58,11 @@ export async function proxyDashboardRequest(request: Request, path: string, opti
       ? { authenticated: true, auth_required: false }
       : await sessionResponse.json();
     if (session.auth_required !== true && !local) return reply({ detail: 'El acceso seguro aún no está configurado.' }, 503);
-    if (path === 'session') return reply({ authenticated: session.authenticated === true, auth_required: session.auth_required === true });
+    if (path === 'session') return reply({
+      authenticated: session.authenticated === true,
+      auth_required: session.auth_required === true,
+      username: typeof session.username === 'string' ? session.username : null,
+    });
     if (isRead && session.authenticated !== true) return reply({ detail: 'Inicia sesión para consultar los datos.' }, 401);
 
     let body: string | undefined;
@@ -78,8 +93,10 @@ export async function proxyDashboardRequest(request: Request, path: string, opti
     if (result.status >= 500) return reply({ detail: 'La API no está disponible. Inténtalo de nuevo.' }, 502);
     if (!result.headers.get('content-type')?.includes('application/json')) return reply({ detail: 'Respuesta no válida de la API.' }, 502);
     const response = reply(await result.json(), result.status);
-    const setCookie = result.headers.get('set-cookie');
-    if (isWrite && setCookie?.startsWith(`${COOKIE}=`)) response.headers.set('Set-Cookie', setCookie);
+    const setCookie = isWrite
+      ? browserSessionCookie(result.headers.get('set-cookie'), path, requestUrl.protocol === 'https:')
+      : '';
+    if (setCookie) response.headers.set('Set-Cookie', setCookie);
     const retry = result.headers.get('retry-after');
     if (retry && /^\d+$/.test(retry)) response.headers.set('Retry-After', retry);
     return response;
