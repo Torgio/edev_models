@@ -44,9 +44,9 @@ export function StoredBattery({ day, data, status }: { day: string; data: Batter
   const dischargeHours = plan.filter(row => row.descarga_mw > 0).map(row => hour.format(new Date(row.datetime)));
   const updated = plan[0]?.updated_at ?? result?.calculado_en;
   const comparison = result ? [
-    { label: 'Modelo', value: result.ingreso_eur, color: '#43a99f' },
-    { label: 'Oráculo evaluador', value: result.ingreso_oraculo_eur, color: '#e58b45' },
-    { label: 'Naive', value: result.ingreso_naive_eur, color: '#82908b' },
+    { label: 'Modelo · bruto', value: result.ingreso_eur, color: '#43a99f' },
+    { label: 'Previsión perfecta', value: result.ingreso_oraculo_eur, color: '#e58b45' },
+    { label: 'Naive · bruto', value: result.ingreso_naive_eur, color: '#82908b' },
   ] : [];
   const capacity = assumptions && numeric(assumptions.capacidad_mwh) ? assumptions.capacidad_mwh : summary.maxSoc;
 
@@ -68,12 +68,12 @@ export function StoredBattery({ day, data, status }: { day: string; data: Batter
         <p>{dischargeHours.length ? `Descargar ${dischargeHours.join(', ')}` : 'Sin horas de descarga guardadas'}</p>
         <small>Modelo {model} · {summary.observations} tramos · estrategia y supuestos almacenados</small>
       </div>
-      <div className="decision-value"><span>Ingreso previsto</span><strong>{signed(summary.income)}</strong><small>{summary.income == null ? 'Plan económico incompleto' : 'Suma de los importes horarios guardados'}</small></div>
+      <div className="decision-value"><span>Ingreso bruto previsto</span><strong>{signed(summary.income)}</strong><small>{summary.income == null ? 'Plan económico incompleto' : 'Suma de los importes horarios guardados'}</small></div>
     </article> : <div className="battery-decision-empty">No hay un plan horario guardado para esta fecha y modelo.</div>}
 
     <div className="battery-kpis">
-      <article><TrendingUp /><span>Ingreso realizado</span><strong>{signed(result?.ingreso_eur ?? null)}</strong><small>{result ? 'Liquidado con precio real' : 'Pendiente de precio real'}</small></article>
-      <article><Zap /><span>Captura sobre el oráculo</span><strong>{metric(result?.captura_pct, ' %')}</strong><small>Oráculo definido por el evaluador</small></article>
+      <article><TrendingUp /><span>Ingreso bruto realizado</span><strong>{signed(result?.ingreso_eur ?? null)}</strong><small>{result ? 'Liquidado con precio real' : 'Pendiente de precio real'}</small></article>
+      <article><Zap /><span>Captura sobre previsión perfecta</span><strong>{metric(result?.captura_pct, ' %')}</strong><small>Oráculo definido por el evaluador</small></article>
       <article><Database /><span>Estado de carga máximo</span><strong>{metric(summary.maxSoc, ' MWh')}</strong><small>{updated ? `Actualizado ${timestamp.format(new Date(updated))}` : 'Sin actualización'}</small></article>
     </div>
 
@@ -110,21 +110,23 @@ export function StoredBattery({ day, data, status }: { day: string; data: Batter
         {summary.income != null ? <div className="economic-waterfall">
           <div className="flow-step cost"><span>Coste de carga</span><strong>{signed(summary.chargeCost)}</strong></div><i>+</i>
           <div className="flow-step sale"><span>Venta de energía</span><strong>{signed(summary.dischargeRevenue)}</strong></div><i>=</i>
-          <div className="flow-step net"><span>Ingreso previsto</span><strong>{signed(summary.income)}</strong></div>
+          <div className="flow-step net"><span>Ingreso bruto previsto</span><strong>{signed(summary.income)}</strong></div>
         </div> : <div className="battery-chart-empty compact">Sin ingreso completo guardado para el plan.</div>}
         {result ? <>
           <div className="result-comparison">{comparison.map(item => <div key={item.label}><i style={{ background: item.color }} /><span>{item.label}</span><strong>{signed(item.value)}</strong></div>)}</div>
           <dl className="battery-result-list">
-            <div><dt>Captura sobre el oráculo</dt><dd>{metric(result.captura_pct, ' %')}</dd></div>
+            <div><dt>Captura sobre previsión perfecta</dt><dd>{metric(result.captura_pct, ' %')}</dd></div>
             <div><dt>Ciclos registrados</dt><dd>{metric(result.ciclos)}</dd></div>
           </dl>
-          <p>El oráculo es el definido por el evaluador y sus supuestos; no garantiza el máximo técnicamente operable.</p>
+          <p>La previsión perfecta (oráculo del evaluador) usa sus supuestos guardados; no garantiza el máximo técnicamente operable.</p>
         </> : <p className="pending-result">El plan es futuro: la comparación realizada aparecerá cuando exista precio real.</p>}
       </aside>
     </div>
 
     {assumptions && <div className="assumption-chips" aria-label="Supuestos registrados">{Object.entries(assumptions).filter(([key]) => key !== 'regla').map(([key, value]) =>
       <span key={key}><small>{label(key)}</small><strong>{assumptionValue(key, value)}</strong></span>)}</div>}
+
+    <p className="battery-scope-note"><strong>Alcance económico:</strong> arbitraje bruto en mercado diario. No incluye degradación, peajes, O&amp;M, mercado intradiario, servicios de balance ni mecanismos de capacidad.</p>
 
     <details className="battery-audit"><summary>Ver detalle horario y definición guardada</summary>
       {assumptions && <p><strong>Regla:</strong> {String(assumptions.regla ?? 'Sin registrar')}</p>}
