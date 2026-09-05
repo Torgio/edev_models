@@ -1,0 +1,5 @@
+modelo,MAE_val,captura_val_%,supera_MAE,supera_dinero
+"XGBoost (núcleo, repr.)",13.27253986206196,94.46503534137501,True,True
+"LightGBM (núcleo, repr.)",13.15576023053472,94.48633466031637,True,True
+XGBoost (horario),12.99,94.96,True,True
+LightGBM (horario),13.25,94.54,True,True
