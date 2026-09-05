@@ -33,6 +33,75 @@ type RespuestaAsistente = {
   imagenes_base64: string[];
 };
 
+function escaparHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Markdown minimo, sin dependencias -- el asistente devuelve texto con tablas, negritas y
+// encabezados de markdown (ver modelos/asistente/chat.py). Se vio en producción que sin esto
+// las tablas salían como pipes en crudo (nota 47/49 en notas_memoria_tfm.md): esto es el mismo
+// renderizador que ya se aplicó en production/api/static/index.html, portado a TSX. No es un
+// parser de markdown completo a propósito: es justo lo que el asistente genera, ni más ni menos.
+function renderizarMarkdown(texto: string): string {
+  const lineas = texto.split("\n");
+  let html = "";
+  let parrafo: string[] = [];
+  let filaTabla: string[] = [];
+
+  const negrita = (s: string) => s.replace(/\*\*(.+?)\*\*/g, "<strong class=\"text-foreground\">$1</strong>");
+
+  const cerrarParrafo = () => {
+    if (!parrafo.length) return;
+    // La imagen ya se entrega aparte (imagenes_base64) -- si el modelo igual escribe una
+    // referencia markdown de imagen, no apunta a nada real, se descarta.
+    const sinImagenes = parrafo.join(" ").replace(/!\[[^\]]*\]\([^)]*\)/g, "").trim();
+    parrafo = [];
+    if (!sinImagenes) return;
+    html += `<p class="mb-2 last:mb-0">${negrita(escaparHtml(sinImagenes))}</p>`;
+  };
+  const cerrarTabla = () => {
+    if (!filaTabla.length) return;
+    const sepRe = /^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$/;
+    const filas = filaTabla.filter((f) => !sepRe.test(f));
+    const celdas = (l: string) => l.replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+    const [cab, ...resto] = filas.map(celdas);
+    filaTabla = [];
+    if (!cab) return;
+    html +=
+      '<div class="overflow-x-auto my-2"><table class="w-full text-sm border-collapse">' +
+      '<thead><tr>' +
+      cab.map((c) => `<th class="text-left px-2 py-1.5 border-b border-border text-muted-foreground font-semibold">${negrita(escaparHtml(c))}</th>`).join("") +
+      "</tr></thead><tbody>" +
+      resto.map((f) => "<tr>" + f.map((c) => `<td class="px-2 py-1.5 border-b border-border">${negrita(escaparHtml(c))}</td>`).join("") + "</tr>").join("") +
+      "</tbody></table></div>";
+  };
+
+  for (const linea of lineas) {
+    const l = linea.trim();
+    if (l.startsWith("|")) { cerrarParrafo(); filaTabla.push(l); continue; }
+    cerrarTabla();
+    if (!l) { cerrarParrafo(); continue; }
+    const encabezado = l.match(/^(#{1,3})\s+(.*)/);
+    if (encabezado) {
+      cerrarParrafo();
+      const nivel = encabezado[1].length;
+      const tam = nivel === 1 ? "text-base" : nivel === 2 ? "text-[15px]" : "text-sm";
+      html += `<h${nivel} class="${tam} font-semibold text-foreground mt-3 mb-1.5 first:mt-0">${negrita(escaparHtml(encabezado[2]))}</h${nivel}>`;
+      continue;
+    }
+    if (l.startsWith(">")) {
+      cerrarParrafo();
+      const txt = l.replace(/^>\s?/, "");
+      html += `<blockquote class="border-l-2 border-border pl-3 my-2 text-muted-foreground text-sm">${negrita(escaparHtml(txt))}</blockquote>`;
+      continue;
+    }
+    parrafo.push(l);
+  }
+  cerrarParrafo();
+  cerrarTabla();
+  return html || escaparHtml(texto);
+}
+
 const SUGERENCIAS = [
   "¿Cuántas horas de precio negativo ha habido este año?",
   "Los precios de hoy por hora, en tabla",
@@ -162,10 +231,13 @@ export function AsistenteWidget() {
 
       {resultado && (
         <div className="space-y-3">
-          <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed
-                          rounded-lg bg-white border border-border px-4 py-3">
-            {resultado.respuesta}
-          </div>
+          <div
+            className="text-sm text-foreground leading-relaxed rounded-lg bg-white border border-border px-4 py-3"
+            // El texto se escapa a mano dentro de renderizarMarkdown() antes de convertirlo a
+            // HTML -- nunca se inyecta el texto del asistente sin pasar por escaparHtml() primero.
+            dangerouslySetInnerHTML={{ __html: renderizarMarkdown(resultado.respuesta) }}
+          />
+
           {resultado.imagenes_base64.map((b64, i) => (
             // eslint-disable-next-line @next/next/no-img-element -- base64 generada en tiempo
             // real por el asistente, no un asset estatico que Next deba optimizar.

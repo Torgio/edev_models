@@ -43,10 +43,18 @@ def construir_refs(inicio=None, fin=None, salida_dir=None):
                     "tensor_filename": f"pseudo_ecmwf_tensor_{anio}-{mes:02d}.npy",
                     "tensor_index": dia * 8 + p,
                 })
-    with open(OUTPUT_REFS, "w") as fh:
-        json.dump(refs, fh)
-    print(f"{OUTPUT_REFS}: {len(refs)} filas")
     return refs
+
+
+def guardar_refs(refs, path=None):
+    """Escritura EXPLICITA a disco -- separada de construir_refs() a proposito.
+    Antes, construir_refs() escribia sola a un nombre fijo (OUTPUT_REFS) en
+    cada llamada, así que llamarla varias veces con rangos distintos (para
+    combinar tramos) sobreescribia el archivo cada vez, silenciosamente."""
+    path = path or OUTPUT_REFS
+    with open(path, "w") as fh:
+        json.dump(refs, fh)
+    print(f"{path}: {len(refs)} filas")
 
 
 def chequeo_sanidad(refs, salida_dir=None, n_muestras=5):
@@ -75,4 +83,5 @@ def chequeo_sanidad(refs, salida_dir=None, n_muestras=5):
 
 if __name__ == "__main__":
     refs = construir_refs()
+    guardar_refs(refs)
     chequeo_sanidad(refs)
