@@ -93,6 +93,13 @@ def main() -> int:
             log.error("hay entregables incompletos o con formato incorrecto: NO abras el PR todavia")
             return 1
         log.info("los %d entregables cumplen el formato de Prod.txt", len(repaso))
+
+        # `predict.py` NO bloquea el PR: segun el capitulo 8 se escribe despues del
+        # leaderboard y solo para los modelos que pasen el corte. Se avisa para que
+        # nadie descubra que falta el lunes de la semana de produccion.
+        sin_predict = repaso.index[~repaso["predict.py"]].tolist()
+        if sin_predict:
+            log.info("sin predict.py (normal hasta que salga el leaderboard): %s", sin_predict)
     except Exception:
         log.exception("el pipeline ha fallado")
         return 1

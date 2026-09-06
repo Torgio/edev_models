@@ -126,6 +126,12 @@ MAX_HORAS_A_RELLENAR = 48
 AUTOR = os.environ.get("TFM_AUTOR", "Samuel")
 SEMILLA = 42
 
+# `version` es parte de la clave primaria de ml_predicciones y de ml_modelos, asi
+# que no es decorativa: sin ella el orquestador no puede distinguir dos ejecuciones
+# del mismo modelo_id. Se sube a mano cuando se reentrena con otros datos o se
+# cambia la seleccion de features; NO al arreglar un bug de formato del CSV.
+VERSION = "v1"
+
 # modelo_id -> familia, tal y como apareceran en el leaderboard de los 12
 MODELOS = {
     "sarima_horario": "estadistico",
@@ -178,8 +184,9 @@ DUDOSAS_EXPLICITAS = ("pbf_publicado_D", "pbf_completo_D", "meteo_es_forecast")
 # ---------------------------------------------------------------------------
 # Cuatro modos, elegibles con --seleccion en cualquier modelo:
 #
-#   "ambos"    Spearman y despues SFS sobre los supervivientes. Por defecto.
-#   "spearman" solo el filtro de correlacion. Barato (segundos) y deja ~119 features.
+#   "spearman" solo el filtro de correlacion. Barato (segundos) y deja ~119
+#              features. ES EL MODO POR DEFECTO Y NO SE CAMBIA (ver abajo).
+#   "ambos"    Spearman y despues SFS sobre los supervivientes.
 #   "sfs"      solo seleccion secuencial, sobre las 128 features de la matriz. Es el
 #              modo MAS CARO con diferencia: sin el pre-filtro de Spearman, el SFS
 #              arranca con 128 candidatos en vez de 119, y ninguno se ha descartado
@@ -197,7 +204,21 @@ MODOS_SELECCION = ("ambos", "spearman", "sfs", "ninguna")
 # de "ninguna" (128 features con familias casi identicas), que es donde ElasticNet
 # daba ConvergenceWarning.
 # Los demas modos se piden con --seleccion y se comparan contra esta referencia.
+#
+# NO SE CAMBIA. No es una preferencia: es la identidad de los cuatro entregables.
+# `entrega.id_con_modo` da el id base (`ridge_horario`) al modo por defecto y le
+# pone sufijo a los demas (`ridge_horario_ambos`). Si alguien mueve esta constante,
+# los cuatro modelos del leaderboard pasan a ser otros cuatro modelos con el mismo
+# nombre, y las metricas ya publicadas dejan de corresponder al artefacto que hay
+# en el servidor -- sin que nada falle ni avise. La comprobacion de abajo lo impide.
 MODO_SELECCION = "spearman"
+
+if MODO_SELECCION != "spearman":                                # pragma: no cover
+    raise RuntimeError(
+        "MODO_SELECCION debe ser 'spearman': es el modo con el que se entrenaron y "
+        "midieron los cuatro entregables. Para probar otro modo usa --seleccion, que "
+        "escribe en un modelo_id con sufijo y no pisa el del leaderboard."
+    )
 # Protegidas: la relacion precio/hora del dia es en U, no monotona, y Spearman le da
 # un rho casi cero. Sin esta proteccion el selector tiraria la feature mas importante.
 FEATURES_PROTEGIDAS = ("hora", "hora_sin", "hora_cos",
