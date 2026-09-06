@@ -232,6 +232,11 @@ def ejecutar(forzar: bool = False, estrategia: str | None = None,
         features=[],                      # SARIMA sin exogenas: solo usa el historico del precio
         librerias=entrega.librerias_de("statsmodels", "pmdarima"),
         entrenado_desde=entrega.fecha_inicio(datos["y_train"]),
+        modo_seleccion=datos["modo"],
+        interfaz="statsmodels",
+        notas=(f"SARIMA{order}{seasonal_order}, estrategia={estrategia}. Sin exogenas: "
+               "en produccion NO se le pasan features, se le extiende el estado con el "
+               "historico de precio hasta D. Su predict.py necesita ctx.engine."),
     )
     return pred
 

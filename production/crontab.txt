@@ -41,6 +41,38 @@
 30 11 * * * cd /home/ubuntu/scripts && /home/ubuntu/tfm-env/bin/python -u scripts/guardar_predicciones.py --produccion --equipo --desde $(date -d tomorrow +\%Y-\%m-\%d) --hasta $(date -d tomorrow +\%Y-\%m-\%d) >> /home/ubuntu/scripts/logs/cron_prediccion.log 2>&1
 
 
+# ── AÑADIR · 13:30 · medir la prediccion contra el precio que salio ─────────────────
+#
+# Las tres lineas de la mañana escriben predicciones. Ninguna las evalua, asi que el unico
+# numero que teniamos para defender el trabajo seguia siendo el MAE del tramo de test --
+# una foto de enero a julio sobre dias que eligio el reparto. Esto cierra el bucle:
+#
+#     11:15  construir_matriz_produccion    reconstruye la matriz
+#     11:30  guardar_predicciones --equipo  la prediccion de D+1
+#     11:45  cron_diario --solo-curva       la curva de 20 años
+#     ------------------------------------------------------ 13:00 OMIE publica el PMD
+#     13:30  evaluar_diario                 lo predicho contra lo que salio
+#
+# A las 13:30 y no antes porque el PMD del dia objetivo se publica a las 13:00. Media hora
+# de margen, igual que la que separa la prevision de REE del cierre de la casacion.
+#
+# ESCRIBE EN DOS GRANULARIDADES, Y ES A PROPOSITO:
+#   bess_result     una fila por (dia, modelo). El dinero es un hecho de un dia concreto.
+#                   Guardarlo por dia deja reconstruir despues cualquier ventana y ver el
+#                   dia malo que una media de 30 esconde.
+#   model_metrics   una fila por modelo con `periodo='prod_30d'`. Ventana movil que se
+#                   RECALCULA entera en cada pasada, no se acumula.
+#
+# La persistencia entra en la tabla como un modelo mas. Sin esa fila no se puede contestar
+# si el modelo aporta dinero o lo aporta la horquilla del mercado -- y en agosto de 2026
+# resulta que no se distinguen.
+#
+# Idempotente: las dos tablas van por upsert, asi que relanzarlo no duplica nada. Los dias
+# de 23 o 25 horas se saltan: en EUR/dia no son comparables con uno de 24.
+#
+30 13 * * * cd /home/ubuntu/scripts && /home/ubuntu/tfm-env/bin/python -u scripts/evaluar_diario.py >> /home/ubuntu/scripts/logs/cron_evaluar.log 2>&1
+
+
 # ── REVISAR · el cupo de Open-Meteo esta en conflicto ───────────────────────────────
 #
 # Los dos comparten el mismo cupo diario de 10.000 unidades:

@@ -6,10 +6,16 @@ Encadena lo previo a cualquier entrenamiento:
 
 La seleccion tiene cuatro modos, elegibles con `--seleccion` en cualquier modelo:
 
-    ambos     Spearman y despues SFS sobre los supervivientes  (por defecto)
-    spearman  solo el filtro de correlacion
+    spearman  solo el filtro de correlacion            <- POR DEFECTO, NO SE CAMBIA
+    ambos     Spearman y despues SFS sobre los supervivientes
     sfs       solo seleccion secuencial, sobre las 128 features de la matriz
     ninguna   sin seleccion, las 128 features
+
+El modo por defecto es "spearman" (`config.MODO_SELECCION`) y es el que define los
+cuatro modelos que van al leaderboard: `sarima_horario`, `sarimax_horario`,
+`ridge_horario` y `elasticnet_horario` SON los de spearman. Los demas modos existen
+para comparar en la memoria y salen con sufijo (`ridge_horario_ambos`), nunca
+suplantan al id base.
 
 Cada modo cachea aparte (`datos_<modo>.pkl`, `sfs_solo.pkl` vs
 `sfs_tras_spearman.pkl`), asi que se pueden lanzar los cuatro seguidos sin que se
@@ -125,10 +131,18 @@ def preparar_datos(modo: str | None = None, forzar: bool = False) -> dict:
 
 
 def preparar_escalados(modo: str | None = None, forzar: bool = False):
-    """Lo mismo, mas las X escaladas que necesitan Ridge y ElasticNet.
+    """Lo mismo, mas las X escaladas que Ridge y ElasticNet usan para TUNEAR.
 
-    El scaler se ajusta solo con train. Devuelve (datos, X_train_esc, X_val_esc).
+    El scaler se ajusta solo con train. Devuelve (datos, X_train_esc, X_val_esc,
+    scaler).
+
+    El scaler se devuelve y ya no se descarta: antes esta funcion hacia
+    `_, X_train_scaled, X_val_scaled = data.escalar(...)` y el objeto se perdia,
+    asi que el `modelo.joblib` del entregable salia sin el. Aun asi, el modelo
+    final NO se guarda con este scaler suelto sino con `data.pipeline_escalado`,
+    que lo lleva dentro; este se devuelve para diagnostico y para poder comprobar
+    que las dos rutas coinciden.
     """
     datos = preparar_datos(modo, forzar)
-    _, X_train_scaled, X_val_scaled = data.escalar(datos["X_train"], datos["X_val"])
-    return datos, X_train_scaled, X_val_scaled
+    scaler, X_train_scaled, X_val_scaled = data.escalar(datos["X_train"], datos["X_val"])
+    return datos, X_train_scaled, X_val_scaled, scaler

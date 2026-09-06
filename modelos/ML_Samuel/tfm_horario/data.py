@@ -351,13 +351,36 @@ def preparar_target(y: pd.Series) -> pd.Series:
     return y
 
 
+def pipeline_escalado(estimador):
+    """Envuelve un estimador lineal con su propio StandardScaler.
+
+    ES LO QUE HACE QUE EL ARTEFACTO SEA SERVIBLE. Un `Ridge` guardado a pelo
+    espera features ya tipificadas, pero en produccion `ctx.features` llega CRUDA
+    de `construir_matriz_produccion.py`. Cargar ese joblib y llamar a `.predict()`
+    no da error: da numeros plausibles y equivocados, porque el coeficiente de
+    `ssrd_meteo` esta calibrado para julios tipificados y recibe julios.
+
+    Metiendo el scaler dentro del pipeline el artefacto es autocontenido: acepta
+    la matriz cruda, la tipifica con la media y la sigma de train, y predice. Y
+    ya no hay forma de ajustarlo sobre validation por descuido, porque `fit` solo
+    ve train.
+
+    El coste de reajustar el scaler por modelo es de milisegundos frente a los
+    minutos del descenso por coordenadas de ElasticNet, asi que compartirlo ya no
+    compensa el riesgo.
+    """
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    return Pipeline([("escalado", StandardScaler()), ("modelo", estimador)])
+
+
 def escalar(X_train: pd.DataFrame, *otros: pd.DataFrame):
     """StandardScaler ajustado SOLO con train y aplicado al resto de splits.
 
-    Vive aqui y no en `models/` porque es tratamiento de datos y lo comparten
-    Ridge y ElasticNet: si cada modelo ajustase su propio scaler harian el mismo
-    trabajo dos veces, y bastaria un despiste para que uno de los dos lo ajustase
-    sobre validation (fuga).
+    Se usa para la fase de TUNEO, donde se escala una vez y se reaprovecha en las
+    decenas de ajustes de la rejilla. El modelo FINAL no se guarda asi: se guarda
+    con `pipeline_escalado`, que lleva su propio scaler dentro (ver arriba).
 
     Devuelve (scaler, X_train_escalado, *resto_escalados).
     """
