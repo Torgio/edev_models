@@ -1716,3 +1716,38 @@ Vale la pena que quede dicho en el informe: dos personas, dos métodos distintos
 fechas contra la fuente vs. ablación del modelo), misma conclusión — es el tipo de verificación
 cruzada que reduce el riesgo de que una fuga real pase desapercibida por quedarse en un solo
 chequeo.
+
+## 51. El LightGBM propio, unificado en `06_modelos_finales.ipynb` y medido contra las 8 familias del equipo
+
+Para reducir el número de ficheros del anexo (decisión del equipo: el anexo no cuenta para las 20
+páginas, pero sí cuenta cuántos ficheros distintos hay que adjuntar), se integró todo nuestro
+trabajo de LightGBM (afinamiento con Optuna, entrenamiento sobre `nucleo`, calibración conforme e
+exportación nativa — antes 7 scripts sueltos) como secciones nuevas (6 a 6.5) dentro del notebook
+compartido, en vez de dejarlo en un notebook aparte.
+
+Al escribir las celdas aparecieron dos bugs reales, encontrados antes de que el equipo los viera
+ejecutados:
+
+- La celda de calibración conforme reutilizaba por error el `val` de la matriz `nucleo` (122
+  columnas) para un modelo de incertidumbre entrenado sobre otra matriz completamente distinta
+  (156 columnas propias, `construir_dataset_horario`) — hubiera fallado con `KeyError` al
+  ejecutarse. Se corrigió reconstruyendo el dataset correcto en la propia celda.
+- La celda de entrenamiento sobre `nucleo` excluía solo `["fecha_objetivo", "hora", "split"]` como
+  columnas de control, cuando el script original (`modelo_lightgbm_nucleo.py`) también excluye
+  `fecha_pred`, `ts`, cinco banderas de trazabilidad y siete columnas de batería de arranque
+  tardío. Con la lista incompleta, LightGBM recibía una columna de fecha como feature y fallaba
+  con `DTypePromotionError` al construir el dataset interno.
+
+Con las dos correcciones, el notebook se ejecutó de principio a fin (`jupyter nbconvert
+--execute`, sin GPU dedicada más allá de la ya usada por las 8 familias, que no hizo falta
+reentrenar porque los resultados ya estaban en caché). La pregunta que motivó todo esto —¿un
+LightGBM más especializado demuestra que LightGBM es el mejor modelo?— tiene una respuesta
+honesta, ni "sí" ni "no" simple: sobre los mismos ~212 días de test que usan las 8 familias del
+notebook, nuestro modelo (entrenado con los hiperparámetros de 300 pruebas de Optuna, sobre la
+matriz `nucleo` completa, sin resumir a tensores) saca **MAE 12,98 €/MWh**, cuarto puesto
+individual — por detrás de `gru` (12,86) y `seq2seq` (12,91), por delante de `conv1d_lstm`,
+`simplernn`, y claramente por delante del `boosting` genérico que ya vivía en el notebook (13,85,
+24 modelos sin afinar) y de `denso`/`seq2seq_absoluto`/`lstm`. Pierde, como todos los individuales,
+contra el ENSEMBLE de las 8 familias (12,13). Conclusión para la memoria: afinar y usar la matriz
+completa sí mejora sustancialmente sobre un LightGBM genérico, pero no alcanza para superar al
+mejor individual del equipo ni al ensemble — coherente con lo que ya se sabía desde la nota 41.
