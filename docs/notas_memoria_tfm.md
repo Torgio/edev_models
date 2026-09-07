@@ -1694,3 +1694,25 @@ markdown (nota 47) se aplicó en `production/api/static/index.html`, pero se me 
 problema: las tablas salían con los `|` literales. Corregido con el mismo parser, adaptado a TSX
 (mismo enfoque: sin dependencias nuevas, usando `dangerouslySetInnerHTML` sobre HTML que la propia
 función ya escapa antes de insertar, nunca el texto del asistente sin pasar por `escaparHtml()`).
+
+## 50. La fuga de `es_esios_D` queda descartada por segunda vez, con un método distinto e independiente
+
+El mismo compañero (Powan) que planteó la sospecha original siguió investigando por su cuenta
+(`modelos/F12_pred_vs_real_3dias.ipynb`), sin depender de la verificación de la nota 49. Su método
+es distinto y complementario: en vez de comparar fechas contra la tabla fuente, entrenó el mismo
+XGBoost **sin** las 9 columnas de precio del día D (`es_esios_D`, `pt_entsoe_D` y las de los
+mercados vecinos) y midió cuánto empeora.
+
+Resultado, coherente con "información legítima mas no fuga": el MAE empeora **2,36-2,94 €/MWh**
+al quitarlas (de ~13,3 a ~15,6-16,6) — una degradación real pero moderada, no el colapso que se
+vería si esas columnas describieran el precio que se está prediciendo. Dos datos más lo confirman:
+al quitarlas, el modelo pasa a apoyarse en `es_esios_Dm1` y `es_esios_Dm6` (lags aún más atrás,
+inequívocamente legítimos) — el comportamiento normal de un modelo perdiendo su mejor predictor y
+recurriendo al siguiente, no de un modelo "roto" al perder un atajo. Y la correlación directa de
+`es_esios_D` con el precio objetivo es 0,88-0,92 según el split — alta porque el precio de ayer
+predice bien el de mañana, pero lejos del ~0,99+ que se vería si fuera literalmente el mismo dato.
+
+Vale la pena que quede dicho en el informe: dos personas, dos métodos distintos (auditoría de
+fechas contra la fuente vs. ablación del modelo), misma conclusión — es el tipo de verificación
+cruzada que reduce el riesgo de que una fuga real pase desapercibida por quedarse en un solo
+chequeo.
