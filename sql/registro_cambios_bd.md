@@ -17,6 +17,7 @@ lo resuelve, pero el cambio de código vive en su propio commit.
 | 1 | 2026-08-12 | `esios_marketdata` | `DROP COLUMN` | Eliminada `precio_co2_despacho` (100% NULL, huérfana desde jun-2026) | ✅ Hecho |
 | 2 | 2026-08-12 | `esios_capacity_available` | `DROP` + `ADD COLUMN GENERATED` | `total_mw` convertida en columna calculada (suma de las 7 tecnologías), backfill automático del histórico | ✅ Hecho |
 | 3 | 2026-08-31 | (nuevo rol) `asistente_solo_lectura` | `CREATE ROLE` + `GRANT` | Rol de solo lectura, limitado a 5 tablas, para que el asistente LLM pueda ejecutar SQL generado por el propio modelo sin poder escribir ni ver el resto de la base | ✅ Hecho |
+| 4 | 2026-09-08 | `asistente_solo_lectura` | `GRANT` | Añadida `entsoe_gen_data` (6ª tabla) al rol: generación real horaria por tecnología, para que el asistente deje de aproximar "horas solares" por franja de reloj | ✅ Hecho |
 
 ## Detalle
 
@@ -128,6 +129,42 @@ lo resuelve, pero el cambio de código vive en su propio commit.
   lectura acotado a estas 5 tablas / SQL de solo lectura sin restricción de tablas).
 - **Reversible:** sí — `DROP ROLE asistente_solo_lectura;` (falla solo si el rol es dueño de
   algún objeto, lo cual no es el caso: solo tiene `GRANT`s recibidos, no objetos propios).
+
+### 4. `asistente_solo_lectura` gana una 6ª tabla — `entsoe_gen_data`
+
+- **Fecha:** 2026-09-08
+- **Motivo:** una pregunta real ("precio promedio en horas de generación solar") reveló que el
+  asistente aproximaba "horas solares" con una franja fija de reloj (8-19h) porque creía que no
+  había ninguna serie de generación real horaria en su alcance — cierto para las 5 tablas a las
+  que tenía acceso, pero falso sobre la base completa: `entsoe_gen_data.solar_mw` (y `esios_gen`,
+  `generation`) sí tienen generación real por tecnología, hora a hora, desde 2020. Verificado con
+  datos reales: el precio ponderado por generación solar de verdad da 62,46 €/MWh, contra los
+  67,89-77,02 €/MWh que salían de la franja aproximada — una diferencia real, no solo de método.
+- **Tabla añadida:** `entsoe_gen_data` (datetime, solar_mw, wind_mw, hydro_run_river_mw,
+  hydro_reservoir_mw, biomass_mw, waste_mw, other_renewable_mw, battery_gen_mw, ... generación
+  real en MW, una fila por hora).
+- **Comando ejecutado:**
+  ```sql
+  GRANT SELECT ON entsoe_gen_data TO asistente_solo_lectura;
+  ```
+- **Verificado con pruebas reales:**
+  - `SELECT count(*) FROM entsoe_gen_data` con el rol de solo lectura: 58.607 filas, funciona.
+  - `INSERT` sobre la misma tabla: rechazado (`permission denied for table entsoe_gen_data`).
+- **Código que la usa:** `modelos/asistente/herramientas.py::precio_ponderado_por_generacion()`,
+  nueva herramienta registrada en `chat.py`; también ampliado el catálogo de
+  `consulta_sql_lectura()` (docstring en `chat.py` y `herramientas.py`) para que el SQL genérico
+  también pueda usarla como último recurso.
+- **Tablas que siguen fuera del alcance del asistente** (de las 47 que tiene la base): todas las
+  demás -- incluidas `esios_gen`, `generation` y `esios_pdbc_gen` (generación por tecnología con
+  otro origen/columnas, redundantes con `entsoe_gen_data` para este uso), `commodities`,
+  `eua_next_dec`, `ttf_m1`, `trayport_*`, `app_*` (estudios de batería del equipo), `model_metrics*`,
+  `forecast`, `esios_forecast_da`, `entsoe_forecast_da`, `esios_capacity_available`,
+  `esios_pbf_*`, `load_inter`, `entsoe_load_inter`, `bess_plan`, `bess_result`, `models`,
+  `pipeline_log`. Se amplía tabla por tabla, solo cuando una pregunta real lo justifica (mismo
+  criterio que motivó esta y la entrada 3).
+- **Ejecutado por:** Claude Code, con autorización de Willy tras encontrar el hueco en una
+  verificación real (no una petición de ampliar el alcance en general).
+- **Reversible:** sí — `REVOKE SELECT ON entsoe_gen_data FROM asistente_solo_lectura;`
 
 ---
 

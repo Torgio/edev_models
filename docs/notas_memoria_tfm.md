@@ -1751,3 +1751,22 @@ individual — por detrás de `gru` (12,86) y `seq2seq` (12,91), por delante de 
 contra el ENSEMBLE de las 8 familias (12,13). Conclusión para la memoria: afinar y usar la matriz
 completa sí mejora sustancialmente sobre un LightGBM genérico, pero no alcanza para superar al
 mejor individual del equipo ni al ensemble — coherente con lo que ya se sabía desde la nota 41.
+
+## 52. El asistente aproximaba "horas solares" por franja de reloj — había datos reales y no los veía
+
+Una pregunta real de un compañero ("precio promedio en horas de generación solar") destapó dos
+cosas a la vez. La primera, de qué manera el asistente resuelve un hueco de datos: sin serie de
+generación en su alcance, aproximó con una franja fija (8-19h, núcleo 10-17h) y lo avisó con
+claridad en la respuesta — comportamiento correcto dado lo que veía.
+
+La segunda es el hueco de verdad: la base sí tiene generación real horaria por tecnología desde
+2020 (`entsoe_gen_data`, `esios_gen`, `generation`) — el asistente no la veía porque el rol
+`asistente_solo_lectura` (nota 43) se creó con solo 5 tablas, ninguna de generación. Se amplió a
+una 6ª (`entsoe_gen_data`, ver `sql/registro_cambios_bd.md` entrada 4) y se añadió una herramienta
+dedicada, `precio_ponderado_por_generacion`, que pondera por generación real hora a hora en vez
+de promediar una franja de reloj.
+
+La diferencia importó, no fue solo un tecnicismo: el precio real ponderado por generación solar
+da **62,46 €/MWh**, frente a los 67,89-77,02 €/MWh de la aproximación por franja — porque el
+precio baja justo cuando más genera la solar (orden de mérito), y una franja de reloj fija no
+captura eso. Catorce herramientas registradas ahora, de trece.

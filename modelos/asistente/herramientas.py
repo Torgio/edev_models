@@ -733,13 +733,86 @@ def capacidad_instalada(fecha: str | None = None) -> dict:
     }
 
 
+_TECNOLOGIAS_GENERACION = {
+    "solar": "solar_mw", "eolica": "wind_mw",
+    "hidraulica_fluyente": "hydro_run_river_mw", "hidraulica_embalse": "hydro_reservoir_mw",
+    "biomasa": "biomass_mw", "residuos": "waste_mw", "otras_renovables": "other_renewable_mw",
+}
+
+
+def precio_ponderado_por_generacion(tecnologia: str, desde: str | None = None,
+                                     hasta: str | None = None) -> dict:
+    """Precio medio REAL ponderado por generacion real de una tecnologia (`entsoe_gen_data`,
+    horaria desde 2020) -- no una franja de reloj aproximada.
+
+    Se añadio tras una pregunta real ("precio promedio en horas de generacion solar") que el
+    asistente respondio aproximando con una franja fija (8-19h) porque creia que no habia
+    ninguna serie de generacion real en su alcance. Era cierto para las 5 tablas a las que
+    tenia acceso entonces, pero `entsoe_gen_data` si tiene generacion real por tecnologia --
+    solo hacia falta ampliar el rol de solo lectura (ver sql/registro_cambios_bd.md, entrada 4).
+
+    Por que PONDERADO y no un promedio simple sobre las horas con generacion > 0: el precio baja
+    justo cuando mas genera una renovable (orden de merito), asi que un promedio simple sobre una
+    franja de horas no refleja lo que de verdad importa para autoconsumo/PPA -- cuanto vale en
+    media cada MWh que la planta produce. Verificado con datos reales (8-sep-2026): el ponderado
+    de solar da 62,46 EUR/MWh, la franja 8-19h simple da 77,02 -- una diferencia real, no de
+    metodo nada mas.
+
+    Args:
+        tecnologia: una de "solar", "eolica", "hidraulica_fluyente", "hidraulica_embalse",
+            "biomasa", "residuos", "otras_renovables".
+        desde: YYYY-MM-DD, opcional (por defecto, toda la serie desde 2020).
+        hasta: YYYY-MM-DD, opcional.
+    """
+    columna = _TECNOLOGIAS_GENERACION.get(tecnologia)
+    if columna is None:
+        return {"error": f"tecnologia '{tecnologia}' no reconocida. Usa una de: "
+                          f"{sorted(_TECNOLOGIAS_GENERACION)}."}
+
+    conn = _conectar()
+    try:
+        sql = f"""
+            SELECT g.datetime, g.{columna} AS generacion, s.es_esios AS precio
+            FROM entsoe_gen_data g JOIN spot_price s USING (datetime)
+            WHERE s.es_esios IS NOT NULL AND g.{columna} IS NOT NULL
+              {"AND g.datetime >= %(desde)s" if desde else ""}
+              {"AND g.datetime < %(hasta)s::date + 1" if hasta else ""}
+        """
+        params = {k: v for k, v in {"desde": desde, "hasta": hasta}.items() if v}
+        df = pd.read_sql(sql, conn, params=params)
+    finally:
+        conn.close()
+
+    if df.empty:
+        return {"error": f"Sin datos de {tecnologia} y precio cruzados para ese rango."}
+
+    df["datetime"] = pd.to_datetime(df["datetime"], utc=True).dt.tz_convert("Europe/Madrid")
+    df["hora"] = df["datetime"].dt.hour
+    total_gen = float(df["generacion"].sum())
+    ponderado = float((df["precio"] * df["generacion"]).sum() / total_gen) if total_gen else None
+    activas = df[df["generacion"] > 0]
+
+    return {
+        "etiqueta": "REAL -- ponderado por generacion horaria real, no una franja de reloj",
+        "tecnologia": tecnologia,
+        "rango": {"desde": str(df["datetime"].min().date()), "hasta": str(df["datetime"].max().date())},
+        "precio_ponderado_por_generacion_eur_mwh": round(ponderado, 2) if ponderado else None,
+        "precio_medio_24h_eur_mwh": round(float(df["precio"].mean()), 2),
+        "horas_con_generacion_gt_0": int(len(activas)),
+        "horas_totales": int(len(df)),
+        "perfil_generacion_media_por_hora_mw": {
+            int(h): round(float(v), 0) for h, v in df.groupby("hora")["generacion"].mean().items()},
+    }
+
+
 # Tablas a las que el rol de Postgres `asistente_solo_lectura` tiene GRANT SELECT (y nada mas --
 # ni INSERT/UPDATE/DELETE, ni ninguna otra tabla de la base compartida). Ver
-# sql/registro_cambios_bd.md para el alta del rol, 31-ago-2026. Esta lista en Python es una
-# segunda barrera solo para dar un mensaje de error claro -- la barrera REAL es el GRANT de
-# Postgres, que ya se probo que bloquea todo lo demas aunque este chequeo tuviera un fallo.
+# sql/registro_cambios_bd.md para el alta del rol, 31-ago-2026, y la entrada 4 (8-sep-2026) para
+# la 6a tabla. Esta lista en Python es una segunda barrera solo para dar un mensaje de error
+# claro -- la barrera REAL es el GRANT de Postgres, que ya se probo que bloquea todo lo demas
+# aunque este chequeo tuviera un fallo.
 _SQL_TABLAS_PERMITIDAS = {"spot_price", "era5_weather_agg", "esios_capacity_installed",
-                          "predictions", "documentacion_embeddings"}
+                          "predictions", "documentacion_embeddings", "entsoe_gen_data"}
 _SQL_PALABRAS_PROHIBIDAS = re.compile(
     r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|COPY|CALL|EXECUTE|VACUUM|MERGE)\b",
     re.IGNORECASE)
@@ -772,6 +845,11 @@ def consulta_sql_lectura(sql: str) -> dict:
         matrix_hash, source -- predicciones ya calculadas por los distintos modelos del equipo)
       documentacion_embeddings(id, fuente, numero, titulo, texto -- NO selecciones la columna
         `embedding`, es un vector de 384 numeros, inutil en una tabla/grafica)
+      entsoe_gen_data(datetime timestamptz, solar_mw, wind_mw, hydro_run_river_mw,
+        hydro_reservoir_mw, total_hydro_mw, pumping_gen_mw, pumping_cons_mw, battery_gen_mw,
+        battery_cons_mw, biomass_mw, waste_mw, other_renewable_mw, total_renew_mw --
+        generacion real horaria por tecnologia, MW. Para el precio ponderado por generacion,
+        mejor usar la herramienta `precio_ponderado_por_generacion`, ya hace el cruce correcto)
 
     Reglas duras (si no se cumplen, se devuelve un error explicando cual):
       - Debe ser una unica sentencia SELECT (o WITH ... SELECT), nada de INSERT/UPDATE/DELETE/DDL.

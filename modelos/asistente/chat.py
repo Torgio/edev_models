@@ -313,7 +313,7 @@ def capacidad_instalada(fecha: str | None = None) -> str:
     """Capacidad instalada por tecnologia en España (MW): solar, eolica, hidraulica, nuclear,
     ciclo combinado, carbon, baterias hibridas... Usa esta herramienta para "cuanta solar/eolica
     hay instalada", "capacidad renovable" -- es un dato ADMINISTRATIVO (cuanta potencia hay),
-    no generacion real horaria.
+    no generacion real horaria (para eso, `precio_ponderado_por_generacion`).
 
     Devuelve MW y GW ya calculados -- usa el campo que corresponda tal cual, no conviertas
     tu mismo entre unidades (probado que se equivocaba escribiendo "GW" para un valor en MW).
@@ -322,6 +322,23 @@ def capacidad_instalada(fecha: str | None = None) -> str:
         fecha: YYYY-MM-DD. Si se omite, usa la fecha mas reciente disponible (serie desde 2020).
     """
     return json.dumps(_h.capacidad_instalada(fecha), ensure_ascii=False)
+
+
+@beta_tool
+def precio_ponderado_por_generacion(tecnologia: str, desde: str | None = None,
+                                     hasta: str | None = None) -> str:
+    """Precio medio REAL ponderado por generacion real de una tecnologia (dato horario desde
+    2020, no una franja de reloj aproximada). Usa esta herramienta para "precio en horas de
+    generacion solar/eolica/etc" -- NO calcules tu una franja de horas a ojo, esta herramienta
+    ya cruza precio y generacion real hora a hora.
+
+    Args:
+        tecnologia: una de "solar", "eolica", "hidraulica_fluyente", "hidraulica_embalse",
+            "biomasa", "residuos", "otras_renovables".
+        desde: YYYY-MM-DD, opcional.
+        hasta: YYYY-MM-DD, opcional.
+    """
+    return json.dumps(_h.precio_ponderado_por_generacion(tecnologia, desde, hasta), ensure_ascii=False)
 
 
 @beta_tool
@@ -345,6 +362,10 @@ def consulta_sql_lectura(sql: str) -> str:
       predictions(datetime timestamptz, pred_date, model, prediction, seed, matrix, matrix_hash,
         source)
       documentacion_embeddings(id, fuente, numero, titulo, texto) -- no selecciones `embedding`
+      entsoe_gen_data(datetime timestamptz, solar_mw, wind_mw, hydro_run_river_mw,
+        hydro_reservoir_mw, biomass_mw, waste_mw, other_renewable_mw, ...) -- generacion real
+        horaria por tecnologia, MW. Para precio ponderado por generacion usa mejor la
+        herramienta `precio_ponderado_por_generacion`
 
     Reglas duras: una unica sentencia SELECT/WITH, sin punto y coma extra, nada de
     INSERT/UPDATE/DELETE/DDL. Si no pones LIMIT se añade LIMIT 200 automaticamente (maximo 500).
@@ -372,7 +393,7 @@ CODE_EXECUTION = {"type": "code_execution_20260521", "name": "code_execution"}
 TOOLS = [precio_historico_percentiles, precio_tabla_horaria, precio_tendencia_mensual, precio_negativos,
          precio_horas_negativas, simular_bateria, simular_autoconsumo_solar, precio_futuro_curva,
          extrapolar_consumo_cliente, capacidad_instalada, prediccion_d_mas_1, buscar_documentacion,
-         consulta_sql_lectura]
+         precio_ponderado_por_generacion, consulta_sql_lectura]
 
 
 def preguntar_con_imagenes(pregunta: str, modelo: str = MODELO_POR_DEFECTO) -> dict:
