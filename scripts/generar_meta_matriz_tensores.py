@@ -36,11 +36,11 @@ from pathlib import Path
 
 import pandas as pd
 
+ORIGINAL_MATRIZ = Path("/home/ubuntu/scripts/data/gold/matriz_nucleo.parquet")
 ORIGINAL_META = Path("/home/ubuntu/scripts/data/gold/matriz_nucleo.meta.json")
 NUEVA_MATRIZ = Path("/home/ubuntu/scripts/data/gold/matriz_nucleo_tensores.parquet")
 SALIDA = Path("/home/ubuntu/scripts/data/gold/matriz_nucleo_tensores.meta.json")
 
-COLUMNAS_EXCLUIDAS = ["es_esios_D", "pt_entsoe_D"]
 PREFIJO_AGREGADAS = "tensor_emb_"
 
 
@@ -56,13 +56,21 @@ def _hash_archivo(path, n_hex=8):
     return h.hexdigest()[:n_hex]
 
 
-def generar_meta(original_meta=ORIGINAL_META, nueva_matriz=NUEVA_MATRIZ,
-                  salida=SALIDA, verbose=True):
+def generar_meta(original_meta=ORIGINAL_META, original_matriz=ORIGINAL_MATRIZ,
+                  nueva_matriz=NUEVA_MATRIZ, salida=SALIDA, verbose=True):
     with open(original_meta, encoding="utf-8") as fh:
         meta = json.load(fh)
 
     df = pd.read_parquet(nueva_matriz)
+    df_original_cols = pd.read_parquet(original_matriz, columns=[]).columns  # solo el esquema, liviano
+    if len(df_original_cols) == 0:
+        df_original_cols = pd.read_parquet(original_matriz).columns  # fallback si el engine no soporta columns=[]
+
     n_agregadas = sum(1 for c in df.columns if c.startswith(PREFIJO_AGREGADAS))
+    # Excluidas = lo que estaba en la matriz original y NO esta en la nueva --
+    # calculado del dato real, no de una lista hardcodeada que puede
+    # desincronizarse de construir_matriz_tensores.py (ya paso una vez).
+    columnas_excluidas_real = sorted(set(df_original_cols) - set(df.columns))
 
     # ── Campos COMPUTADOS: leídos directo del archivo real ──────────────────
     meta["hash"] = _hash_archivo(nueva_matriz)
@@ -76,7 +84,7 @@ def generar_meta(original_meta=ORIGINAL_META, nueva_matriz=NUEVA_MATRIZ,
 
     # ── Delta verificable, no una regla completa recalculada ────────────────
     n_inputs_original = meta.get("n_inputs", 0)
-    meta["n_inputs"] = n_inputs_original - len(COLUMNAS_EXCLUIDAS) + n_agregadas
+    meta["n_inputs"] = n_inputs_original - len(columnas_excluidas_real) + n_agregadas
 
     # ── Campos EDITORIALES: propuesta, revisar antes de dar por definitivos ─
     meta["nombre"] = "nucleo_tensores"
@@ -97,21 +105,30 @@ def generar_meta(original_meta=ORIGINAL_META, nueva_matriz=NUEVA_MATRIZ,
         " | tensor_emb_0..31: mismo empalme real/pseudo que *_meteo, pero a nivel de "
         "tensor espacial completo (33x57 grilla), no promedio escalar sobre la peninsula"
     )
-    meta["excluidas_por_fuga_target"] = {
-        "columnas": COLUMNAS_EXCLUIDAS,
-        "motivo": ("casi-copia del target: ~75% de la ganancia combinada en el modelo "
-                   "XGBoost de referencia (hallazgo de un compañero, ver bitacora)")
-    }
+    if columnas_excluidas_real:
+        meta["excluidas_de_la_matriz"] = {
+            "columnas": columnas_excluidas_real,
+            "motivo": ("ver construir_matriz_tensores.py (COLUMNAS_EXCLUIR) para el motivo "
+                       "exacto -- no se repite aca para evitar que las dos copias del motivo "
+                       "se desincronicen, como ya paso una vez con este mismo campo")
+        }
+    else:
+        meta.pop("excluidas_de_la_matriz", None)
+        meta.pop("excluidas_por_fuga_target", None)  # limpia el campo viejo si venia de una corrida anterior
 
     if verbose:
         print("Campos COMPUTADOS (verificables contra el archivo real):")
         for k in ["hash", "generada", "filas", "columnas", "reparto", "ventana", "nulos"]:
             print(f"  {k}: {meta[k]}")
-        print(f"\nn_inputs (por delta: {n_inputs_original} - {len(COLUMNAS_EXCLUIDAS)} + "
+        print(f"\nn_inputs (por delta: {n_inputs_original} - {len(columnas_excluidas_real)} + "
               f"{n_agregadas} = {meta['n_inputs']}) -- no es un recalculo completo de la regla")
         print("\nCampos EDITORIALES (propuesta -- revisar antes de dar por definitivos):")
-        for k in ["nombre", "aisla", "origen", "excluidas_por_fuga_target"]:
+        for k in ["nombre", "aisla", "origen"]:
             print(f"  {k}: {meta[k]}")
+        if "excluidas_de_la_matriz" in meta:
+            print(f"  excluidas_de_la_matriz: {meta['excluidas_de_la_matriz']}")
+        else:
+            print("  (ninguna columna excluida de la matriz esta vez)")
         print("\nAVISO: 'origenes' (desglose por tabla fuente) quedó SIN TOCAR -- ya no "
               "refleja la resta de es_esios_D/pt_entsoe_D ni el alta de tensor_emb_*. "
               "Revisar a mano si ese desglose importa para la memoria.")
