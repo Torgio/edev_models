@@ -29,6 +29,17 @@ import preparar_tensores as pt
 
 _clasificar_original = pt._clasificar
 
+# Toggle experimental -- NO es una correccion de fuga (es_esios_D/pt_entsoe_D
+# son informacion legitima, precio ya cerrado del dia anterior, verificado
+# dos veces por el equipo -- notas 49/50 de la memoria). Es una decision de
+# diseno para ESTA comparacion especifica: neutralizar la señal dominante
+# para ver si el embedding meteorologico puede compensarla. Cambiar a False
+# (o pasar neutralizar_dominantes=False al llamar) para el experimento "con"
+# estas columnas -- no hace falta reconstruir la matriz ni el .meta.json,
+# solo volver a llamar a esta funcion.
+NEUTRALIZAR_DOMINANTES = True
+COLUMNAS_DOMINANTES = ["es_esios_D", "pt_entsoe_D"]
+
 
 def _clasificar_con_embeddings(df, multicanal=True):
     cols_dec, cols_prog, cols_dm1, cols_est, cols_est_media = _clasificar_original(df, multicanal)
@@ -41,14 +52,35 @@ def _clasificar_con_embeddings(df, multicanal=True):
     return cols_dec + cols_tensor_emb, cols_prog, cols_dm1, cols_est, cols_est_media
 
 
-def preparar_con_embeddings(matriz="nucleo_tensores", **kwargs):
+def preparar_con_embeddings(matriz="nucleo_tensores", neutralizar_dominantes=None, **kwargs):
     """Igual que preparar_tensores.preparar(), pero con tensor_emb_* incluidas
-    en cols_dec. Restaura _clasificar original al terminar, incluso si falla."""
+    en cols_dec. Restaura _clasificar original al terminar, incluso si falla.
+
+    neutralizar_dominantes (None usa NEUTRALIZAR_DOMINANTES del modulo): si
+    True, anula es_esios_D/pt_entsoe_D en X_dec DESPUES de que preparar() ya
+    extrajo T.naive (en EUR/MWh, sin escalar) -- el mecanismo de residuo del
+    equipo sigue intacto siempre (naive se calcula igual, con o sin este
+    toggle), pero con el toggle en True la red no ve el valor real de estas
+    columnas como feature (quedan constantes en 0, en espacio ya
+    estandarizado -- sin varianza, sin informacion que la red pueda
+    explotar). No es una correccion de fuga -- ver nota junto a
+    NEUTRALIZAR_DOMINANTES mas arriba."""
     pt._clasificar = _clasificar_con_embeddings
     try:
-        return pt.preparar(matriz=matriz, **kwargs)
+        T = pt.preparar(matriz=matriz, **kwargs)
     finally:
         pt._clasificar = _clasificar_original
+
+    if neutralizar_dominantes is None:
+        neutralizar_dominantes = NEUTRALIZAR_DOMINANTES
+
+    if neutralizar_dominantes:
+        for col in COLUMNAS_DOMINANTES:
+            if col in T.cols_dec:
+                idx = T.cols_dec.index(col)
+                T.X_dec[:, :, idx] = 0.0
+
+    return T
 
 
 if __name__ == "__main__":
