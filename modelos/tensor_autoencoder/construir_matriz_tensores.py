@@ -27,16 +27,15 @@ SALIDA = "matriz_nucleo_tensores.parquet"
 TOLERANCIA = pd.Timedelta("3h")
 PREFIJO_COLUMNAS = "tensor_emb_"
 
-# Hallazgo de un companero (revision del modelo XGBoost de Maggie, grafico de
-# ganancia por feature): es_esios_D y pt_entsoe_D concentran ~75% de la ganancia
-# del modelo y son casi una copia del target -- un modelo que las tenga
-# disponibles como feature cruda (no como "naive" de un residuo, que es como
-# las usa preparar_tensores.py) aprende a copiarlas en vez de generalizar. Para
-# nuestra comparacion empirica esto es critico: si quedan, cualquier aporte
-# real del embedding meteorologico queda tapado por esa copia casi exacta. Se
-# excluyen SOLO estas dos -- es_esios_Dm1/Dm6 (dias anteriores, no el mismo
-# target) no estan senaladas como problematicas y se conservan.
-COLUMNAS_EXCLUIR = ["es_esios_D", "pt_entsoe_D"]
+# Actualizacion (notas 49/50 de la memoria del equipo, verificado dos veces
+# con metodos independientes -- auditoria contra la fuente y ablacion del
+# modelo): es_esios_D/pt_entsoe_D NO son fuga, son el precio ya cerrado del
+# dia anterior (informacion legitima). La decision de neutralizarlas como
+# feature (sin sacarlas del archivo) para esta comparacion especifica del
+# embedding meteorologico vive ahora en preparar_con_embeddings.py -- barato
+# de alternar (con/sin) sin reconstruir la matriz. Por eso aca NO se excluye
+# ninguna columna: ambas quedan siempre presentes en el archivo.
+COLUMNAS_EXCLUIR = []
 
 
 def unir(matriz_path=MATRIZ_ORIGINAL, embeddings_path=EMBEDDINGS, salida_path=SALIDA,
