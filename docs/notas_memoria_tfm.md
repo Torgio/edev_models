@@ -1770,3 +1770,23 @@ La diferencia importó, no fue solo un tecnicismo: el precio real ponderado por 
 da **62,46 €/MWh**, frente a los 67,89-77,02 €/MWh de la aproximación por franja — porque el
 precio baja justo cuando más genera la solar (orden de mérito), y una franja de reloj fija no
 captura eso. Catorce herramientas registradas ahora, de trece.
+
+## 53. El asistente no tiene forma de saber quién pregunta — y eso decide qué tablas puede ver
+
+Al ampliar el alcance del asistente (estudio de batería, previsión/PBF oficial), revisar el
+esquema de cada tabla candidata antes de conceder el `GRANT` sacó a la luz algo que no era obvio
+por el nombre: `app_user` (la tabla de usuarios de Pulso) tiene un email real, y las tablas de
+estudios guardados (`app_study_case`, `app_case_run`, `app_gen_inst`...) tienen `user_id` como
+clave foránea — son datos **por usuario**, no compartidos por el equipo.
+
+El asistente no tiene ningún mecanismo para saber quién hace la pregunta: es un único endpoint
+(`/api/asistente`) compartido, sin la sesión de Pulso propagada hasta `herramientas.py`. Hoy solo
+existe 1 usuario real en la base, así que conceder acceso no filtraría nada de nadie todavía —
+pero en cuanto haya un segundo usuario, sería una fuga real: cualquiera podría pedirle al
+asistente el estudio de batería guardado por otra persona.
+
+Se decidió (con Willy, entre dos opciones) ampliar solo lo que no depende de usuario: 8 tablas
+nuevas (`bess_plan`/`bess_result` — resultados del equipo, sin usuario — y 6 de previsión/PBF
+oficial), dejando fuera `app_user` y las `app_*` de estudios hasta que exista un mecanismo real
+de filtrado por usuario. Dieciséis herramientas registradas ahora, de catorce; el rol de solo
+lectura pasa a 14 tablas de las 47 que tiene la base (`sql/registro_cambios_bd.md`, entrada 5).

@@ -18,6 +18,7 @@ lo resuelve, pero el cambio de código vive en su propio commit.
 | 2 | 2026-08-12 | `esios_capacity_available` | `DROP` + `ADD COLUMN GENERATED` | `total_mw` convertida en columna calculada (suma de las 7 tecnologías), backfill automático del histórico | ✅ Hecho |
 | 3 | 2026-08-31 | (nuevo rol) `asistente_solo_lectura` | `CREATE ROLE` + `GRANT` | Rol de solo lectura, limitado a 5 tablas, para que el asistente LLM pueda ejecutar SQL generado por el propio modelo sin poder escribir ni ver el resto de la base | ✅ Hecho |
 | 4 | 2026-09-08 | `asistente_solo_lectura` | `GRANT` | Añadida `entsoe_gen_data` (6ª tabla) al rol: generación real horaria por tecnología, para que el asistente deje de aproximar "horas solares" por franja de reloj | ✅ Hecho |
+| 5 | 2026-09-08 | `asistente_solo_lectura` | `GRANT` | Añadidas 8 tablas más (14ª en total): `bess_plan`/`bess_result` (estudio de batería del equipo) y 6 de previsión/PBF oficial. Excluidas a propósito `app_user` y las `app_study_case`/`app_case_*` — datos por usuario, sin forma de que el asistente filtre por quién pregunta | ✅ Hecho |
 
 ## Detalle
 
@@ -154,17 +155,62 @@ lo resuelve, pero el cambio de código vive en su propio commit.
   nueva herramienta registrada en `chat.py`; también ampliado el catálogo de
   `consulta_sql_lectura()` (docstring en `chat.py` y `herramientas.py`) para que el SQL genérico
   también pueda usarla como último recurso.
-- **Tablas que siguen fuera del alcance del asistente** (de las 47 que tiene la base): todas las
-  demás -- incluidas `esios_gen`, `generation` y `esios_pdbc_gen` (generación por tecnología con
-  otro origen/columnas, redundantes con `entsoe_gen_data` para este uso), `commodities`,
-  `eua_next_dec`, `ttf_m1`, `trayport_*`, `app_*` (estudios de batería del equipo), `model_metrics*`,
-  `forecast`, `esios_forecast_da`, `entsoe_forecast_da`, `esios_capacity_available`,
-  `esios_pbf_*`, `load_inter`, `entsoe_load_inter`, `bess_plan`, `bess_result`, `models`,
-  `pipeline_log`. Se amplía tabla por tabla, solo cuando una pregunta real lo justifica (mismo
-  criterio que motivó esta y la entrada 3).
+- **Tablas que seguían fuera en esa fecha:** ver entrada 5 (8-sep-2026) — 8 de ellas se
+  añadieron ese mismo día. La lista completa de lo que queda fuera está ahí, actualizada.
 - **Ejecutado por:** Claude Code, con autorización de Willy tras encontrar el hueco en una
   verificación real (no una petición de ampliar el alcance en general).
 - **Reversible:** sí — `REVOKE SELECT ON entsoe_gen_data FROM asistente_solo_lectura;`
+
+### 5. `asistente_solo_lectura` gana 8 tablas más — estudio de batería y previsión oficial
+
+- **Fecha:** 2026-09-08
+- **Motivo:** Willy pidió ampliar el alcance a las tablas de estudio de batería (relevante para
+  Pulso Energía) y a las de previsión/PBF oficial (relevante para que el asistente ayude con
+  previsión, no solo con histórico). Antes de conceder nada se revisó el esquema de cada tabla
+  candidata (columnas + una consulta real, no solo el nombre).
+- **Se excluyó a propósito `app_user` y las `app_study_case`/`app_case_run`/`app_case_result_annual`/
+  `app_gen_inst`/etc.**: `app_user` tiene un email real de una persona (verificado, 1 fila hoy).
+  Las `app_case_*`/`app_study_case` tienen `user_id` como clave foránea — son datos POR USUARIO
+  de la app de Pulso, y el asistente no tiene ningún mecanismo para saber quién pregunta (un
+  único endpoint compartido, sin sesión de usuario propagada hasta `herramientas.py`). Hoy solo
+  hay 1 usuario real, así que no hay fuga posible todavía, pero conceder acceso ahora dejaría la
+  puerta abierta sin control en cuanto haya un segundo usuario. Se decidió con Willy: solo lo
+  seguro ahora, esto queda pendiente de un mecanismo de filtrado por usuario antes de ampliarse.
+- **Tablas añadidas:** `bess_plan`, `bess_result` (resultado del estudio de batería del equipo,
+  sin columna de usuario), `esios_forecast_da`, `entsoe_forecast_da` (previsión oficial del
+  operador para D+1, dos fuentes), `esios_pbf_gen`, `esios_pdbc_gen`, `esios_pbf_bilateral`,
+  `esios_pbf_load_inter` (Programa Base de Funcionamiento y Programa Diario Base de Casación,
+  publicados el día antes).
+- **Comando ejecutado:**
+  ```sql
+  GRANT SELECT ON bess_plan TO asistente_solo_lectura;
+  GRANT SELECT ON bess_result TO asistente_solo_lectura;
+  GRANT SELECT ON esios_pbf_gen TO asistente_solo_lectura;
+  GRANT SELECT ON esios_pbf_bilateral TO asistente_solo_lectura;
+  GRANT SELECT ON esios_pbf_load_inter TO asistente_solo_lectura;
+  GRANT SELECT ON esios_forecast_da TO asistente_solo_lectura;
+  GRANT SELECT ON entsoe_forecast_da TO asistente_solo_lectura;
+  GRANT SELECT ON esios_pdbc_gen TO asistente_solo_lectura;
+  ```
+- **Verificado con pruebas reales:** `SELECT` sobre las 8 tablas, con el rol de solo lectura,
+  funciona (recuentos de filas comprobados uno a uno). `SELECT * FROM app_user` con el mismo rol:
+  rechazado (`permission denied for table app_user`) -- confirma que la exclusión es real, no
+  solo una intención.
+- **Tablas que siguen fuera del alcance del asistente** (de las 47 que tiene la base, ahora
+  quedan 33): `app_user`, `app_study_case`, `app_case_run`, `app_case_result_annual`,
+  `app_case_dispatch`, `app_case_summary`, `app_consump_inst`, `app_consump_shape`, `app_curve`,
+  `app_curve_hourly`, `app_curve_run`, `app_gen_inst`, `app_gen_shape` (datos por usuario de
+  Pulso, o sin revisar aún si son redundantes con `precio_futuro_curva`), `esios_gen`,
+  `generation` (generación real con otro origen/columnas, redundante con `entsoe_gen_data`),
+  `commodities`, `eua_next_dec`, `ttf_m1`, `trayport_*` (en camino de retirarse del proyecto),
+  `model_metrics*`, `models`, `pipeline_log` (metadatos internos de ingeniería, no datos de
+  energía), `forecast`, `esios_capacity_available`, `load_inter`, `entsoe_load_inter`.
+- **Código que las usa:** `modelos/asistente/herramientas.py::resultado_estudio_bateria()`
+  (bess_plan/bess_result, con herramienta dedicada); las 6 de previsión/PBF quedan disponibles
+  solo vía `consulta_sql_lectura()` por ahora, sin herramienta dedicada propia.
+- **Ejecutado por:** Claude Code, con autorización de Willy (eligió "solo lo seguro ahora" entre
+  dos opciones planteadas).
+- **Reversible:** sí — un `REVOKE SELECT` por tabla.
 
 ---
 

@@ -805,6 +805,44 @@ def precio_ponderado_por_generacion(tecnologia: str, desde: str | None = None,
     }
 
 
+def resultado_estudio_bateria(modelo: str | None = None) -> dict:
+    """Resultado REAL del estudio de baterias del equipo (`bess_plan`/`bess_result`) -- distinto
+    de `simular_bateria`, que simula una bateria HIPOTETICA con los parametros que da quien
+    pregunta. Esta herramienta consulta estudios YA HECHOS por el equipo: cuanto habria ganado
+    cada modelo operando una bateria contra el precio real, comparado contra el oraculo
+    (conociendo el precio perfecto de antemano) y contra naive (sin ninguna inteligencia).
+
+    Args:
+        modelo: nombre del modelo a consultar (p.ej. "ensemble", "gru"). Si se omite, devuelve
+            el resumen de todos los modelos con resultado guardado.
+    """
+    conn = _conectar()
+    try:
+        sql = "SELECT * FROM bess_result" + (" WHERE model = %(m)s" if modelo else "")
+        df = pd.read_sql(sql, conn, params={"m": modelo} if modelo else None)
+    finally:
+        conn.close()
+
+    if df.empty:
+        return {"error": f"Sin resultado de estudio de bateria para '{modelo}'."
+                          if modelo else "La tabla bess_result esta vacia."}
+
+    resumen = (df.groupby("model").agg(
+        dias=("fecha_objetivo", "count"),
+        ingreso_medio_eur=("ingreso_eur", "mean"),
+        ingreso_oraculo_medio_eur=("ingreso_oraculo_eur", "mean"),
+        ingreso_naive_medio_eur=("ingreso_naive_eur", "mean"),
+        captura_media_pct=("captura_pct", "mean"),
+        ciclos_medio=("ciclos", "mean")).round(2))
+    return {
+        "etiqueta": "REAL -- resultado ya calculado del estudio de bateria del equipo, "
+                    "no una simulacion nueva",
+        "por_modelo": resumen.reset_index().to_dict("records"),
+        "rango_fechas": {"desde": str(df["fecha_objetivo"].min()),
+                          "hasta": str(df["fecha_objetivo"].max())},
+    }
+
+
 # Tablas a las que el rol de Postgres `asistente_solo_lectura` tiene GRANT SELECT (y nada mas --
 # ni INSERT/UPDATE/DELETE, ni ninguna otra tabla de la base compartida). Ver
 # sql/registro_cambios_bd.md para el alta del rol, 31-ago-2026, y la entrada 4 (8-sep-2026) para
@@ -812,7 +850,10 @@ def precio_ponderado_por_generacion(tecnologia: str, desde: str | None = None,
 # claro -- la barrera REAL es el GRANT de Postgres, que ya se probo que bloquea todo lo demas
 # aunque este chequeo tuviera un fallo.
 _SQL_TABLAS_PERMITIDAS = {"spot_price", "era5_weather_agg", "esios_capacity_installed",
-                          "predictions", "documentacion_embeddings", "entsoe_gen_data"}
+                          "predictions", "documentacion_embeddings", "entsoe_gen_data",
+                          "bess_plan", "bess_result", "esios_pbf_gen", "esios_pbf_bilateral",
+                          "esios_pbf_load_inter", "esios_forecast_da", "entsoe_forecast_da",
+                          "esios_pdbc_gen"}
 _SQL_PALABRAS_PROHIBIDAS = re.compile(
     r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|COPY|CALL|EXECUTE|VACUUM|MERGE)\b",
     re.IGNORECASE)
@@ -850,6 +891,30 @@ def consulta_sql_lectura(sql: str) -> dict:
         battery_cons_mw, biomass_mw, waste_mw, other_renewable_mw, total_renew_mw --
         generacion real horaria por tecnologia, MW. Para el precio ponderado por generacion,
         mejor usar la herramienta `precio_ponderado_por_generacion`, ya hace el cruce correcto)
+      bess_plan(datetime timestamptz, model, carga_mw, descarga_mw, soc_mwh, ingreso_eur --
+        plan de carga/descarga por hora de la bateria, uno por modelo)
+      bess_result(fecha_objetivo date, model, ingreso_eur, ingreso_oraculo_eur,
+        ingreso_naive_eur, captura_pct, ciclos -- resultado diario del estudio de bateria,
+        comparado contra el oraculo (perfecto) y contra naive. Mejor usar la herramienta
+        `resultado_estudio_bateria`, ya hace la comparacion)
+      esios_forecast_da(datetime timestamptz, demanda_prev_mw, gen_wind_prev_mw,
+        gen_solar_pv_prev_mw, gen_renovables_prev_mw, demanda_residual_prev_mw, ntc_*_mw --
+        prevision oficial de ESIOS para el dia siguiente, publicada por el operador del sistema)
+      entsoe_forecast_da(datetime timestamptz, load_forecast_mw, wind_forecast_mw,
+        solar_forecast_mw, renewables_forecast_mw -- lo mismo que esios_forecast_da pero
+        segun ENTSOE, para contrastar dos fuentes)
+      esios_pbf_gen(datetime timestamptz, wind_mw, solar_pv_mw, solar_thermal_mw,
+        hydro_no_ugh_mw, hydro_ugh_mw, total_hydro_mw, biomass_mw, biogas_mw, ... --
+        Programa Base de Funcionamiento: lo que cada tecnologia programo generar, publicado
+        el dia antes)
+      esios_pdbc_gen(datetime timestamptz, wind_mw, solar_pv_mw, nuclear_mw, coal_mw,
+        cogen_mw, biomass_mw, ... -- Programa Diario Base de Casacion, previo al PBF)
+      esios_pbf_bilateral(datetime timestamptz, bil_hydro_ugh_mw, bil_nuclear_mw,
+        bil_coal_mw, bil_wind_onshore_mw, bil_solar_pv_mw, bil_retail_*_mw, ... -- contratos
+        bilaterales dentro del PBF, por tecnologia y segmento de mercado)
+      esios_pbf_load_inter(datetime timestamptz, demand_free_market_mw, demand_reference_mw,
+        total_demand_mw, net_flow_fr_mw, net_flow_pt_mw, total_net_flow_mw, ... -- demanda e
+        intercambios internacionales programados en el PBF)
 
     Reglas duras (si no se cumplen, se devuelve un error explicando cual):
       - Debe ser una unica sentencia SELECT (o WITH ... SELECT), nada de INSERT/UPDATE/DELETE/DDL.
