@@ -31,10 +31,13 @@ async function read<T>(path: string, signal: AbortSignal): Promise<T> {
 
 export function BatteryStudy() {
   const [creating, setCreating] = useState(false);
-  return creating ? <BatteryCurveUpload onCancel={() => setCreating(false)} /> : <SavedBatteryStudy onNew={() => setCreating(true)} />;
+  const [preferredRunId, setPreferredRunId] = useState<number | null>(null);
+  return creating
+    ? <BatteryCurveUpload onCancel={() => setCreating(false)} onComplete={runId => { setPreferredRunId(runId); setCreating(false); }} />
+    : <SavedBatteryStudy onNew={() => setCreating(true)} preferredRunId={preferredRunId} />;
 }
 
-function SavedBatteryStudy({ onNew }: { onNew: () => void }) {
+function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; preferredRunId: number | null }) {
   const [ids, setIds] = useState<number[]>([]);
   const [runId, setRunId] = useState<number | null>(null);
   const [result, setResult] = useState<StudyResult | null>(null);
@@ -53,11 +56,12 @@ function SavedBatteryStudy({ onNew }: { onNew: () => void }) {
     read<{ runs: number[] }>('opciones', controller.signal).then(data => {
       if (controller.signal.aborted) return;
       setIds(data.runs);
-      setRunId(previous => previous && data.runs.includes(previous) ? previous : data.runs[0] ?? null);
+      setRunId(previous => preferredRunId && data.runs.includes(preferredRunId)
+        ? preferredRunId : previous && data.runs.includes(previous) ? previous : data.runs[0] ?? null);
       if (!data.runs.length) { setLoading(false); setError('No hay estudios habilitados para esta prueba local.'); }
     }).catch(e => { if (!controller.signal.aborted) { setError(e.message); setLoading(false); } });
     return () => controller.abort();
-  }, [reload]);
+  }, [reload, preferredRunId]);
 
   useEffect(() => {
     if (runId === null) return;
@@ -137,10 +141,13 @@ function SavedBatteryStudy({ onNew }: { onNew: () => void }) {
         </div>
         <p className="study-context-footnote"><Info aria-hidden="true" /><span>Solo se muestran datos de esta ejecución. Los parámetros ausentes no se sustituyen por la configuración actual ni se deducen de los gráficos.</span></p>
       </article>
-      <div className="study-notice"><strong>Resultado económico pendiente de revisión.</strong> El VAN se muestra tal como quedó guardado. Estamos revisando cómo se contabiliza el desgaste junto con la inversión inicial.</div>
+      {run.days_simulated === 0
+        ? <div className="study-notice"><strong>Validación operativa histórica; el VAN no aplica.</strong> Este estudio contiene {dayCount(run.days_historical)} días históricos y ningún día simulado. Sirve para comprobar el despacho, pero no para proyectar VAN, P10, P50 o P90.</div>
+        : <div className="study-notice"><strong>Resultado económico pendiente de revisión.</strong> El VAN se muestra tal como quedó guardado. Estamos revisando cómo se contabiliza el desgaste junto con la inversión inicial.</div>}
+      {run.cycles_per_day === 0 && <div className="study-zero-operation"><Info aria-hidden="true" /><span><strong>La solución óptima no utilizó la batería en este período.</strong> La carga y la descarga guardadas son cero; no es un dato pendiente ni una simulación del navegador.</span></div>}
       <div className="study-metrics">
-        <article><span>VAN mediano guardado</span><strong>{metric(run.npv_p50, ' €')}</strong><small>P10 {metric(run.npv_p10, ' €')} · P90 {metric(run.npv_p90, ' €')}</small></article>
-        <article><span>Escenarios con VAN positivo</span><strong>{metric(run.npv_positive_pct, ' %')}</strong><small>De {run.n_scenarios} escenarios evaluados; no es una garantía.</small></article>
+        <article><span>{run.days_simulated === 0 ? 'VAN no aplicable' : 'VAN mediano guardado'}</span><strong>{metric(run.npv_p50, ' €')}</strong><small>{run.days_simulated === 0 ? 'Requiere un horizonte con días simulados.' : <>P10 {metric(run.npv_p10, ' €')} · P90 {metric(run.npv_p90, ' €')}</>}</small></article>
+        <article><span>Escenarios con VAN positivo</span><strong>{metric(run.npv_positive_pct, ' %')}</strong><small>{run.days_simulated === 0 ? 'No aplica sin horizonte simulado.' : <>De {run.n_scenarios} escenarios evaluados; no es una garantía.</>}</small></article>
         <article><span>Ahorro acumulado del período</span><strong>{metric(run.savings_vs_no_batt, ' €')}</strong><small>{run.savings_vs_no_batt == null ? 'Sin ahorro frente a una instalación sin batería guardado.' : 'Comparación guardada frente a no tener batería.'}</small></article>
         <article><span>Uso diario</span><strong>{metric(run.cycles_per_day)} <em>ciclos/día</em></strong><small>Vida estimada guardada: {metric(run.life_years, ' años')}</small></article>
       </div>

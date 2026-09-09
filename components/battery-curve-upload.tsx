@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { previewCurve, type CurveKind, type CurvePreview } from '@/lib/battery-curve-preview';
 import { BatterySetup } from '@/components/battery-setup';
+import { BatteryStudyLaunch } from '@/components/battery-study-launch';
+import type { BatteryDraft } from '@/lib/battery-draft';
 
 type Selected = { file: File; preview: CurvePreview };
 type UploadResult = { tipo: CurveKind; ok: boolean; code: string; problemas: string[]; curva: CurvePreview & { anual_mwh: number; pico_kw: number } };
@@ -36,8 +38,9 @@ function CurveInput({ kind, selected, onChange }: { kind: CurveKind; selected: S
   </section>;
 }
 
-export function BatteryCurveUpload({ onCancel }: { onCancel: () => void }) {
-  const [step, setStep] = useState<'curves' | 'battery'>('curves');
+export function BatteryCurveUpload({ onCancel, onComplete }: { onCancel: () => void; onComplete: (runId: number) => void }) {
+  const [step, setStep] = useState<'curves' | 'battery' | 'launch'>('curves');
+  const [battery, setBattery] = useState<BatteryDraft | null>(null);
   const [consumption, setConsumption] = useState<Selected | null>(null);
   const [generation, setGeneration] = useState<Selected | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -61,7 +64,8 @@ export function BatteryCurveUpload({ onCancel }: { onCancel: () => void }) {
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : 'No se pudieron guardar las curvas.'); }
     finally { setUploading(false); }
   };
-  if (step === 'battery') return <BatterySetup onBack={() => setStep('curves')} />;
+  if (step === 'battery') return <BatterySetup onBack={() => setStep('curves')} onConfirm={value => { setBattery(value); setStep('launch'); }} />;
+  if (step === 'launch' && battery) return <BatteryStudyLaunch battery={battery} generationIncluded={generation !== null} onBack={() => setStep('battery')} onComplete={onComplete} />;
   return <section className="study-view" aria-labelledby="curve-upload-heading">
     <div className="study-heading"><div><p className="kicker">Estudio de instalación · paso 1 de 3</p><h2 id="curve-upload-heading">Sube tus curvas</h2><p>Comprueba primero la forma de consumo y generación. El servidor volverá a validarlas antes de guardarlas.</p></div><Button variant="outline" onClick={onCancel}>Ver resultados guardados</Button></div>
     <div className="study-upload-grid"><CurveInput kind="consumo" selected={consumption} onChange={value => { setConsumption(value); setSaved([]); setMessage(''); }} /><CurveInput kind="generacion" selected={generation} onChange={value => { setGeneration(value); setSaved([]); setMessage(''); }} /></div>
