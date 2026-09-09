@@ -9,6 +9,13 @@
  * NO tiene ninguna marca de Claude/Anthropic visible -- solo dice "Asistente del proyecto",
  * igual que el widget que ya corre en el panel de predicciones (production/api/static/index.html).
  *
+ * MEMORIA DE LA CONVERSACIÓN (9-sep-2026)
+ * Antes cada pregunta reemplazaba la anterior en pantalla, y el backend nunca veía el
+ * historial -- un "¿y en invierno?" después de una pregunta sobre verano no tenía forma de
+ * encadenarse. Ahora `mensajes` guarda toda la conversación y se manda como `historial` en
+ * cada pregunta nueva (ver chat.py::_mensajes_con_historial, que recorta a los últimos 6
+ * turnos para no encarecer sin límite cada pregunta siguiente).
+ *
  * INTEGRACIÓN EN PULSO
  * La llamada relativa se conectará mediante una ruta proxy de esta misma app. Así el navegador
  * conserva la sesión SameSite de Pulso y el proxy reenvía únicamente su cookie al VPS, siguiendo
@@ -29,6 +36,14 @@ import { useState } from "react";
 type RespuestaAsistente = {
   respuesta: string;
   imagenes_base64: string[];
+};
+
+type TurnoConversacion = { role: "user" | "assistant"; content: string };
+
+type Mensaje = {
+  pregunta: string;
+  respuesta: RespuestaAsistente | null;
+  error: string | null;
 };
 
 function escaparHtml(s: string): string {
@@ -108,16 +123,25 @@ const SUGERENCIAS = [
 export function AsistenteWidget({ onSessionExpired }: { onSessionExpired?: () => void }) {
   const [pregunta, setPregunta] = useState("");
   const [cargando, setCargando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [resultado, setResultado] = useState<RespuestaAsistente | null>(null);
+  const [mensajes, setMensajes] = useState<Mensaje[]>([]);
 
   async function preguntar(texto: string) {
     const q = texto.trim();
     if (!q || cargando) return;
 
     setCargando(true);
-    setError(null);
-    setResultado(null);
+    setPregunta("");
+    const indice = mensajes.length;
+    setMensajes((prev) => [...prev, { pregunta: q, respuesta: null, error: null }]);
+
+    // Solo turnos ya respondidos, y solo el texto final -- las herramientas que se llamaron
+    // en un turno anterior no son contexto de conversacion, son trabajo interno de ese turno.
+    const historial: TurnoConversacion[] = mensajes
+      .filter((m) => m.respuesta)
+      .flatMap((m) => [
+        { role: "user" as const, content: m.pregunta },
+        { role: "assistant" as const, content: m.respuesta!.respuesta },
+      ]);
 
     try {
       const r = await fetch("/api/asistente", {
@@ -125,7 +149,7 @@ export function AsistenteWidget({ onSessionExpired }: { onSessionExpired?: () =>
         headers: { "Content-Type": "application/json" },
         // credentials: "same-origin" (el default) es lo correcto aquí -- la cookie de
         // sesión de Pulso viaja sola porque el fetch es del mismo origen.
-        body: JSON.stringify({ pregunta: q }),
+        body: JSON.stringify({ pregunta: q, historial }),
       });
 
       // nginx no devuelve un 401 limpio para una sesion caducada: redirige (302) a la
@@ -135,38 +159,56 @@ export function AsistenteWidget({ onSessionExpired }: { onSessionExpired?: () =>
       // "el asistente fallo".
       const esJson = r.headers.get("content-type")?.includes("application/json");
       if (!esJson) {
-        setError("Tu sesión ha caducado. Recarga la página para volver a entrar.");
+        actualizarError(indice, "Tu sesión ha caducado. Recarga la página para volver a entrar.");
         return;
       }
       if (r.status === 401) {
+        setMensajes((prev) => prev.slice(0, indice));
         onSessionExpired?.();
         return;
       }
       if (!r.ok) {
         const detalle = await r.json().catch(() => null);
-        setError(detalle?.detail ?? `El asistente no pudo responder (error ${r.status}).`);
+        actualizarError(indice, detalle?.detail ?? `El asistente no pudo responder (error ${r.status}).`);
         return;
       }
 
       const datos: RespuestaAsistente = await r.json();
-      setResultado(datos);
+      setMensajes((prev) => prev.map((m, i) => (i === indice ? { ...m, respuesta: datos } : m)));
     } catch {
-      setError("No se pudo contactar con el asistente. Inténtalo de nuevo en un momento.");
+      actualizarError(indice, "No se pudo contactar con el asistente. Inténtalo de nuevo en un momento.");
     } finally {
       setCargando(false);
     }
   }
 
+  function actualizarError(indice: number, mensaje: string) {
+    setMensajes((prev) => prev.map((m, i) => (i === indice ? { ...m, error: mensaje } : m)));
+  }
+
   return (
     <div className="bg-background border border-border rounded-lg p-6 space-y-4">
-      <div>
-        <h3 className="text-foreground text-lg font-semibold tracking-tight">
-          Asistente del proyecto
-        </h3>
-        <p className="text-muted-foreground text-sm mt-1">
-          Pregunta sobre precios, baterías o metodología. Cada respuesta indicará qué fuente
-          o herramienta del proyecto se utilizó.
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-foreground text-lg font-semibold tracking-tight">
+            Asistente del proyecto
+          </h3>
+          <p className="text-muted-foreground text-sm mt-1">
+            Pregunta sobre precios, baterías o metodología. Cada respuesta indicará qué fuente
+            o herramienta del proyecto se utilizó.
+          </p>
+        </div>
+        {mensajes.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setMensajes([])}
+            disabled={cargando}
+            className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2
+                       disabled:opacity-50 shrink-0"
+          >
+            Nueva conversación
+          </button>
+        )}
       </div>
 
       <form
@@ -195,16 +237,13 @@ export function AsistenteWidget({ onSessionExpired }: { onSessionExpired?: () =>
         </button>
       </form>
 
-      {!resultado && !cargando && !error && (
+      {mensajes.length === 0 && !cargando && (
         <div className="flex flex-wrap gap-2">
           {SUGERENCIAS.map((s) => (
             <button
               key={s}
               type="button"
-              onClick={() => {
-                setPregunta(s);
-                preguntar(s);
-              }}
+              onClick={() => preguntar(s)}
               className="text-xs px-3 py-1.5 rounded-full bg-secondary text-secondary-foreground
                          border border-border hover:bg-muted transition-colors"
             >
@@ -214,39 +253,51 @@ export function AsistenteWidget({ onSessionExpired }: { onSessionExpired?: () =>
         </div>
       )}
 
-      {cargando && (
-        <div className="flex items-center gap-2 text-muted-foreground text-sm py-2">
-          <span
-            className="inline-block h-4 w-4 rounded-full border-2 border-border border-t-primary animate-spin"
-            aria-hidden="true"
-          />
-          Consultando los datos del proyecto…
-        </div>
-      )}
+      {mensajes.length > 0 && (
+        <div className="space-y-4 max-h-[32rem] overflow-y-auto pr-1">
+          {mensajes.map((m, i) => (
+            <div key={i} className="space-y-2">
+              <div className="text-sm text-foreground font-medium bg-secondary rounded-lg px-4 py-2 ml-8">
+                {m.pregunta}
+              </div>
 
-      {error && (
-        <div className="text-sm rounded-lg border border-border bg-secondary text-foreground px-4 py-3">
-          {error}
-        </div>
-      )}
+              {m.respuesta && (
+                <div className="space-y-3">
+                  <div
+                    className="text-sm text-foreground leading-relaxed rounded-lg bg-white border border-border px-4 py-3"
+                    // El texto se escapa a mano dentro de renderizarMarkdown() antes de convertirlo a
+                    // HTML -- nunca se inyecta el texto del asistente sin pasar por escaparHtml() primero.
+                    dangerouslySetInnerHTML={{ __html: renderizarMarkdown(m.respuesta.respuesta) }}
+                  />
+                  {m.respuesta.imagenes_base64.map((b64, j) => (
+                    // eslint-disable-next-line @next/next/no-img-element -- base64 generada en tiempo
+                    // real por el asistente, no un asset estatico que Next deba optimizar.
+                    <img
+                      key={j}
+                      src={`data:image/png;base64,${b64}`}
+                      alt={`Gráfica generada por el asistente (${j + 1})`}
+                      className="rounded-lg border border-border max-w-full"
+                    />
+                  ))}
+                </div>
+              )}
 
-      {resultado && (
-        <div className="space-y-3">
-          <div
-            className="text-sm text-foreground leading-relaxed rounded-lg bg-white border border-border px-4 py-3"
-            // El texto se escapa a mano dentro de renderizarMarkdown() antes de convertirlo a
-            // HTML -- nunca se inyecta el texto del asistente sin pasar por escaparHtml() primero.
-            dangerouslySetInnerHTML={{ __html: renderizarMarkdown(resultado.respuesta) }}
-          />
-          {resultado.imagenes_base64.map((b64, i) => (
-            // eslint-disable-next-line @next/next/no-img-element -- base64 generada en tiempo
-            // real por el asistente, no un asset estatico que Next deba optimizar.
-            <img
-              key={i}
-              src={`data:image/png;base64,${b64}`}
-              alt={`Gráfica generada por el asistente (${i + 1})`}
-              className="rounded-lg border border-border max-w-full"
-            />
+              {m.error && (
+                <div className="text-sm rounded-lg border border-border bg-secondary text-foreground px-4 py-3">
+                  {m.error}
+                </div>
+              )}
+
+              {!m.respuesta && !m.error && i === mensajes.length - 1 && cargando && (
+                <div className="flex items-center gap-2 text-muted-foreground text-sm py-2">
+                  <span
+                    className="inline-block h-4 w-4 rounded-full border-2 border-border border-t-primary animate-spin"
+                    aria-hidden="true"
+                  />
+                  Consultando los datos del proyecto…
+                </div>
+              )}
+            </div>
           ))}
         </div>
       )}
