@@ -41,7 +41,7 @@ from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import ElasticNet
 from sklearn.metrics import mean_absolute_error
 
-from .. import ajustes as config, artifacts, entrega, preparacion
+from .. import ajustes as config, artifacts, data, entrega, preparacion
 
 log = logging.getLogger(__name__)
 
@@ -93,12 +93,18 @@ def tunear(X_train, y_train, X_val, y_val, alphas: list | None = None,
 
 
 def entrenar_y_predecir(X_train, y_train, X_val, y_val, alphas: list | None = None,
-                        l1_ratios: list | None = None):
+                        l1_ratios: list | None = None,
+                        X_train_crudo=None, X_val_crudo=None):
     """Tunea (alpha, l1_ratio) sobre validation, reentrena con la mejor y predice.
 
     Devuelve (modelo_final, predicciones, tabla_de_tuning). Los hiperparametros se
     eligen mirando el MAE de validation, asi que esa metrica queda algo optimista:
     es el mismo split que los escogio. Con el test sellado se corrige solo.
+
+    El tuneo va sobre X escaladas (una vez, reaprovechadas en las 60 combinaciones
+    de la rejilla); el modelo final se reajusta sobre X crudas dentro de un
+    pipeline con el StandardScaler dentro, para que el artefacto sea servible. Ver
+    `data.pipeline_escalado`.
     """
     tabla = tunear(X_train, y_train, X_val, y_val, alphas, l1_ratios)
 
@@ -120,9 +126,27 @@ def entrenar_y_predecir(X_train, y_train, X_val, y_val, alphas: list | None = No
     best_alpha = mejor["alpha"]
     best_l1 = mejor["l1_ratio"]
 
-    final = ElasticNet(alpha=best_alpha, l1_ratio=best_l1, max_iter=config.EN_MAX_ITER)
-    final.fit(X_train, y_train)
-    pred = pd.Series(final.predict(X_val), index=y_val.index)
+    estimador = ElasticNet(alpha=best_alpha, l1_ratio=best_l1, max_iter=config.EN_MAX_ITER)
+
+    if X_train_crudo is None:
+        log.warning("modelo final SIN escalador dentro: no es servible en produccion")
+        estimador.fit(X_train, y_train)
+        return estimador, pd.Series(estimador.predict(X_val), index=y_val.index), tabla
+
+    final = data.pipeline_escalado(estimador)
+    # El ajuste final tambien puede no converger, y aqui ya no hay rejilla que
+    # mirar: si pasa, el artefacto que se sube no es el modelo que dice ser.
+    with warnings.catch_warnings(record=True) as avisos:
+        warnings.simplefilter("always", ConvergenceWarning)
+        final.fit(X_train_crudo, y_train)
+        if any(issubclass(a.category, ConvergenceWarning) for a in avisos):
+            raise RuntimeError(
+                f"el ajuste final (alpha={best_alpha}, l1_ratio={best_l1}) no convergio "
+                f"en {config.EN_MAX_ITER} iteraciones. Sus coeficientes dependen de donde "
+                "se corto la optimizacion, asi que no es reproducible y no debe entregarse. "
+                "Sube EN_MAX_ITER en ajustes.py y relanza."
+            )
+    pred = pd.Series(final.predict(X_val_crudo), index=y_val.index)
     return final, pred, tabla
 
 
@@ -136,16 +160,18 @@ def features_anuladas(modelo, columnas) -> list[str]:
 # ---------------------------------------------------------------------------
 def ejecutar(forzar: bool = False, modo: str | None = None) -> pd.Series:
     """Prepara los datos, entrena y deja el entregable en entregables/elasticnet_horario/."""
-    datos, X_train_scaled, X_val_scaled = preparacion.preparar_escalados(modo, forzar)
+    datos, X_train_scaled, X_val_scaled, _ = preparacion.preparar_escalados(modo, forzar)
 
     modelo, pred, tabla = entrenar_y_predecir(
-        X_train_scaled, datos["y_train"], X_val_scaled, datos["y_val"]
+        X_train_scaled, datos["y_train"], X_val_scaled, datos["y_val"],
+        X_train_crudo=datos["X_train"], X_val_crudo=datos["X_val"],
     )
 
     # El tuning se guarda en salidas/ (uso interno), NO en entregables/
     config.preparar_entorno()
     tabla.to_csv(config.OUTPUT_DIR / f"tuning_elasticnet_{datos['modo']}.csv", index=False)
-    anuladas = features_anuladas(modelo, X_train_scaled.columns)
+    # `modelo` es ahora un Pipeline: el estimador esta en el ultimo paso.
+    anuladas = features_anuladas(modelo[-1], datos["X_train"].columns)
     log.info("ElasticNet anula %d features: %s", len(anuladas), anuladas)
 
     modelo_id = entrega.id_con_modo(MODELO_ID, datos["modo"])
@@ -154,9 +180,14 @@ def ejecutar(forzar: bool = False, modo: str | None = None) -> pd.Series:
         modelo_id,
         modelo=modelo,
         pred=pred,
-        features=list(X_train_scaled.columns),
+        features=list(datos["X_train"].columns),
         librerias=entrega.librerias_de("scikit-learn"),
         entrenado_desde=entrega.fecha_inicio(datos["y_train"]),
+        modo_seleccion=datos["modo"],
+        notas=(f"alpha={modelo[-1].alpha}, l1_ratio={modelo[-1].l1_ratio} elegidos por MAE "
+               f"de validation entre las combinaciones convergidas; anula {len(anuladas)} "
+               "features via L1. StandardScaler dentro del artefacto: acepta features crudas."),
+        X_control=datos["X_val"],
     )
     return pred
 

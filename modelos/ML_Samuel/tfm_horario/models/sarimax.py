@@ -128,6 +128,12 @@ def ejecutar(forzar: bool = False, estrategia: str | None = None,
         features=list(datos["X_train"].columns),
         librerias=entrega.librerias_de("statsmodels", "pmdarima"),
         entrenado_desde=entrega.fecha_inicio(datos["y_train"]),
+        modo_seleccion=datos["modo"],
+        interfaz="statsmodels",
+        notas=(f"SARIMAX{order}{seasonal_order}, estrategia={estrategia}, "
+               f"{len(datos['X_train'].columns)} exogenas. Las exogenas NO bastan: el "
+               "modelo predice extendiendo el estado con el historico de precio, asi que "
+               "su predict.py necesita ctx.engine ademas de ctx.features."),
     )
     return pred
 

@@ -1632,3 +1632,87 @@ meses vista de forma nativa, así que extrapolarlo tendría el mismo problema ya
 sobre `curva_precios.py`): el error se compone y las variables de entrada no existen tan lejos.
 `precio_futuro_curva` sigue siendo la respuesta correcta del equipo a esa pregunta concreta, no
 una alternativa de segunda por falta de algo mejor.
+
+## 48. El asistente ya está desplegado en producción de verdad — con clave de equipo, verificado paso a paso
+
+Primer despliegue real en el VPS, no solo en local. Decisión tomada con el equipo: en vez de que
+cada persona necesite su propia cuenta de Anthropic, se creó una clave **de equipo** (dedicada,
+no la personal de Willy que ya se usaba para las pruebas de esta sesión) con límite de gasto en
+la consola, colocada **solo en el servidor** (`ingesta/credentials.json` del VPS) — nadie más
+necesita clave propia para usar el asistente vía Pulso. Si alguien quiere correrlo también en su
+local, se le pasa la clave por privado, nunca por el chat de grupo.
+
+El despliegue no funcionó al primer intento, y cada fallo se diagnosticó con el error real, no
+adivinando:
+1. `Method Not Allowed` — el código del servidor estaba desactualizado (sin `git pull` desde que
+   se fusionó el asistente a `main`). Se corrigió con `git pull` + reinicio del servicio
+   (`systemctl restart`, necesario porque `uvicorn` corre sin `--reload` en producción).
+2. `Internal Server Error` sin detalle — `ModuleNotFoundError: No module named 'anthropic'`,
+   visto en el log real del servicio (`logs/api.log`). Las dependencias nuevas (`anthropic`,
+   `fastembed`, `pgvector`, ya en `requirements.txt`) nunca se habían instalado en el entorno
+   del servidor. Corregido con `pip install -r requirements.txt` en el venv del VPS.
+3. `zero size shared memory zone "tfm_asistente"` al recargar nginx — la zona de límite de
+   peticiones que añadí en el snippet (nota 44) necesitaba declararse aparte, en el bloque
+   `http{}` real del servidor (`/etc/nginx/conf.d/tfm-limits.conf`, donde ya vivían las zonas de
+   `/bateria/` y `/api/bat/`) — el propio snippet ya avisaba de esto en un comentario, pero
+   faltaba aplicarlo.
+
+**Verificado en cada paso, no dado por bueno**: primero una llamada directa al puerto 8010 (sin
+nginx) devolvió una respuesta real y correcta ("¿horas negativas en 2023?" → 0, coincide
+exactamente con lo ya encontrado en la nota 25/etc. de esta memoria). Después, una llamada desde
+fuera a la URL pública sin sesión de Pulso devolvió el `302` esperado hacia la pantalla de login
+— confirma que la ruta está protegida de verdad, no abierta por accidente.
+
+**Y el tercer y último paso, con sesión real de Pulso iniciada** (login en `/bateria/entrar.html`
++ `fetch('/api/asistente', ...)` desde la consola del navegador, en la misma pestaña): misma
+pregunta, misma respuesta correcta. Cierra el círculo completo -- interno, protegido por fuera, y
+usable de verdad con la cookie de sesión real, exactamente como lo usaría cualquiera del equipo.
+Todavía no hay ninguna pantalla con un botón (ni la nuestra, que no está ruteada en el dominio a
+propósito para no comerse el sitio de Magui, ni la de ella, que aún no se despliega ahí) -- pero
+el asistente en sí, de backend a backend, ya está verificado en producción de punta a punta.
+
+## 49. Una pregunta de fuga de datos verificada como falsa alarma, y un bug que se coló al widget de Magui
+
+**La supuesta fuga (`es_esios_D` / `pt_entsoe_D`) no es fuga — verificado con datos, no con el
+nombre de la columna.** Un compañero vio que un XGBoost concentraba casi toda la ganancia en
+esas dos columnas y sospechó sobreajuste por fuga. `scripts/auditoria_frontera.py` no las cubre
+automáticamente (no están en ninguno de sus bloques de columnas conocidas), así que se comprobó a
+mano con la misma lógica del script: comparar el valor de la matriz contra `spot_price` en varios
+desfases de día. Resultado limpio — **99,85% de coincidencia con el día D** (el día anterior al
+objetivo D+1, publicado la tarde antes), **1,73% con D+1** (que sería la fuga real). Es decir, es
+el precio de ayer, información legítima y disponible a la hora de predecir — no el precio del día
+que se está prediciendo. Que el modelo se apoye tanto en ella es coherente con lo que ya sabemos
+del proyecto (el propio baseline de persistencia funciona razonablemente bien porque el precio
+tiene autocorrelación fuerte día a día) — no invalida el hallazgo de que valdría la pena investigar
+si el modelo está *demasiado* apoyado en una sola variable (menos robusto ante cambios de
+régimen), pero esa es una pregunta de diseño del modelo, no una fuga de datos.
+
+**Bug real encontrado en el widget que se le dio a Magui.** La corrección de renderizado de
+markdown (nota 47) se aplicó en `production/api/static/index.html`, pero se me olvidó portarla a
+`docs/web/AsistenteWidget.tsx` — el componente de React seguía mostrando el texto en crudo
+(`{resultado.respuesta}`), y en una prueba real del equipo en Pulso se vio exactamente ese
+problema: las tablas salían con los `|` literales. Corregido con el mismo parser, adaptado a TSX
+(mismo enfoque: sin dependencias nuevas, usando `dangerouslySetInnerHTML` sobre HTML que la propia
+función ya escapa antes de insertar, nunca el texto del asistente sin pasar por `escaparHtml()`).
+
+## 50. La fuga de `es_esios_D` queda descartada por segunda vez, con un método distinto e independiente
+
+El mismo compañero (Powan) que planteó la sospecha original siguió investigando por su cuenta
+(`modelos/F12_pred_vs_real_3dias.ipynb`), sin depender de la verificación de la nota 49. Su método
+es distinto y complementario: en vez de comparar fechas contra la tabla fuente, entrenó el mismo
+XGBoost **sin** las 9 columnas de precio del día D (`es_esios_D`, `pt_entsoe_D` y las de los
+mercados vecinos) y midió cuánto empeora.
+
+Resultado, coherente con "información legítima mas no fuga": el MAE empeora **2,36-2,94 €/MWh**
+al quitarlas (de ~13,3 a ~15,6-16,6) — una degradación real pero moderada, no el colapso que se
+vería si esas columnas describieran el precio que se está prediciendo. Dos datos más lo confirman:
+al quitarlas, el modelo pasa a apoyarse en `es_esios_Dm1` y `es_esios_Dm6` (lags aún más atrás,
+inequívocamente legítimos) — el comportamiento normal de un modelo perdiendo su mejor predictor y
+recurriendo al siguiente, no de un modelo "roto" al perder un atajo. Y la correlación directa de
+`es_esios_D` con el precio objetivo es 0,88-0,92 según el split — alta porque el precio de ayer
+predice bien el de mañana, pero lejos del ~0,99+ que se vería si fuera literalmente el mismo dato.
+
+Vale la pena que quede dicho en el informe: dos personas, dos métodos distintos (auditoría de
+fechas contra la fuente vs. ablación del modelo), misma conclusión — es el tipo de verificación
+cruzada que reduce el riesgo de que una fuga real pase desapercibida por quedarse en un solo
+chequeo.
