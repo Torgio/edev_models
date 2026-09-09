@@ -421,10 +421,33 @@ TOOLS = [precio_historico_percentiles, precio_tabla_horaria, precio_tendencia_me
          precio_ponderado_por_generacion, resultado_estudio_bateria, consulta_sql_lectura]
 
 
-def preguntar_con_imagenes(pregunta: str, modelo: str = MODELO_POR_DEFECTO) -> dict:
+# Cuantos turnos previos (pregunta+respuesta) se reenvian como contexto. Cada uno que se
+# agrega es tokens de entrada reales, en cada pregunta nueva de la conversacion -- sin
+# tope, una conversacion larga encarece cada pregunta siguiente sin que quien pregunta lo
+# note. 6 turnos es suficiente para encadenar ("¿y en invierno?") sin dejar que crezca sin
+# limite.
+MAX_TURNOS_HISTORIAL = 6
+
+
+def _mensajes_con_historial(pregunta: str, historial: list[dict] | None) -> list[dict]:
+    """Historial = lista de {"role": "user"|"assistant", "content": str} de turnos previos,
+    en orden. Solo el texto final de cada turno -- las llamadas a herramientas de un turno
+    anterior no se reenvian, son trabajo interno de ese turno, no contexto de conversacion."""
+    if not historial:
+        return [{"role": "user", "content": pregunta}]
+    recortado = historial[-MAX_TURNOS_HISTORIAL * 2:]
+    return recortado + [{"role": "user", "content": pregunta}]
+
+
+def preguntar_con_imagenes(pregunta: str, modelo: str = MODELO_POR_DEFECTO,
+                            historial: list[dict] | None = None) -> dict:
     """Como `preguntar`, pero devuelve tambien las graficas que el asistente haya generado con
     `code_execution` (matplotlib), como PNG en base64 -- para interfaces (la API/web) que puedan
-    mostrarlas. Devuelve {"texto": str, "imagenes_base64": list[str]}."""
+    mostrarlas. Devuelve {"texto": str, "imagenes_base64": list[str]}.
+
+    `historial`: turnos previos de la misma conversacion (ver `_mensajes_con_historial`).
+    Sin esto, cada pregunta se procesaba aislada -- el modelo no podia encadenar un "¿y en
+    invierno?" con la pregunta anterior porque nunca la veia."""
     import base64
 
     client = anthropic.Anthropic(api_key=load_anthropic_key())
@@ -433,7 +456,7 @@ def preguntar_con_imagenes(pregunta: str, modelo: str = MODELO_POR_DEFECTO) -> d
         max_tokens=4096,
         system=SYSTEM_PROMPT,
         tools=TOOLS + [CODE_EXECUTION],
-        messages=[{"role": "user", "content": pregunta}],
+        messages=_mensajes_con_historial(pregunta, historial),
     )
 
     texto, imagenes = "(sin texto en la respuesta)", []
