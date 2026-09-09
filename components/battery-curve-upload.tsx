@@ -6,6 +6,7 @@ import { Line, LineChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, X
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { previewCurve, type CurveKind, type CurvePreview } from '@/lib/battery-curve-preview';
+import { BatterySetup } from '@/components/battery-setup';
 
 type Selected = { file: File; preview: CurvePreview };
 type UploadResult = { tipo: CurveKind; ok: boolean; code: string; problemas: string[]; curva: CurvePreview & { anual_mwh: number; pico_kw: number } };
@@ -36,12 +37,14 @@ function CurveInput({ kind, selected, onChange }: { kind: CurveKind; selected: S
 }
 
 export function BatteryCurveUpload({ onCancel }: { onCancel: () => void }) {
+  const [step, setStep] = useState<'curves' | 'battery'>('curves');
   const [consumption, setConsumption] = useState<Selected | null>(null);
   const [generation, setGeneration] = useState<Selected | null>(null);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
   const [saved, setSaved] = useState<UploadResult[]>([]);
   const ready = consumption && !consumption.preview.issues.length && (!generation || !generation.preview.issues.length);
+  const stored = saved.length > 0 && saved.every(item => item.ok);
   const chart = useMemo(() => Array.from({ length: 24 }, (_, index) => ({ hour: `h${index + 1}`, consumption: consumption?.preview.meanKw[index] ?? null, generation: generation?.preview.meanKw[index] ?? null })), [consumption, generation]);
   const submit = async () => {
     if (!ready) return;
@@ -58,11 +61,14 @@ export function BatteryCurveUpload({ onCancel }: { onCancel: () => void }) {
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : 'No se pudieron guardar las curvas.'); }
     finally { setUploading(false); }
   };
+  if (step === 'battery') return <BatterySetup onBack={() => setStep('curves')} />;
   return <section className="study-view" aria-labelledby="curve-upload-heading">
     <div className="study-heading"><div><p className="kicker">Estudio de instalación · paso 1 de 3</p><h2 id="curve-upload-heading">Sube tus curvas</h2><p>Comprueba primero la forma de consumo y generación. El servidor volverá a validarlas antes de guardarlas.</p></div><Button variant="outline" onClick={onCancel}>Ver resultados guardados</Button></div>
     <div className="study-upload-grid"><CurveInput kind="consumo" selected={consumption} onChange={value => { setConsumption(value); setSaved([]); setMessage(''); }} /><CurveInput kind="generacion" selected={generation} onChange={value => { setGeneration(value); setSaved([]); setMessage(''); }} /></div>
     {consumption && <article className="study-card"><div className="study-chart-heading"><div><h3>El día medio de tus curvas</h3><p>Consumo y generación medios por hora. Una fotovoltaica debe caer a cero durante la noche.</p></div></div><div className="study-profile-chart"><ResponsiveContainer width="100%" height="100%" minWidth={0}><LineChart data={chart} margin={{ top: 18, right: 18, left: 8, bottom: 8 }}><CartesianGrid vertical={false} stroke="#e1e8e4" /><XAxis dataKey="hour" interval={2} /><YAxis width={62} unit=" kW" /><Tooltip formatter={value => `${metric(Number(value))} kW`} /><Legend /><Line dataKey="consumption" name="Consumo" stroke="#173f35" strokeWidth={2.5} dot={false} /><Line dataKey="generation" name="Generación" stroke="#e6a229" strokeWidth={2.5} dot={false} /></LineChart></ResponsiveContainer></div></article>}
     {message && <div className={saved.every(item => item.ok) && saved.length ? 'study-upload-success' : 'study-notice'} role="status">{message}{saved.map(item => <p key={item.tipo}><strong>{item.tipo === 'consumo' ? 'Consumo' : 'Generación'}:</strong> {item.ok ? `${metric(item.curva.anual_mwh)} MWh/año · guardada como ${item.code}` : item.problemas.join(' ')}</p>)}</div>}
-    <div className="study-upload-actions"><Button variant="outline" onClick={onCancel}>Cancelar</Button><Button disabled={!ready || uploading} onClick={() => void submit()}>{uploading ? 'Validando en el servidor…' : 'Guardar curvas en prueba'}</Button></div>
+    <div className="study-upload-actions"><Button variant="outline" onClick={onCancel}>Cancelar</Button>{stored
+      ? <Button onClick={() => setStep('battery')}>Continuar con la batería →</Button>
+      : <Button disabled={!ready || uploading} onClick={() => void submit()}>{uploading ? 'Validando en el servidor…' : 'Guardar curvas en prueba'}</Button>}</div>
   </section>;
 }
