@@ -5,12 +5,13 @@ import { LockKeyhole, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-type AccessControls = { onSessionExpired: () => void; onLogout: () => Promise<void> };
+type AccessControls = { username: string | null; onSessionExpired: () => void; onLogout: () => Promise<void> };
 
 export function TeamAccess({ children }: { children: (controls: AccessControls) => ReactNode }) {
   const [state, setState] = useState<'checking' | 'locked' | 'open' | 'unavailable'>('checking');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [username, setUsername] = useState<string | null>(null);
 
   async function checkSession(signal?: AbortSignal) {
     setState('checking');
@@ -19,6 +20,7 @@ export function TeamAccess({ children }: { children: (controls: AccessControls) 
       const response = await fetch('/api/dashboard/session', { cache: 'no-store', signal });
       if (!response.ok) throw new Error('Servicio de acceso no disponible.');
       const session = await response.json();
+      setUsername(typeof session.username === 'string' ? session.username : null);
       setState(session.authenticated === true ? 'open' : 'locked');
     } catch (error) {
       if (signal?.aborted) return;
@@ -36,14 +38,15 @@ export function TeamAccess({ children }: { children: (controls: AccessControls) 
   async function login(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
+    const username = String(new FormData(form).get('username') ?? '');
     const password = String(new FormData(form).get('password') ?? '');
     form.reset();
     setBusy(true);
     setMessage('');
     try {
-      const response = await fetch('/api/dashboard/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }), cache: 'no-store' });
+      const response = await fetch('/api/dashboard/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }), cache: 'no-store' });
       if (response.status === 429) { setMessage('Demasiados intentos. Espera un minuto antes de volver a probar.'); return; }
-      if (response.status === 401) { setMessage('La contraseña no es correcta. Vuelve a intentarlo.'); return; }
+      if (response.status === 401) { setMessage('El usuario o la contraseña no son correctos.'); return; }
       if (!response.ok) throw new Error('No disponible');
       // Verificar la cookie HttpOnly antes de mostrar el dashboard.
       await checkSession();
@@ -59,6 +62,7 @@ export function TeamAccess({ children }: { children: (controls: AccessControls) 
     try {
       const response = await fetch('/api/dashboard/logout', { method: 'POST', cache: 'no-store' });
       if (!response.ok) throw new Error('No disponible');
+      setUsername(null);
       setState('locked');
       setMessage('Sesión cerrada.');
     } catch {
@@ -69,7 +73,7 @@ export function TeamAccess({ children }: { children: (controls: AccessControls) 
     }
   }
 
-  if (state === 'open') return children({ onSessionExpired: () => { setState('locked'); setMessage('La sesión ha caducado. Introduce de nuevo la contraseña.'); }, onLogout: logout });
+  if (state === 'open') return children({ username, onSessionExpired: () => { setUsername(null); setState('locked'); setMessage('La sesión ha caducado. Introduce de nuevo tus credenciales.'); }, onLogout: logout });
 
   return (
     <main className="access-shell">
@@ -83,13 +87,15 @@ export function TeamAccess({ children }: { children: (controls: AccessControls) 
           <><p role="alert" className="access-message">{message}</p><Button size="lg" onClick={() => void checkSession()}>Volver a comprobar</Button></>
         ) : (
           <form onSubmit={login}>
-            <label htmlFor="team-password">Contraseña del equipo</label>
+            <label htmlFor="team-username">Usuario</label>
+            <Input id="team-username" name="username" type="text" autoComplete="username" minLength={3} maxLength={32} required disabled={busy} autoCapitalize="none" spellCheck={false} />
+            <label htmlFor="team-password">Contraseña</label>
             <Input id="team-password" name="password" type="password" autoComplete="current-password" maxLength={128} required disabled={busy} aria-describedby="access-message" />
             <p id="access-message" role="status" className="access-message">{message}</p>
             <Button type="submit" size="lg" disabled={busy}>{busy ? 'Entrando…' : 'Entrar al dashboard'}</Button>
           </form>
         )}
-        <p className="access-note">Acceso restringido · La sesión caduca a las 8 horas.<br />Solicita la contraseña a la persona que administra el equipo.</p>
+        <p className="access-note">Acceso restringido · La sesión caduca a las 8 horas.<br />Solicita tu cuenta a la persona que administra el equipo.</p>
       </section>
     </main>
   );

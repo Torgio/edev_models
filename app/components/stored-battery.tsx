@@ -1,11 +1,11 @@
 'use client';
 import { useState } from 'react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { Database, TrendingUp, Zap } from 'lucide-react';
+import { CalendarX2, Database, TrendingUp, Zap } from 'lucide-react';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { metric, numeric } from '@/lib/stored-evaluations';
-import { batteryModels, storedPlanSummary } from '@/lib/stored-battery';
+import { batteryModels, batteryRecordState, preferredBatteryModel, storedPlanSummary } from '@/lib/stored-battery';
 import type { BatteryPayload } from '@/lib/battery-types';
 const hour = new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const timestamp = new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -23,13 +23,20 @@ export function StoredBattery({ day, data, status }: { day: string; data: Batter
   const [chosenModel, setChosenModel] = useState('');
   if (status === 'loading') return <section className="battery-section battery-loading" aria-label="Optimización BESS" aria-busy="true">Consultando optimización BESS…</section>;
   if (status === 'error') return <section className="battery-section battery-empty" aria-label="Optimización BESS">Optimización BESS no disponible. No se sustituye por una simulación.</section>;
-  if (!data || data.date !== day) return null;
-  if (!data.results.length && !data.plan.length) return null;
+  if (!data || data.date !== day) return <section className="battery-section battery-empty" aria-label="Optimización BESS">La API no devolvió información válida para la fecha seleccionada.</section>;
+  const availability = batteryRecordState(data.plan.length, data.results.length);
+  if (availability === 'empty') return <section className="battery-section battery-empty battery-empty-detail" aria-label="Optimización BESS sin datos">
+    <CalendarX2 aria-hidden="true" />
+    <div><h3>No hay operación BESS guardada para esta fecha</h3>
+      <p>La base no contiene ni un plan horario ni un resultado liquidado para el {planDate.format(new Date(`${day}T12:00:00`))}. Puedes consultar otro día desde el selector de fecha.</p>
+      <small>No se genera una simulación de reserva para rellenar este espacio.</small></div>
+  </section>;
 
   const models = batteryModels(data.plan, data.results);
-  const model = models.includes(chosenModel) ? chosenModel : models.includes('ensemble') ? 'ensemble' : models[0];
+  const model = preferredBatteryModel(data.plan, data.results, chosenModel);
   const plan = data.plan.filter(row => row.model === model).sort((a, b) => Date.parse(a.datetime) - Date.parse(b.datetime));
   const result = data.results.find(row => row.model === model);
+  const modelState = batteryRecordState(plan.length, result ? 1 : 0);
   const assumptions = plan[0]?.simulador ?? result?.simulador;
   const points = plan.map(row => ({
     datetime: row.datetime,
@@ -44,9 +51,9 @@ export function StoredBattery({ day, data, status }: { day: string; data: Batter
   const dischargeHours = plan.filter(row => row.descarga_mw > 0).map(row => hour.format(new Date(row.datetime)));
   const updated = plan[0]?.updated_at ?? result?.calculado_en;
   const comparison = result ? [
-    { label: 'Modelo', value: result.ingreso_eur, color: '#43a99f' },
-    { label: 'Oráculo evaluador', value: result.ingreso_oraculo_eur, color: '#e58b45' },
-    { label: 'Naive', value: result.ingreso_naive_eur, color: '#82908b' },
+    { label: 'Modelo · bruto', value: result.ingreso_eur, color: '#43a99f' },
+    { label: 'Previsión perfecta', value: result.ingreso_oraculo_eur, color: '#e58b45' },
+    { label: 'Naive · bruto', value: result.ingreso_naive_eur, color: '#82908b' },
   ] : [];
   const capacity = assumptions && numeric(assumptions.capacidad_mwh) ? assumptions.capacidad_mwh : summary.maxSoc;
 
@@ -54,12 +61,16 @@ export function StoredBattery({ day, data, status }: { day: string; data: Batter
     <div className="battery-header">
       <div><p className="section-label">Segundo paso · datos guardados</p><h2 id="battery-title">Optimización de la batería</h2>
         <p>Del precio previsto a un plan operativo de carga y descarga. La API solo lee el plan y el resultado almacenados.</p></div>
-      <label>Modelo
+      <label>Modelo evaluado
         <NativeSelect value={model} onChange={event => setChosenModel(event.target.value)}>
           {models.map(value => <NativeSelectOption key={value} value={value}>{value}</NativeSelectOption>)}
         </NativeSelect>
       </label>
     </div>
+
+    {modelState === 'result-only' ? <div className="battery-record-status is-result">Hay resultado económico liquidado para este modelo, pero no se guardó su plan horario.</div>
+      : modelState === 'plan-only' ? <div className="battery-record-status is-plan">El plan horario está guardado. Su resultado aparecerá cuando exista precio real y se ejecute la evaluación.</div>
+        : null}
 
     {plan.length > 0 ? <article className="battery-decision-card" aria-label="Resumen del plan BESS guardado">
       <div className="decision-copy">
@@ -68,12 +79,12 @@ export function StoredBattery({ day, data, status }: { day: string; data: Batter
         <p>{dischargeHours.length ? `Descargar ${dischargeHours.join(', ')}` : 'Sin horas de descarga guardadas'}</p>
         <small>Modelo {model} · {summary.observations} tramos · estrategia y supuestos almacenados</small>
       </div>
-      <div className="decision-value"><span>Ingreso previsto</span><strong>{signed(summary.income)}</strong><small>{summary.income == null ? 'Plan económico incompleto' : 'Suma de los importes horarios guardados'}</small></div>
+      <div className="decision-value"><span>Ingreso bruto previsto</span><strong>{signed(summary.income)}</strong><small>{summary.income == null ? 'Plan económico incompleto' : 'Suma de los importes horarios guardados'}</small></div>
     </article> : <div className="battery-decision-empty">No hay un plan horario guardado para esta fecha y modelo.</div>}
 
     <div className="battery-kpis">
-      <article><TrendingUp /><span>Ingreso realizado</span><strong>{signed(result?.ingreso_eur ?? null)}</strong><small>{result ? 'Liquidado con precio real' : 'Pendiente de precio real'}</small></article>
-      <article><Zap /><span>Captura sobre el oráculo</span><strong>{metric(result?.captura_pct, ' %')}</strong><small>Oráculo definido por el evaluador</small></article>
+      <article><TrendingUp /><span>Ingreso bruto realizado</span><strong>{signed(result?.ingreso_eur ?? null)}</strong><small>{result ? 'Liquidado con precio real' : 'Pendiente de precio real'}</small></article>
+      <article><Zap /><span>Captura sobre previsión perfecta</span><strong>{metric(result?.captura_pct, ' %')}</strong><small>Oráculo definido por el evaluador</small></article>
       <article><Database /><span>Estado de carga máximo</span><strong>{metric(summary.maxSoc, ' MWh')}</strong><small>{updated ? `Actualizado ${timestamp.format(new Date(updated))}` : 'Sin actualización'}</small></article>
     </div>
 
@@ -110,21 +121,23 @@ export function StoredBattery({ day, data, status }: { day: string; data: Batter
         {summary.income != null ? <div className="economic-waterfall">
           <div className="flow-step cost"><span>Coste de carga</span><strong>{signed(summary.chargeCost)}</strong></div><i>+</i>
           <div className="flow-step sale"><span>Venta de energía</span><strong>{signed(summary.dischargeRevenue)}</strong></div><i>=</i>
-          <div className="flow-step net"><span>Ingreso previsto</span><strong>{signed(summary.income)}</strong></div>
+          <div className="flow-step net"><span>Ingreso bruto previsto</span><strong>{signed(summary.income)}</strong></div>
         </div> : <div className="battery-chart-empty compact">Sin ingreso completo guardado para el plan.</div>}
         {result ? <>
           <div className="result-comparison">{comparison.map(item => <div key={item.label}><i style={{ background: item.color }} /><span>{item.label}</span><strong>{signed(item.value)}</strong></div>)}</div>
           <dl className="battery-result-list">
-            <div><dt>Captura sobre el oráculo</dt><dd>{metric(result.captura_pct, ' %')}</dd></div>
+            <div><dt>Captura sobre previsión perfecta</dt><dd>{metric(result.captura_pct, ' %')}</dd></div>
             <div><dt>Ciclos registrados</dt><dd>{metric(result.ciclos)}</dd></div>
           </dl>
-          <p>El oráculo es el definido por el evaluador y sus supuestos; no garantiza el máximo técnicamente operable.</p>
+          <p>La previsión perfecta (oráculo del evaluador) usa sus supuestos guardados; no garantiza el máximo técnicamente operable.</p>
         </> : <p className="pending-result">El plan es futuro: la comparación realizada aparecerá cuando exista precio real.</p>}
       </aside>
     </div>
 
     {assumptions && <div className="assumption-chips" aria-label="Supuestos registrados">{Object.entries(assumptions).filter(([key]) => key !== 'regla').map(([key, value]) =>
       <span key={key}><small>{label(key)}</small><strong>{assumptionValue(key, value)}</strong></span>)}</div>}
+
+    <p className="battery-scope-note"><strong>Alcance económico:</strong> arbitraje bruto en mercado diario. No incluye degradación, peajes, O&amp;M, mercado intradiario, servicios de balance ni mecanismos de capacidad.</p>
 
     <details className="battery-audit"><summary>Ver detalle horario y definición guardada</summary>
       {assumptions && <p><strong>Regla:</strong> {String(assumptions.regla ?? 'Sin registrar')}</p>}

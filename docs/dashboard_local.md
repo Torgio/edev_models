@@ -50,6 +50,27 @@ conviene que el usuario PostgreSQL también tenga permisos exclusivamente de lec
 Si usas una base remota, debe ser accesible desde tu red. Si no lo es, consultar
 con el responsable; no abrir puertos ni reutilizar usuarios administradores.
 
+### Probar el login individual en local
+
+Por defecto el archivo local usa `DASHBOARD_REQUIRE_AUTH=0`. Para probar la pantalla
+de acceso, crear un archivo de cuentas que queda excluido de Git:
+
+```bash
+.venv-dashboard/bin/python -m api.deploy.configure_users --output pulso-api-auth.json
+```
+
+El asistente propone cinco usuarios y solicita sus contraseñas sin mostrarlas.
+Después cambiar en `.env.dashboard.local`:
+
+```ini
+DASHBOARD_REQUIRE_AUTH=1
+DASHBOARD_AUTH_FILE=pulso-api-auth.json
+```
+
+Reiniciar la API. No compartir ni versionar `pulso-api-auth.json`; contiene hashes
+y el secreto que firma las sesiones. Para volver al modo local sin login, restaurar
+`DASHBOARD_REQUIRE_AUTH=0` y reiniciar exclusivamente la API local.
+
 ## 3. Primera instalación: web
 
 Desde `edev_models/app`:

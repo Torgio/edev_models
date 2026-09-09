@@ -3,6 +3,7 @@
     GET  /api/bat/estado                 que curva de precio hay publicada
     GET  /api/bat/curva                  los percentiles horarios de un tramo
     GET  /api/bat/instalaciones          lo que el usuario ya tiene guardado
+    GET  /api/bat/ejecuciones            estudios WEB guardados para esta pantalla
     POST /api/bat/curvas                 subir consumo y/o generacion
     POST /api/bat/estudio                lanzar el calculo. Devuelve un identificador
     GET  /api/bat/estudio/{tarea}        como va, y el resultado cuando acaba
@@ -27,6 +28,7 @@ el registro a la base o a un Redis.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -73,6 +75,12 @@ def _crear_pool():
     from config import load_config
     from psycopg2 import pool
     _, db = load_config()
+    db = dict(db)
+    test_db = os.environ.get("TFM_TEST_DB_NAME")
+    if test_db:
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,47}_test", test_db):
+            raise RuntimeError("TFM_TEST_DB_NAME solo admite nombres terminados en _test.")
+        db["dbname"] = test_db
     return pool.ThreadedConnectionPool(1, 6, **db)
 
 
@@ -177,6 +185,33 @@ def instalaciones(email: str = EMAIL_DEMO):
         bat = [{"code": a, "nombre": b, "kw": float(c) * 1000, "horas": float(d)}
                for a, b, c, d in cur.fetchall()]
     return {"consumo": con, "generacion": gen, "baterias": bat}
+
+
+@router.get("/ejecuciones")
+def ejecuciones_web():
+    """Ejecuciones creadas por la pantalla web para el usuario fijo del servicio.
+
+    No acepta correo ni prefijo desde el cliente: ambos quedan fijados en el servidor.
+    Así la pantalla puede recuperar sus resultados tras reiniciarse sin convertir esta
+    ruta en un catálogo de estudios ajenos.
+    """
+    with cursor() as cur:
+        cur.execute("SELECT user_id FROM app_user WHERE email = %s", (EMAIL_DEMO,))
+        found = cur.fetchone()
+        if found is None:
+            return {"runs": []}
+        cur.execute("""
+            SELECT r.run_id, c.code, r.run_at
+            FROM app_case_run r
+            JOIN app_study_case c ON c.case_id = r.case_id
+            WHERE c.user_id = %s AND c.code LIKE 'WEB-%%'
+            ORDER BY r.run_at DESC, r.run_id DESC
+            LIMIT 50
+        """, (found[0],))
+        rows = cur.fetchall()
+    return {"runs": [{"run_id": run_id, "code": code,
+                       "run_at": run_at.isoformat() if run_at else None}
+                      for run_id, code, run_at in rows]}
 
 
 # El decorador no vale aqui: FastAPI analiza la firma AL REGISTRAR la ruta, y con
@@ -380,7 +415,10 @@ def resultado(run_id: int):
         anos = [{k: (float(v) if isinstance(v, (int, float)) and k not in
                      ("ano", "dias") else v) for k, v in zip(campos, fila)}
                 for fila in cur.fetchall()]
-    return {"run": run, "anual": anos}
+    from run_snapshot import public_inputs
+    # SELECT * also works before migration; never join today's mutable installations.
+    inputs = public_inputs(run.pop("input_snapshot", None))
+    return {"run": run, "anual": anos, "inputs": inputs}
 
 
 @router.get("/despacho/{run_id}")

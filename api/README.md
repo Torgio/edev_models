@@ -29,6 +29,11 @@ calcula como `100 × (1 − Σ(MAE modelo × horas) / Σ(MAE naive × horas))`; 
 promedio de porcentajes diarios. La ruta no lee `predictions`, no reconstruye métricas
 ausentes y no escribe en PostgreSQL.
 
+`GET /performance-options?source=production` devuelve primero las combinaciones de
+modelo y semilla realmente disponibles, ordenadas por número de días. La web valida
+su selección contra esta lista y utiliza la primera combinación cuando `gru`/`44`
+no existe, evitando que la vista quede bloqueada por un valor predeterminado obsoleto.
+
 ## Rutas de la versión publicada
 
 **Distinción:** el apartado siguiente describe la versión que sigue publicada.
@@ -46,21 +51,22 @@ La copia local tiene contratos nuevos para `/leaderboard` y `/bess/{target_date}
 
 Pruebas: `python -m unittest api.test_auth api.test_deployment_config api.test_peak_accuracy api.test_stored_results scripts.test_serie_diaria`.
 
-Servicio de solo lectura entre PostgreSQL y el dashboard. Expone cinco rutas:
+Servicio de solo lectura entre PostgreSQL y el dashboard. Sus rutas de datos son:
 
 - `GET /health`
 - `GET /days?source=production`
 - `GET /predictions/2026-08-30?source=production`
-- `GET /leaderboard?source=production&days=30`
-- `GET /bess/2026-08-30?source=production&model=gru&duration=2`
+- `GET /leaderboard`
+- `GET /performance-options?source=production`
+- `GET /performance-history?model=gru&seed=44&days=30&source=production`
+- `GET /bess/2026-08-30`
 
 En el servidor, las cinco rutas requieren una sesión del equipo. Las rutas
 `GET /session`, `POST /login` y `POST /logout` gestionan el acceso, sin consultar
 PostgreSQL. Véase [acceso del equipo](deploy/README.md#acceso-del-equipo).
 
-La ruta BESS construye un plan diario de carga y descarga a partir de la predicción del modelo
-seleccionado y lo contrasta con el precio real. Por defecto representa una batería de 1 MW,
-2 MWh, 90 % de eficiencia y un ciclo diario; `duration` admite 1, 2 o 4 horas.
+La ruta BESS lee el plan y el resultado económico previamente guardados. No construye
+ni completa una simulación cuando faltan registros.
 
 En desarrollo, si no se activa el modo de entorno, la conexión usa el mismo
 `ingesta/credentials.json` que los pipelines. En producción se configuró el rol

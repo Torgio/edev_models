@@ -301,7 +301,8 @@ CREATE TABLE IF NOT EXISTS app_case_run (
     npv_p10 REAL, npv_p50 REAL, npv_p90 REAL,
     npv_positive_pct    REAL,
     capex_coverage_pct  REAL,
-    notes               TEXT
+    notes               TEXT,
+    input_snapshot      JSONB              -- inputs captured before solving; NULL for old runs
 );
 CREATE INDEX IF NOT EXISTS ix_case_run_caso ON app_case_run (case_id, run_at DESC);
 
