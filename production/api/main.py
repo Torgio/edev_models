@@ -23,6 +23,7 @@ import sys
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -142,11 +143,19 @@ def por_dia(dia: date):
     })
 
 
+class TurnoConversacion(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class PreguntaAsistente(BaseModel):
     pregunta: str
     # Opcional: para comparar coste/calidad entre modelos desde la propia pagina sin tocar
     # codigo. Si se omite, chat.py usa MODELO_POR_DEFECTO (claude-opus-5).
     modelo: str | None = None
+    # Opcional: turnos previos de la MISMA conversacion (ver chat.py::_mensajes_con_historial).
+    # Sin esto, cada pregunta se procesa aislada -- no hay forma de encadenar preguntas.
+    historial: list[TurnoConversacion] | None = None
 
 
 MODELOS_PERMITIDOS = {"claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"}
@@ -167,7 +176,9 @@ def asistente(cuerpo: PreguntaAsistente):
         raise HTTPException(400, f"Modelo '{cuerpo.modelo}' no reconocido. "
                                   f"Usa uno de: {sorted(MODELOS_PERMITIDOS)}.")
     try:
-        r = preguntar_con_imagenes(cuerpo.pregunta, modelo=cuerpo.modelo or MODELO_POR_DEFECTO)
+        historial = [t.model_dump() for t in cuerpo.historial] if cuerpo.historial else None
+        r = preguntar_con_imagenes(cuerpo.pregunta, modelo=cuerpo.modelo or MODELO_POR_DEFECTO,
+                                    historial=historial)
     except FileNotFoundError:
         raise HTTPException(500, "No hay credentials.json en esta maquina.")
     except KeyError:
