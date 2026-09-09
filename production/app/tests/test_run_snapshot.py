@@ -87,6 +87,19 @@ class SnapshotTests(unittest.TestCase):
              self.assertRaisesRegex(RuntimeError, 'terminados en _test'):
             bateria._crear_pool()
 
+    def test_web_execution_catalog_is_fixed_to_service_user_and_web_cases(self):
+        from production.api import bateria
+        cur = MagicMock()
+        cur.fetchone.return_value = (7,)
+        cur.fetchall.return_value = [(23, 'WEB-ABC', None)]
+        with patch.object(bateria, 'cursor', return_value=contextlib.nullcontext(cur)):
+            result = bateria.ejecuciones_web()
+        self.assertEqual(result, {'runs': [{'run_id': 23, 'code': 'WEB-ABC', 'run_at': None}]})
+        self.assertEqual(cur.execute.call_count, 2)
+        query, params = cur.execute.call_args_list[1].args
+        self.assertIn("c.code LIKE 'WEB-%%'", query)
+        self.assertEqual(params, (7,))
+
     def test_missing_migration_fails_before_reading_inputs_or_solving(self):
         from production.app import caso
         from psycopg2.errors import UndefinedColumn
