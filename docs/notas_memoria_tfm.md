@@ -1716,3 +1716,77 @@ Vale la pena que quede dicho en el informe: dos personas, dos métodos distintos
 fechas contra la fuente vs. ablación del modelo), misma conclusión — es el tipo de verificación
 cruzada que reduce el riesgo de que una fuga real pase desapercibida por quedarse en un solo
 chequeo.
+
+## 51. El LightGBM propio, unificado en `06_modelos_finales.ipynb` y medido contra las 8 familias del equipo
+
+Para reducir el número de ficheros del anexo (decisión del equipo: el anexo no cuenta para las 20
+páginas, pero sí cuenta cuántos ficheros distintos hay que adjuntar), se integró todo nuestro
+trabajo de LightGBM (afinamiento con Optuna, entrenamiento sobre `nucleo`, calibración conforme e
+exportación nativa — antes 7 scripts sueltos) como secciones nuevas (6 a 6.5) dentro del notebook
+compartido, en vez de dejarlo en un notebook aparte.
+
+Al escribir las celdas aparecieron dos bugs reales, encontrados antes de que el equipo los viera
+ejecutados:
+
+- La celda de calibración conforme reutilizaba por error el `val` de la matriz `nucleo` (122
+  columnas) para un modelo de incertidumbre entrenado sobre otra matriz completamente distinta
+  (156 columnas propias, `construir_dataset_horario`) — hubiera fallado con `KeyError` al
+  ejecutarse. Se corrigió reconstruyendo el dataset correcto en la propia celda.
+- La celda de entrenamiento sobre `nucleo` excluía solo `["fecha_objetivo", "hora", "split"]` como
+  columnas de control, cuando el script original (`modelo_lightgbm_nucleo.py`) también excluye
+  `fecha_pred`, `ts`, cinco banderas de trazabilidad y siete columnas de batería de arranque
+  tardío. Con la lista incompleta, LightGBM recibía una columna de fecha como feature y fallaba
+  con `DTypePromotionError` al construir el dataset interno.
+
+Con las dos correcciones, el notebook se ejecutó de principio a fin (`jupyter nbconvert
+--execute`, sin GPU dedicada más allá de la ya usada por las 8 familias, que no hizo falta
+reentrenar porque los resultados ya estaban en caché). La pregunta que motivó todo esto —¿un
+LightGBM más especializado demuestra que LightGBM es el mejor modelo?— tiene una respuesta
+honesta, ni "sí" ni "no" simple: sobre los mismos ~212 días de test que usan las 8 familias del
+notebook, nuestro modelo (entrenado con los hiperparámetros de 300 pruebas de Optuna, sobre la
+matriz `nucleo` completa, sin resumir a tensores) saca **MAE 12,98 €/MWh**, cuarto puesto
+individual — por detrás de `gru` (12,86) y `seq2seq` (12,91), por delante de `conv1d_lstm`,
+`simplernn`, y claramente por delante del `boosting` genérico que ya vivía en el notebook (13,85,
+24 modelos sin afinar) y de `denso`/`seq2seq_absoluto`/`lstm`. Pierde, como todos los individuales,
+contra el ENSEMBLE de las 8 familias (12,13). Conclusión para la memoria: afinar y usar la matriz
+completa sí mejora sustancialmente sobre un LightGBM genérico, pero no alcanza para superar al
+mejor individual del equipo ni al ensemble — coherente con lo que ya se sabía desde la nota 41.
+
+## 52. El asistente aproximaba "horas solares" por franja de reloj — había datos reales y no los veía
+
+Una pregunta real de un compañero ("precio promedio en horas de generación solar") destapó dos
+cosas a la vez. La primera, de qué manera el asistente resuelve un hueco de datos: sin serie de
+generación en su alcance, aproximó con una franja fija (8-19h, núcleo 10-17h) y lo avisó con
+claridad en la respuesta — comportamiento correcto dado lo que veía.
+
+La segunda es el hueco de verdad: la base sí tiene generación real horaria por tecnología desde
+2020 (`entsoe_gen_data`, `esios_gen`, `generation`) — el asistente no la veía porque el rol
+`asistente_solo_lectura` (nota 43) se creó con solo 5 tablas, ninguna de generación. Se amplió a
+una 6ª (`entsoe_gen_data`, ver `sql/registro_cambios_bd.md` entrada 4) y se añadió una herramienta
+dedicada, `precio_ponderado_por_generacion`, que pondera por generación real hora a hora en vez
+de promediar una franja de reloj.
+
+La diferencia importó, no fue solo un tecnicismo: el precio real ponderado por generación solar
+da **62,46 €/MWh**, frente a los 67,89-77,02 €/MWh de la aproximación por franja — porque el
+precio baja justo cuando más genera la solar (orden de mérito), y una franja de reloj fija no
+captura eso. Catorce herramientas registradas ahora, de trece.
+
+## 53. El asistente no tiene forma de saber quién pregunta — y eso decide qué tablas puede ver
+
+Al ampliar el alcance del asistente (estudio de batería, previsión/PBF oficial), revisar el
+esquema de cada tabla candidata antes de conceder el `GRANT` sacó a la luz algo que no era obvio
+por el nombre: `app_user` (la tabla de usuarios de Pulso) tiene un email real, y las tablas de
+estudios guardados (`app_study_case`, `app_case_run`, `app_gen_inst`...) tienen `user_id` como
+clave foránea — son datos **por usuario**, no compartidos por el equipo.
+
+El asistente no tiene ningún mecanismo para saber quién hace la pregunta: es un único endpoint
+(`/api/asistente`) compartido, sin la sesión de Pulso propagada hasta `herramientas.py`. Hoy solo
+existe 1 usuario real en la base, así que conceder acceso no filtraría nada de nadie todavía —
+pero en cuanto haya un segundo usuario, sería una fuga real: cualquiera podría pedirle al
+asistente el estudio de batería guardado por otra persona.
+
+Se decidió (con Willy, entre dos opciones) ampliar solo lo que no depende de usuario: 8 tablas
+nuevas (`bess_plan`/`bess_result` — resultados del equipo, sin usuario — y 6 de previsión/PBF
+oficial), dejando fuera `app_user` y las `app_*` de estudios hasta que exista un mecanismo real
+de filtrado por usuario. Dieciséis herramientas registradas ahora, de catorce; el rol de solo
+lectura pasa a 14 tablas de las 47 que tiene la base (`sql/registro_cambios_bd.md`, entrada 5).

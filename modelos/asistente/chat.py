@@ -313,7 +313,7 @@ def capacidad_instalada(fecha: str | None = None) -> str:
     """Capacidad instalada por tecnologia en España (MW): solar, eolica, hidraulica, nuclear,
     ciclo combinado, carbon, baterias hibridas... Usa esta herramienta para "cuanta solar/eolica
     hay instalada", "capacidad renovable" -- es un dato ADMINISTRATIVO (cuanta potencia hay),
-    no generacion real horaria.
+    no generacion real horaria (para eso, `precio_ponderado_por_generacion`).
 
     Devuelve MW y GW ya calculados -- usa el campo que corresponda tal cual, no conviertas
     tu mismo entre unidades (probado que se equivocaba escribiendo "GW" para un valor en MW).
@@ -322,6 +322,36 @@ def capacidad_instalada(fecha: str | None = None) -> str:
         fecha: YYYY-MM-DD. Si se omite, usa la fecha mas reciente disponible (serie desde 2020).
     """
     return json.dumps(_h.capacidad_instalada(fecha), ensure_ascii=False)
+
+
+@beta_tool
+def precio_ponderado_por_generacion(tecnologia: str, desde: str | None = None,
+                                     hasta: str | None = None) -> str:
+    """Precio medio REAL ponderado por generacion real de una tecnologia (dato horario desde
+    2020, no una franja de reloj aproximada). Usa esta herramienta para "precio en horas de
+    generacion solar/eolica/etc" -- NO calcules tu una franja de horas a ojo, esta herramienta
+    ya cruza precio y generacion real hora a hora.
+
+    Args:
+        tecnologia: una de "solar", "eolica", "hidraulica_fluyente", "hidraulica_embalse",
+            "biomasa", "residuos", "otras_renovables".
+        desde: YYYY-MM-DD, opcional.
+        hasta: YYYY-MM-DD, opcional.
+    """
+    return json.dumps(_h.precio_ponderado_por_generacion(tecnologia, desde, hasta), ensure_ascii=False)
+
+
+@beta_tool
+def resultado_estudio_bateria(modelo: str | None = None) -> str:
+    """Resultado REAL del estudio de baterias del equipo -- ya calculado, no una simulacion
+    nueva. Distinto de `simular_bateria` (que simula con los parametros que da quien pregunta):
+    esta herramienta devuelve cuanto ganó cada modelo del equipo operando una bateria contra el
+    precio real, comparado contra el oraculo y contra naive.
+
+    Args:
+        modelo: nombre del modelo (p.ej. "ensemble", "gru"). Si se omite, todos los modelos.
+    """
+    return json.dumps(_h.resultado_estudio_bateria(modelo), ensure_ascii=False)
 
 
 @beta_tool
@@ -345,6 +375,22 @@ def consulta_sql_lectura(sql: str) -> str:
       predictions(datetime timestamptz, pred_date, model, prediction, seed, matrix, matrix_hash,
         source)
       documentacion_embeddings(id, fuente, numero, titulo, texto) -- no selecciones `embedding`
+      entsoe_gen_data(datetime timestamptz, solar_mw, wind_mw, hydro_run_river_mw,
+        hydro_reservoir_mw, biomass_mw, waste_mw, other_renewable_mw, ...) -- generacion real
+        horaria por tecnologia, MW. Para precio ponderado por generacion usa mejor la
+        herramienta `precio_ponderado_por_generacion`
+      bess_plan(datetime, model, carga_mw, descarga_mw, soc_mwh, ingreso_eur) -- plan de
+        bateria por hora y modelo
+      bess_result(fecha_objetivo, model, ingreso_eur, ingreso_oraculo_eur, ingreso_naive_eur,
+        captura_pct, ciclos) -- mejor usar `resultado_estudio_bateria`
+      esios_forecast_da / entsoe_forecast_da (datetime, demanda_prev_mw/load_forecast_mw,
+        gen_wind_prev_mw/wind_forecast_mw, gen_solar_pv_prev_mw/solar_forecast_mw, ...) --
+        prevision oficial del operador para el dia siguiente, dos fuentes
+      esios_pbf_gen / esios_pdbc_gen (datetime, wind_mw, solar_pv_mw, nuclear_mw, coal_mw,
+        biomass_mw, ...) -- programado por tecnologia (PBF/PDBC), publicado el dia antes
+      esios_pbf_bilateral (datetime, bil_*_mw) -- contratos bilaterales dentro del PBF
+      esios_pbf_load_inter (datetime, demand_*_mw, net_flow_*_mw) -- demanda e intercambios
+        internacionales programados
 
     Reglas duras: una unica sentencia SELECT/WITH, sin punto y coma extra, nada de
     INSERT/UPDATE/DELETE/DDL. Si no pones LIMIT se añade LIMIT 200 automaticamente (maximo 500).
@@ -372,7 +418,7 @@ CODE_EXECUTION = {"type": "code_execution_20260521", "name": "code_execution"}
 TOOLS = [precio_historico_percentiles, precio_tabla_horaria, precio_tendencia_mensual, precio_negativos,
          precio_horas_negativas, simular_bateria, simular_autoconsumo_solar, precio_futuro_curva,
          extrapolar_consumo_cliente, capacidad_instalada, prediccion_d_mas_1, buscar_documentacion,
-         consulta_sql_lectura]
+         precio_ponderado_por_generacion, resultado_estudio_bateria, consulta_sql_lectura]
 
 
 def preguntar_con_imagenes(pregunta: str, modelo: str = MODELO_POR_DEFECTO) -> dict:
