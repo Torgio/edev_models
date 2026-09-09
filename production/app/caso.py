@@ -30,13 +30,16 @@ marca de que fuente salio cada año.
 from __future__ import annotations
 
 import argparse
+import os
+import re
 import sys
 from datetime import date
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from psycopg2.extras import execute_values
+from psycopg2.extras import execute_values, Json
+from psycopg2.errors import UndefinedColumn
 
 REPO = Path(__file__).resolve().parents[2]
 # `production/app/x.py` -> el repo esta dos niveles arriba. Los MOTORES viven en `scripts/`
@@ -72,6 +75,11 @@ def conexion():
     from config import load_config
     import psycopg2
     _, db = load_config()
+    test_db = os.environ.get("TFM_TEST_DB_NAME")
+    if test_db:
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,47}_test", test_db):
+            raise SystemExit("TFM_TEST_DB_NAME solo admite nombres terminados en _test.")
+        db["dbname"] = test_db
     _adaptadores_numpy()
     return psycopg2.connect(**db)
 
@@ -307,6 +315,14 @@ def precios(con, desde, hasta, n_esc, modelo="ensemble", verbose=True):
 def cmd_ejecutar(con, cur, uid, a):
     import time
     from optimiza_bateria import optimizar, sin_bateria, coste_ciclo
+    from run_snapshot import capture_inputs
+
+    # Fail before an expensive solve if the additive migration has not been applied.
+    try:
+        cur.execute("SELECT input_snapshot FROM app_case_run LIMIT 0")
+    except UndefinedColumn as exc:
+        raise SystemExit("Falta aplicar production/app/sql/20260909_run_input_snapshot.sql "
+                         "antes de ejecutar nuevos estudios.") from exc
 
     c = pd.read_sql(
         "SELECT * FROM app_study_case WHERE user_id = %s AND code = %s", con,
@@ -340,6 +356,9 @@ def cmd_ejecutar(con, cur, uid, a):
     curva_gen, curva_hash = _c
 
     consumo = generacion = None
+    ci = gi = None
+    consumption_shape = generation_shape = None
+    generation_full_load_hours = 1600
     sitio = dict(recargo_tarifa=0.0, precio_excedente_pct=100.0,
                  politica_carga=c.charge_policy)
     if c["mode"] == "autoconsumo":
@@ -350,6 +369,7 @@ def cmd_ejecutar(con, cur, uid, a):
             fc = pd.read_sql("SELECT month mes, day_type tipo, hour hora, value_pu pu "
                              "FROM app_consump_shape WHERE consump_id=%s", con,
                              params=(int(c.consump_id),))
+            consumption_shape = list(fc.itertuples(index=False, name=None))
             consumo = proyectar(fc, float(ci.annual_mwh), dias[0], dias[-1],
                                 float(ci.growth_pct)).valor.to_numpy().reshape(-1, 24)
             sitio.update(recargo_tarifa=float(ci.tariff_markup_eur_mwh),
@@ -364,7 +384,8 @@ def cmd_ejecutar(con, cur, uid, a):
             fg = pd.read_sql("SELECT month mes, day_type tipo, hour hora, value_pu pu "
                              "FROM app_gen_shape WHERE gen_id=%s", con,
                              params=(int(c.gen_id),))
-            generacion = proyectar(fg, float(gi.capacity_mwp) * 1600, dias[0], dias[-1],
+            generation_shape = list(fg.itertuples(index=False, name=None))
+            generacion = proyectar(fg, float(gi.capacity_mwp) * generation_full_load_hours, dias[0], dias[-1],
                                    -float(gi.degradation_pct)).valor.to_numpy().reshape(-1, 24)
             sitio["limite_vertido"] = (float(gi.export_limit_mw)
                                        if pd.notna(gi.export_limit_mw) else None)
@@ -373,6 +394,12 @@ def cmd_ejecutar(con, cur, uid, a):
             consumo = np.zeros_like(generacion)
         if generacion is None:
             generacion = np.zeros_like(consumo)
+
+    input_snapshot = capture_inputs(
+        case=c, battery=b, effective_battery=bat, site=sitio,
+        consumption=ci, generation=gi, consumption_shape=consumption_shape,
+        generation_shape=generation_shape, date_from=dias[0].date(), date_to=dias[-1].date(),
+        cycle_cost=cc, scenarios=a.escenarios, generation_full_load_hours=generation_full_load_hours)
 
     t0 = time.time()
     ns = len(px)
@@ -448,7 +475,7 @@ def cmd_ejecutar(con, cur, uid, a):
             "days_historical", "days_simulated", "n_scenarios", "solver", "solver_seconds",
             "margin_total_mean", "margin_annual_mean", "savings_vs_no_batt",
             "cycles_per_day", "life_years", "npv_p10", "npv_p50", "npv_p90",
-            "npv_positive_pct", "capex_coverage_pct", "notes")
+            "npv_positive_pct", "capex_coverage_pct", "notes", "input_snapshot")
     vals = (
         (int(c.case_id), curva_gen, curva_hash, split, n_hist, len(dias) - n_hist, ns,
          "highs-milp" if b.power_min_pct > 0 else "highs-lp", seg,
@@ -462,7 +489,7 @@ def cmd_ejecutar(con, cur, uid, a):
            if len(vans) else (None, None, None)),
          float((vans > 0).mean() * 100) if len(vans) else None,
          float(bruto_vida / capex * 100),
-         a.notas))
+         a.notas, Json(input_snapshot)))
     assert len(COLS) == len(vals), (
         f"INSERT descuadrado: {len(COLS)} columnas, {len(vals)} valores")
     cur.execute(f"INSERT INTO app_case_run ({', '.join(COLS)}) "
@@ -605,7 +632,6 @@ def main():
                     help="no volcar app_case_dispatch (526.000 filas por ejecucion)")
     a = ap.parse_args()
 
-    import os
     email = a.email or os.environ.get("TFM_EMAIL")
     if not email:
         raise SystemExit("hace falta --email (o la variable de entorno TFM_EMAIL)")

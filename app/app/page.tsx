@@ -23,6 +23,8 @@ import { forecastMinimum } from '@/lib/forecast-minimum';
 import { dailyPrice } from '@/lib/daily-price';
 import { StoredEvaluations } from '@/components/stored-evaluations';
 import { StoredBattery } from '@/components/stored-battery';
+import { BatteryStudy } from '@/components/battery-study';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { predictionUpdate } from '@/lib/prediction-update';
 import { initialDashboardDay, type AvailableDay } from '@/lib/initial-day';
 import { marketHourLabel } from '@/lib/market-hour';
@@ -122,6 +124,7 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
   const [availableDays, setAvailableDays] = useState<AvailableDay[]>([]);
   const [visible, setVisible] = useState<ModelKey[]>([]);
   const [view, setView] = useState<'prediction' | 'evaluation' | 'battery' | 'assistant'>('prediction');
+  const [batteryView, setBatteryView] = useState<'daily' | 'study'>('daily');
   const [referenceModel, setReferenceModel] = useState('');
   const [dayState, setDayState] = useState<{ day: string; hours: PriceHour[]; updated: string | null } | null>(null);
   const [dataStatus, setDataStatus] = useState<'loading' | 'live' | 'error'>('loading');
@@ -394,11 +397,21 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
 
         </> : view === 'evaluation' ? <div className="evaluation-view"><StoredEvaluations onSessionExpired={onSessionExpired} /></div> : view === 'battery' ?
           <div className="battery-view">
+            <Tabs value={batteryView} onValueChange={value => {
+              if (value === 'daily' || value === 'study') setBatteryView(value);
+            }} className="battery-modes">
+              <TabsList aria-label="Vistas de batería"><TabsTrigger value="daily">Operación diaria</TabsTrigger>
+                {process.env.NODE_ENV === 'development' && <TabsTrigger value="study">Estudio de instalación</TabsTrigger>}
+              </TabsList>
+              <TabsContent value="daily">
             <div className="view-datebar">
               <div><p className="kicker">Operación diaria</p><h2>Plan BESS guardado</h2><p>Consulta la decisión horaria y su resultado económico sin recalcular la estrategia.</p></div>
               <DateNavigator date={date} days={availableDays} coverageLabel={dayCoverageLabel} ariaLabel="Navegación por fecha BESS" onChange={setDate} />
             </div>
             <StoredBattery day={day} data={currentBattery.data} status={currentBattery.status} />
+              </TabsContent>
+              {process.env.NODE_ENV === 'development' && <TabsContent value="study"><BatteryStudy /></TabsContent>}
+            </Tabs>
           </div> :
           <div className="assistant-view">
             <div className="assistant-heading">

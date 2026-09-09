@@ -380,7 +380,10 @@ def resultado(run_id: int):
         anos = [{k: (float(v) if isinstance(v, (int, float)) and k not in
                      ("ano", "dias") else v) for k, v in zip(campos, fila)}
                 for fila in cur.fetchall()]
-    return {"run": run, "anual": anos}
+    from run_snapshot import public_inputs
+    # SELECT * also works before migration; never join today's mutable installations.
+    inputs = public_inputs(run.pop("input_snapshot", None))
+    return {"run": run, "anual": anos, "inputs": inputs}
 
 
 @router.get("/despacho/{run_id}")
