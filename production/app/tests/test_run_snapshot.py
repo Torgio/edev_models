@@ -2,6 +2,7 @@ import contextlib
 from datetime import date
 import io
 import json
+import os
 import unittest
 from unittest.mock import patch, MagicMock
 from types import SimpleNamespace
@@ -68,6 +69,23 @@ class SnapshotTests(unittest.TestCase):
             self.assertNotIn('input_snapshot', result['run'])
             self.assertEqual(cur.execute.call_count, 2)
             self.assertTrue(all('JOIN' not in call.args[0] for call in cur.execute.call_args_list))
+
+    def test_battery_api_database_override_only_accepts_test_database(self):
+        from production.api import bateria
+        import config
+        db = {'host': 'db.local', 'port': 5432, 'dbname': 'tfm_energia',
+              'user': 'reader', 'password': 'secret'}
+        fake_pool = MagicMock()
+        with patch.object(config, 'load_config', return_value=({}, db)), \
+             patch('psycopg2.pool.ThreadedConnectionPool', return_value=fake_pool) as pool, \
+             patch.dict(os.environ, {'TFM_TEST_DB_NAME': 'tfm_energia_test'}):
+            self.assertIs(bateria._crear_pool(), fake_pool)
+        self.assertEqual(pool.call_args.kwargs['dbname'], 'tfm_energia_test')
+        self.assertEqual(db['dbname'], 'tfm_energia')
+        with patch.object(config, 'load_config', return_value=({}, db)), \
+             patch.dict(os.environ, {'TFM_TEST_DB_NAME': 'tfm_energia'}), \
+             self.assertRaisesRegex(RuntimeError, 'terminados en _test'):
+            bateria._crear_pool()
 
     def test_missing_migration_fails_before_reading_inputs_or_solving(self):
         from production.app import caso

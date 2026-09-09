@@ -27,6 +27,7 @@ el registro a la base o a un Redis.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -73,6 +74,12 @@ def _crear_pool():
     from config import load_config
     from psycopg2 import pool
     _, db = load_config()
+    db = dict(db)
+    test_db = os.environ.get("TFM_TEST_DB_NAME")
+    if test_db:
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,47}_test", test_db):
+            raise RuntimeError("TFM_TEST_DB_NAME solo admite nombres terminados en _test.")
+        db["dbname"] = test_db
     return pool.ThreadedConnectionPool(1, 6, **db)
 
 
