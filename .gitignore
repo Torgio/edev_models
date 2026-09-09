@@ -65,3 +65,6 @@ team-auth
 
 # Maqueta exportable separada de la aplicación principal.
 /app/demo/
+
+# Scratch de despliegue y renders intermedios: no viaja en el repo.
+/tmp/
