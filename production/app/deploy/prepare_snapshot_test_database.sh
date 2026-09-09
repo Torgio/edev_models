@@ -24,12 +24,15 @@ runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d postgres -c \
     "CREATE DATABASE $TEST_DATABASE WITH TEMPLATE template0 ENCODING 'UTF8'"
 runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d postgres -c \
     "ALTER DATABASE $TEST_DATABASE SET timezone TO 'Europe/Madrid'"
-runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d "$TEST_DATABASE" -f "$SCHEMA_FILE"
-runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d "$TEST_DATABASE" -f "$MIGRATION_FILE"
+# El script corre como root y abre los ficheros antes de bajar privilegios.
+# En servidores donde /home/ubuntu no es atravesable por postgres, `psql -f`
+# fallaria aunque los SQL fueran legibles.
+runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d "$TEST_DATABASE" < "$SCHEMA_FILE"
+runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d "$TEST_DATABASE" < "$MIGRATION_FILE"
 
 actual_database="$(runuser -u postgres -- psql -d "$TEST_DATABASE" -Atqc 'SELECT current_database()')"
 [[ "$actual_database" == "$TEST_DATABASE" ]] || { echo "Base inesperada: $actual_database" >&2; exit 1; }
-runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d "$TEST_DATABASE" -f "$SEED_FILE"
+runuser -u postgres -- psql -v ON_ERROR_STOP=1 -d "$TEST_DATABASE" < "$SEED_FILE"
 
 echo "Base aislada creada: $TEST_DATABASE"
 echo "Contiene solo 48 precios y perfiles sintéticos; tfm_energia no se ha modificado."
