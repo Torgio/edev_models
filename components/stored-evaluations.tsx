@@ -3,9 +3,10 @@ import { useEffect, useState } from 'react';
 import { Cell, CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from 'recharts';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { bestMae, evaluationGroup, metric, numeric, rankedEvaluations, type Evaluation, type Order } from '@/lib/stored-evaluations';
+import { bestMae, evaluationGroup, maxCoverageEvaluations, metric, numeric, rankedEvaluations, type Evaluation, type Order } from '@/lib/stored-evaluations';
 import { PerformanceHistory } from '@/components/performance-history';
 import { modelColor } from '@/lib/model-color';
+import { formatEnergyPrice } from '@/lib/price-format';
 
 const orderLabels: Record<Order, string> = {
   captura_pct: 'Captura',
@@ -15,13 +16,16 @@ const orderLabels: Record<Order, string> = {
 const seed = (value: number) => value === -1 ? 'No aplica' : String(value);
 const bestBy = (rows: Evaluation[], key: 'captura_pct' | 'skill_vs_naive') =>
   rows.filter(row => numeric(row[key])).sort((a, b) => b[key]! - a[key]!)[0];
+const coverage = (row: Evaluation | undefined) => row && numeric(row.n_obs)
+  ? `${row.n_obs.toLocaleString('es-ES')} horas evaluadas${row.n_obs % 24 === 0 ? ` · ${row.n_obs / 24} días` : ''}`
+  : 'Cobertura no disponible';
 
 function EvaluationTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: Evaluation }> }) {
   const row = payload?.[0]?.payload;
   if (!active || !row) return null;
   return <div className="evaluation-tooltip">
     <strong>{row.model}</strong><span>Semilla {seed(row.seed)}</span>
-    <dl><div><dt>MAE</dt><dd>{metric(row.mae, ' €/MWh')}</dd></div>
+    <dl><div><dt>MAE</dt><dd>{formatEnergyPrice(row.mae)}</dd></div>
       <div><dt>Captura</dt><dd>{metric(row.captura_pct, ' %')}</dd></div>
       <div><dt>Skill</dt><dd>{metric(row.skill_vs_naive, ' %')}</dd></div></dl>
   </div>;
@@ -48,11 +52,12 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
   const groups = [...new Map(rows.map(row => [evaluationGroup(row), row])).entries()];
   const selected = groups.some(([key]) => key === group) ? group : groups[0]?.[0] ?? '';
   const ranked = rankedEvaluations(rows, selected, order);
+  const comparable = maxCoverageEvaluations(ranked);
   const scatter = ranked.filter(row => numeric(row.mae) && numeric(row.captura_pct));
   const context = ranked[0];
-  const lowMae = bestMae(ranked);
-  const highCapture = bestBy(ranked, 'captura_pct');
-  const highSkill = bestBy(ranked, 'skill_vs_naive');
+  const lowMae = bestMae(comparable);
+  const highCapture = bestBy(comparable, 'captura_pct');
+  const highSkill = bestBy(comparable, 'skill_vs_naive');
 
   return <><PerformanceHistory onSessionExpired={onSessionExpired} /><section className="evaluation-section" id="hitos" aria-labelledby="evaluation-title">
     <div className="evaluation-header">
@@ -68,9 +73,9 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
     {status !== 'ready' ? <div className="evaluation-empty" role="status">{status === 'loading' ? 'Consultando evaluaciones…' : 'Evaluaciones no disponibles. No se muestra un ranking de reserva.'}</div>
       : !rows.length ? <div className="evaluation-empty" role="status">No hay evaluaciones guardadas.</div> : <>
       <div className="evaluation-kpis">
-        <article><span>Menor MAE</span><strong>{metric(lowMae?.mae, ' €/MWh')}</strong><small>{lowMae ? `${lowMae.model} · semilla ${seed(lowMae.seed)} · ${lowMae.n_obs ?? '—'} observaciones` : 'Sin valor guardado'}</small></article>
-        <article><span>Mayor captura registrada</span><strong>{metric(highCapture?.captura_pct, ' %')}</strong><small>{highCapture ? `${highCapture.model} · semilla ${seed(highCapture.seed)}` : 'Sin valor guardado'}</small></article>
-        <article><span>Mayor skill vs. naive</span><strong>{metric(highSkill?.skill_vs_naive, ' %')}</strong><small>{highSkill ? `${highSkill.model} · semilla ${seed(highSkill.seed)}` : 'Sin valor guardado'}</small></article>
+        <article><span>Menor MAE · cobertura máxima</span><strong>{formatEnergyPrice(lowMae?.mae)}</strong><small>{lowMae ? `${lowMae.model} · semilla ${seed(lowMae.seed)} · ${coverage(lowMae)}` : 'Sin valor comparable'}</small></article>
+        <article><span>Mayor captura · cobertura máxima</span><strong>{metric(highCapture?.captura_pct, ' %')}</strong><small>{highCapture ? `${highCapture.model} · semilla ${seed(highCapture.seed)} · ${coverage(highCapture)}` : 'Sin valor comparable'}</small></article>
+        <article><span>Mayor skill · cobertura máxima</span><strong>{metric(highSkill?.skill_vs_naive, ' %')}</strong><small>{highSkill ? `${highSkill.model} · semilla ${seed(highSkill.seed)} · ${coverage(highSkill)}` : 'Sin valor comparable'}</small></article>
       </div>
 
       <div className="evaluation-grid">
