@@ -104,12 +104,16 @@ class StoredResultsTests(unittest.TestCase):
             {'date': date(2026, 8, 18), 'n_obs': 24, 'mae': 5.0, 'mae_naive': 10.0},
             {'date': date(2026, 9, 1), 'n_obs': 24, 'mae': 8.0, 'mae_naive': 10.0},
         ]
-        result = performance_summary(rows, 30, date(2026, 8, 3), date(2026, 9, 1))
+        result = performance_summary(rows, 30, date(2026, 8, 3), date(2026, 9, 1), date(2026, 9, 5))
         self.assertEqual(result['evaluated_days'], 4)
         self.assertEqual(result['observations'], 95)
         self.assertEqual(result['days_won'], 3)
         self.assertEqual(result['recent_evaluated_days'], 1)
         self.assertAlmostEqual(result['recent_skill_pct'], 20.0)
+        self.assertEqual(result['first_evaluated_date'], date(2026, 8, 3))
+        self.assertEqual(result['last_evaluated_date'], date(2026, 9, 1))
+        self.assertEqual(result['lag_days'], 4)
+        self.assertTrue(result['is_stale'])
 
     def test_legacy_filters_do_not_silently_relabel_stored_results(self):
         for path in ('/leaderboard?source=production&days=30', '/bess/2026-08-31?duration=4'):

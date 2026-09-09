@@ -43,15 +43,26 @@ def weighted_skill(rows):
     return 100 * (1 - numerator / denominator)
 
 
-def performance_summary(rows, window_days, start, end):
+def performance_summary(rows, window_days, start, end, expected_through=None):
     recent_start = end - timedelta(days=min(10, window_days) - 1)
     split = start + timedelta(days=window_days // 2)
     recent = [row for row in rows if row["date"] >= recent_start]
     first = [row for row in rows if row["date"] < split]
     second = [row for row in rows if row["date"] >= split]
+    first_evaluated = min((row["date"] for row in rows), default=None)
+    last_evaluated = max((row["date"] for row in rows), default=None)
+    lag_days = (expected_through - last_evaluated).days \
+        if expected_through is not None and last_evaluated is not None else None
+    if lag_days is not None:
+        lag_days = max(0, lag_days)
     return {
         "start_date": start,
         "end_date": end,
+        "first_evaluated_date": first_evaluated,
+        "last_evaluated_date": last_evaluated,
+        "expected_through_date": expected_through,
+        "lag_days": lag_days,
+        "is_stale": lag_days > 0 if lag_days is not None else None,
         "window_days": window_days,
         "evaluated_days": len(rows),
         "observations": sum(row.get("n_obs") or 0 for row in rows),
@@ -96,6 +107,21 @@ def performance_history(connection, model, seed, days, source="production"):
               AND mae IS NOT NULL AND mae_naive IS NOT NULL
         """, (source, model, seed))
         end = cur.fetchone()[0]
+        cur.execute("""
+            WITH coverage AS (
+                SELECT (datetime AT TIME ZONE 'Europe/Madrid')::date AS day,
+                       count(DISTINCT datetime) FILTER (WHERE es_esios IS NOT NULL) AS actual_hours
+                FROM spot_price
+                GROUP BY 1
+            )
+            SELECT max(day)
+            FROM coverage
+            WHERE actual_hours = EXTRACT(EPOCH FROM (
+                ((day + 1)::timestamp AT TIME ZONE 'Europe/Madrid') -
+                (day::timestamp AT TIME ZONE 'Europe/Madrid')
+            )) / 3600
+        """)
+        expected_through = cur.fetchone()[0]
         start = end - timedelta(days=days - 1)
         cur.execute("""
             SELECT d.fecha AS date, d.n_obs, d.mae, d.mae_naive, d.skill_vs_naive,
@@ -123,7 +149,7 @@ def performance_history(connection, model, seed, days, source="production"):
         "seed": seed,
         "source": source,
         "available": available,
-        "summary": performance_summary(series, days, start, end),
+        "summary": performance_summary(series, days, start, end, expected_through),
         "series": series,
         "naive_rule": naive_rule,
         "definition": "100 × (1 − Σ(MAE modelo × horas) / Σ(MAE naive × horas)).",
