@@ -14,6 +14,11 @@ DASHBOARD_API_URL=https://vps-16d0afbc.vps.ovh.net
 BESS_STUDY_RUN_IDS=16
 ```
 
+Para leer una API BESS aislada por un túnel local sin cambiar dónde se valida la
+sesión, configurar además `BESS_STUDY_API_URL=http://127.0.0.1:8011`. Este origen
+solo se usa para `/api/bat/*`; `DASHBOARD_API_URL` continúa siendo la autoridad de
+autenticación. La ruta sigue deshabilitada fuera de desarrollo.
+
 El estudio 16 es el ejemplo comunicado por el equipo; configurarlo no garantiza
 que siga existiendo, que tenga despacho para todas las fechas o que su metodología
 económica esté validada. Se pueden habilitar varios IDs separados por comas.

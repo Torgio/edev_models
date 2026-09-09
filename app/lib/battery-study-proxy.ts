@@ -8,7 +8,7 @@ const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value)
 
 /** Local, read-only bridge for explicitly selected team studies, pending per-user ownership. */
 export async function proxyBatteryStudy(request: Request, path: string, options: {
-  upstream: string; development: boolean; allowedRuns: string; fetcher?: typeof fetch;
+  upstream: string; studyUpstream?: string; development: boolean; allowedRuns: string; fetcher?: typeof fetch;
 }) {
   const url = new URL(request.url);
   if (!options.development || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
@@ -49,7 +49,7 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
   const cookie = request.headers.get('cookie')?.split(';').map(c => c.trim())
     .find(c => /^pulso_session=[A-Za-z0-9_.-]{1,1024}$/.test(c));
   if (cookie) headers.set('Cookie', cookie);
-  const destination = new URL(`/api/bat/${path}`, options.upstream);
+  const destination = new URL(`/api/bat/${path}`, options.studyUpstream || options.upstream);
   destination.search = url.search;
   try {
     const response = await (options.fetcher ?? fetch)(destination, {
