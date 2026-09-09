@@ -83,15 +83,43 @@
 .study-upload-actions { display: flex; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
 .study-upload-success { padding: 16px 20px; border: 1px solid #b7d8c8; border-radius: 12px; background: #edf8f2; color: #175d43; line-height: 1.55; }
 .study-upload-success p { margin: 6px 0 0; }
+.study-battery-form { display: grid; gap: 20px; }
+.study-battery-basics { display: grid; grid-template-columns: minmax(180px,.8fr) minmax(320px,1.4fr) minmax(220px,1fr); gap: 18px; align-items: end; }
+.study-number-field { display: grid; gap: 8px; min-width: 0; font-size: .875rem; font-weight: 600; }
+.study-number-field > div { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; min-height: 44px; border: 1px solid #cbd6d1; border-radius: 10px; background: white; overflow: hidden; }
+.study-number-field input { height: 42px; border: 0; border-radius: 0; padding-inline: 14px; font-size: 1rem; font-variant-numeric: tabular-nums; }
+.study-number-field small { padding: 0 12px; color: #667770; font-size: .8125rem; white-space: nowrap; }
+.study-duration { min-width: 0; margin: 0; padding: 0; border: 0; }
+.study-duration legend { margin-bottom: 8px; font-size: .875rem; font-weight: 600; }
+.study-duration > div { display: grid; grid-template-columns: repeat(6, minmax(48px,1fr)); gap: 6px; }
+.study-duration button { min-height: 44px; }
+.study-battery-summary { padding: 20px; border: 1px solid #c8dbd1; border-radius: 12px; background: #eaf3ee; }
+.study-battery-summary-title { display: flex; align-items: center; gap: 8px; color: #52685e; font-size: .8125rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.study-battery-summary-title svg { width: 18px; height: 18px; color: #258160; }
+.study-battery-summary dl { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 18px; margin: 18px 0 0; }
+.study-battery-summary dl > div { min-width: 0; }
+.study-battery-summary dt { color: #52685e; font-size: .8125rem; }
+.study-battery-summary dd { margin: 7px 0 0; font-size: clamp(1.25rem,2vw,1.65rem); font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.study-battery-summary dd small { font-size: .75rem; font-weight: 500; color: #52685e; white-space: nowrap; }
+.study-battery-note { display: flex; gap: 10px; align-items: flex-start; margin: 0; padding-left: 14px; border-left: 2px solid #43a987; font-size: .875rem; line-height: 1.6; }
+.study-battery-note svg { width: 17px; height: 17px; flex: none; margin-top: 3px; color: #258160; }
+.study-battery-advanced { border-top: 1px solid #dce4df; padding-top: 18px; }
+.study-battery-advanced summary { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: .9375rem; font-weight: 600; }
+.study-battery-advanced summary svg { width: 18px; height: 18px; color: #667770; }
+.study-advanced-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; margin-top: 20px; }
 .study-details summary { cursor: pointer; font-size: 16px; font-weight: 600; }
 .study-details p { margin-top: 16px; overflow-wrap: anywhere; }
 .study-details table { margin-top: 20px; width: 100%; font-size: 14px; border-collapse: collapse; }
 .study-details th, .study-details td { padding: 12px; border-bottom: 1px solid #e1e8e4; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 @media (max-width: 1100px) { .study-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1000px) { .study-battery-basics { grid-template-columns: repeat(2,minmax(0,1fr)); }.study-duration { grid-column: 1 / -1; grid-row: 2; }.study-battery-summary dl { grid-template-columns: repeat(2,minmax(0,1fr)); }.study-advanced-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 640px) {
   .study-metrics, .study-secondary-charts, .study-upload-grid { grid-template-columns: minmax(0,1fr); }
   .study-card { padding: 18px 12px; }
   .study-controls { width: 100%; }
   .study-controls label { flex: 1; min-width: 120px; }
   .study-chart-heading { gap: 16px; }
+  .study-battery-basics, .study-battery-summary dl, .study-advanced-grid { grid-template-columns: minmax(0,1fr); }
+  .study-duration { grid-column: auto; grid-row: auto; }
+  .study-duration > div { grid-template-columns: repeat(3,minmax(0,1fr)); }
 }

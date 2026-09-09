@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { proxyBatteryStudy } from './battery-study-proxy.ts';
 import { studyPoints, nominalDayOffset, studyCoverage, studyInputs, toKilo } from './battery-study.ts';
 import { previewCurve } from './battery-curve-preview.ts';
+import { batteryIssues, batterySummary, DEFAULT_BATTERY } from './battery-draft.ts';
 
 test('snapshot context supports legacy, rejects other cases and preserves absent vs zero', () => {
   const base = { run: { case_id: 13 }, anual: [] };
@@ -98,6 +99,15 @@ test('curve upload is local, authenticated, bounded and reconstructed without id
   const bad = new FormData(); bad.set('consumo', new Blob(['x']), 'consumo.csv'); bad.set('email', 'otro@ejemplo.es');
   const badRequest = new Request('http://localhost:3000/api/battery-study/curvas', { method: 'POST', headers: { Origin: 'http://localhost:3000' }, body: bad });
   assert.equal((await proxyBatteryStudy(badRequest, 'curvas', { ...options, fetcher })).status, 400);
+});
+test('battery summary uses installed MWh, useful SoC window and price per installed MWh', () => {
+  const result = batterySummary(DEFAULT_BATTERY);
+  assert.equal(result.capacityMwh, .4);
+  assert.equal(result.usableMwh, .36);
+  assert.equal(result.totalCostEur, 80000);
+  assert.ok(Math.abs(result.cycleCostEurMwh - 37.037037) < 1e-6);
+  assert.deepEqual(batteryIssues(DEFAULT_BATTERY), []);
+  assert.match(batteryIssues({ ...DEFAULT_BATTERY, socMinPct: 95 }).join(' '), /ventana/);
 });
 test('nominal DST hours retain h3 and h4 and units convert without inventing nulls', () => {
   const data = { run_id: 16, escenario: 4, horas: 2, t: ['2027-03-28 02:00:00', '2027-03-28 03:00:00'],
