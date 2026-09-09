@@ -38,6 +38,19 @@ test('performance history forwards only the stored-series filters', async () => 
   assert.deepEqual(visited, ['https://api.example/session', 'https://api.example/performance-history?model=gru&seed=44&days=30&source=production']);
 });
 
+test('performance options discovers stored model and seed combinations', async () => {
+  const visited = [];
+  const path = 'performance-options';
+  const response = await proxyDashboardRequest(request(`${path}?source=production`), path, {
+    upstream, fetcher: async url => {
+      visited.push(String(url));
+      return visited.length === 1 ? session() : Response.json({ origin: 'model_metrics_daily', available: [] });
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(visited, ['https://api.example/session', 'https://api.example/performance-options?source=production']);
+});
+
 test('anonymous data requests never reach a data endpoint', async () => {
   let calls = 0;
   const response = await proxyDashboardRequest(request('health'), 'health', { upstream, fetcher: async (url) => { calls++; assert.equal(new URL(url).pathname, '/session'); return session(false); } });
@@ -82,19 +95,46 @@ test('rejects cross-origin and origin-less writes', async () => {
   }
 });
 
-test('login forwards HttpOnly cookie without exposing platform cookies', async () => {
+test('login forwards username and password, and keeps the session cookie HttpOnly', async () => {
   let count = 0;
-  const response = await proxyDashboardRequest(request('login', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ password: 'test-only' }) }), 'login', { upstream, fetcher: async (url, init) => {
+  const response = await proxyDashboardRequest(request('login', { method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'magui', password: 'test-only' }) }), 'login', { upstream, fetcher: async (url, init) => {
     count++;
     if (count === 1) return session(false);
     assert.equal(String(url), 'https://api.example/login');
     assert.equal(init.method, 'POST');
-    assert.deepEqual(JSON.parse(init.body), { password: 'test-only' });
-    return Response.json({ authenticated: true }, { headers: { 'Set-Cookie': 'pulso_session=signed.token; Secure; HttpOnly; SameSite=strict; Path=/' } });
+    assert.deepEqual(JSON.parse(init.body), { username: 'magui', password: 'test-only' });
+    return Response.json({ authenticated: true, username: 'magui' }, { headers: { 'Set-Cookie': 'pulso_session=signed.token; Secure; HttpOnly; SameSite=strict; Path=/' } });
   } });
   assert.equal(response.status, 200);
   assert.match(response.headers.get('set-cookie'), /HttpOnly/);
+  assert.match(response.headers.get('set-cookie'), /Secure/);
   assert.doesNotMatch(await response.text(), /test-only|signed.token/);
+});
+
+test('local HTTP reissues the remote session without Secure so the browser can store it', async () => {
+  const localOrigin = 'http://localhost:3000';
+  let count = 0;
+  const localRequest = new Request(`${localOrigin}/api/dashboard/login`, {
+    method: 'POST',
+    headers: { Origin: localOrigin, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'magui', password: 'test-only' }),
+  });
+  const response = await proxyDashboardRequest(localRequest, 'login', { upstream, development: true, fetcher: async () => {
+    if (++count === 1) return session(false);
+    return Response.json({ authenticated: true }, { headers: { 'Set-Cookie': 'pulso_session=signed.token; Secure; HttpOnly; SameSite=strict; Path=/' } });
+  } });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('set-cookie'), /pulso_session=signed\.token/);
+  assert.match(response.headers.get('set-cookie'), /HttpOnly/);
+  assert.doesNotMatch(response.headers.get('set-cookie'), /Secure/);
+});
+
+test('session exposes only the authenticated username', async () => {
+  const response = await proxyDashboardRequest(request('session'), 'session', {
+    upstream,
+    fetcher: async () => Response.json({ authenticated: true, auth_required: true, username: 'magui', internal: 'hidden' }),
+  });
+  assert.deepEqual(await response.json(), { authenticated: true, auth_required: true, username: 'magui' });
 });
 
 test('rejects path traversal, absolute destinations and unsupported query keys', async () => {

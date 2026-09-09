@@ -84,6 +84,26 @@ def _con():
     return psycopg2.connect(**db)
 
 
+def _leer_matriz(matriz):
+    """Parquet primero; CSV de respaldo si el parquet no se deja leer.
+
+    "Repetition level histogram size mismatch" es un fallo conocido de pyarrow al leer un
+    parquet con indice de pagina escrito por una version distinta a la que lee -- no es el
+    dato, es la version instalada. El CSV de al lado es el mismo contenido, mas lento pero
+    sin ese indice. No falla en silencio: avisa por que ha cambiado de formato.
+    """
+    f = REPO / "data" / "gold" / f"matriz_{matriz}.parquet"
+    try:
+        return pd.read_parquet(f)
+    except Exception as e:
+        csv = f.with_suffix(".csv")
+        if not csv.exists():
+            raise
+        print(f"  aviso: {f.name} no se pudo leer ({type(e).__name__}: {e}); "
+              f"usando {csv.name} (mas lento, mismo dato)", file=sys.stderr)
+        return pd.read_csv(csv)
+
+
 def _indexar(df, tcol="datetime"):
     loc = pd.to_datetime(df[tcol], utc=True).dt.tz_convert(TZ)
     df = df.assign(f=loc.dt.date, h=loc.dt.hour)
@@ -103,7 +123,7 @@ def desfase_de(col, serie_fuente, fo, horas, valores):
 
 
 def auditar(matriz: str = "nucleo", verbose: bool = True) -> pd.DataFrame:
-    d = pd.read_parquet(REPO / "data" / "gold" / f"matriz_{matriz}.parquet")
+    d = _leer_matriz(matriz)
     fo = pd.to_datetime(d["fecha_objetivo"])
     con = _con()
     filas = []
@@ -200,7 +220,7 @@ def auditar_meteo(matriz: str = "nucleo", verbose: bool = True) -> pd.DataFrame:
                       demasiado seria meteo perfecta; si se pareciera poco, no seria D+1.
     """
     from era5_horario import cargar_era5
-    d = pd.read_parquet(REPO / "data" / "gold" / f"matriz_{matriz}.parquet")
+    d = _leer_matriz(matriz)
     fo = pd.to_datetime(d["fecha_objetivo"])
     g = cargar_era5(verbose=False)
     g["f"] = pd.to_datetime(g["fecha"]).dt.date
@@ -252,7 +272,7 @@ def auditar_precios_y_real(matriz: str = "nucleo", verbose: bool = True) -> pd.D
     y la generacion real viene de tres tablas distintas bajo un solo bloque. Se auditan
     aparte porque el nombre de la columna no basta para deducir el campo fuente.
     """
-    d = pd.read_parquet(REPO / "data" / "gold" / f"matriz_{matriz}.parquet")
+    d = _leer_matriz(matriz)
     fo = pd.to_datetime(d["fecha_objetivo"])
     con = _con()
     filas = []

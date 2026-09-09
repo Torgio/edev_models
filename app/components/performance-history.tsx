@@ -5,12 +5,15 @@ import {
   Bar, CartesianGrid, Cell, ComposedChart, Line, ReferenceLine,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
-import { Activity, CalendarCheck2, TrendingUp } from 'lucide-react';
+import { Activity, AlertTriangle, CalendarCheck2, CheckCircle2, TrendingUp } from 'lucide-react';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import {
-  clippedSkill, parsePerformanceIdentity, performanceIdentity,
-  type PerformancePayload, type PerformancePoint,
+  clippedSkill, latestCompleteActualDay, parsePerformanceIdentity, performanceFreshness,
+  performanceIdentity, performanceTone, preferredPerformanceIdentity,
+  type PerformanceOptionsPayload, type PerformancePayload, type PerformancePoint, type PerformanceModel,
 } from '@/lib/performance-history';
+import type { AvailableDay } from '@/lib/initial-day';
+import { formatEnergyPrice } from '@/lib/price-format';
 
 const percent = (value: number | null) => value === null || !Number.isFinite(value)
   ? '—'
@@ -27,9 +30,9 @@ function HistoryTooltip({ active, payload }: { active?: boolean; payload?: Array
   return <div className="history-tooltip">
     <strong>{dateLabel(row.date)}</strong><span>{row.n_obs} horas comparables · {row.estado}</span>
     <dl>
-      <div><dt>Ventaja diaria</dt><dd className={(row.skill_vs_naive ?? 0) >= 0 ? 'good' : 'bad'}>{percent(row.skill_vs_naive)}</dd></div>
-      <div><dt>MAE modelo</dt><dd>{row.mae.toLocaleString('es-ES', { maximumFractionDigits: 2 })} €/MWh</dd></div>
-      <div><dt>MAE naive</dt><dd>{row.mae_naive.toLocaleString('es-ES', { maximumFractionDigits: 2 })} €/MWh</dd></div>
+      <div><dt>Ventaja diaria</dt><dd className={performanceTone(row.skill_vs_naive)}>{percent(row.skill_vs_naive)}</dd></div>
+      <div><dt>MAE modelo</dt><dd>{formatEnergyPrice(row.mae)}</dd></div>
+      <div><dt>MAE naive</dt><dd>{formatEnergyPrice(row.mae_naive)}</dd></div>
       <div><dt>Skill móvil 7d</dt><dd>{percent(row.skill_7d)}</dd></div>
     </dl>
   </div>;
@@ -37,10 +40,52 @@ function HistoryTooltip({ active, payload }: { active?: boolean; payload?: Array
 
 export function PerformanceHistory({ onSessionExpired }: { onSessionExpired: () => void }) {
   const [choice, setChoice] = useState(performanceIdentity('gru', 44));
+  const [available, setAvailable] = useState<PerformanceModel[]>([]);
+  const [optionsStatus, setOptionsStatus] = useState<'loading' | 'ready' | 'empty' | 'error'>('loading');
   const [payload, setPayload] = useState<PerformancePayload | null>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [latestActualDay, setLatestActualDay] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/dashboard/performance-options?source=production', { signal: controller.signal, cache: 'no-store' })
+      .then(async response => {
+        if (response.status === 401) onSessionExpired();
+        if (!response.ok) throw new Error();
+        return await response.json() as PerformanceOptionsPayload;
+      })
+      .then(result => {
+        if (controller.signal.aborted || result.origin !== 'model_metrics_daily' || !Array.isArray(result.available)) return;
+        setAvailable(result.available);
+        if (!result.available.length) { setPayload(null); setOptionsStatus('empty'); return; }
+        setChoice(current => preferredPerformanceIdentity(result.available, current));
+        setOptionsStatus('ready');
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) { setAvailable([]); setPayload(null); setOptionsStatus('error'); }
+      });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/dashboard/days?source=production', { signal: controller.signal, cache: 'no-store' })
+      .then(async response => {
+        if (response.status === 401) onSessionExpired();
+        if (!response.ok) throw new Error();
+        return await response.json() as { days: AvailableDay[] };
+      })
+      .then(result => {
+        if (!controller.signal.aborted && Array.isArray(result.days)) {
+          setLatestActualDay(latestCompleteActualDay(result.days));
+        }
+      })
+      .catch(() => { if (!controller.signal.aborted) setLatestActualDay(null); });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (optionsStatus !== 'ready') return;
     const selected = parsePerformanceIdentity(choice);
     if (!selected) return;
     const controller = new AbortController();
@@ -58,35 +103,45 @@ export function PerformanceHistory({ onSessionExpired }: { onSessionExpired: () 
       })
       .catch(() => { if (!controller.signal.aborted) { setPayload(null); setStatus('error'); } });
     return () => controller.abort();
-  }, [choice]);
+  }, [choice, optionsStatus]);
 
   const summary = payload?.summary;
   const chart: ChartPoint[] = payload?.series.map(row => ({
     ...row, chart_skill: clippedSkill(row.skill_vs_naive), chart_skill_7d: clippedSkill(row.skill_7d),
   })) ?? [];
   const extremes = payload?.series.filter(row => row.skill_vs_naive !== null && Math.abs(row.skill_vs_naive) > 80) ?? [];
+  const freshness = summary && payload ? performanceFreshness(summary, payload.series, latestActualDay) : null;
+  const evaluatedRange = freshness?.firstEvaluated && freshness.lastEvaluated
+    ? `${dateLabel(freshness.firstEvaluated)}–${dateLabel(freshness.lastEvaluated)}` : 'sin rango disponible';
 
   return <section className="history-section" aria-labelledby="history-title">
     <div className="history-header">
       <div><p className="section-label">Rendimiento en el tiempo · fuente model_metrics_daily</p>
         <h2 id="history-title">¿Sigue mereciendo la pena el modelo?</h2>
         <p>Ventaja de error frente al precio de la misma hora del día anterior. Por encima de cero, el modelo mejora al naive.</p></div>
-      {payload?.available.length ? <label>Modelo evaluado
+      {available.length ? <label>Modelo evaluado
         <NativeSelect value={choice} onChange={event => setChoice(event.target.value)}>
-          {payload.available.map(row => <NativeSelectOption key={performanceIdentity(row.model, row.seed)} value={performanceIdentity(row.model, row.seed)}>
+          {available.map(row => <NativeSelectOption key={performanceIdentity(row.model, row.seed)} value={performanceIdentity(row.model, row.seed)}>
             {modelLabel(row.model)} · semilla {row.seed === -1 ? 'N/A' : row.seed} · {row.days} días
           </NativeSelectOption>)}
         </NativeSelect>
       </label> : null}
     </div>
 
-    {status !== 'ready' || !payload || !summary ? <div className="history-empty" role="status">
-      {status === 'loading' ? 'Construyendo la serie desde las métricas guardadas…' : 'La serie histórica no está disponible.'}
+    {optionsStatus !== 'ready' || status !== 'ready' || !payload || !summary ? <div className="history-empty" role="status">
+      {optionsStatus === 'loading' ? 'Consultando las series históricas disponibles…'
+        : optionsStatus === 'empty' ? 'Todavía no hay métricas históricas guardadas.'
+          : optionsStatus === 'error' ? 'No se pudieron consultar las métricas históricas.'
+            : status === 'loading' ? 'Construyendo la serie desde las métricas guardadas…'
+              : 'La serie elegida no está disponible. Puedes seleccionar otra combinación.'}
     </div> : <>
+      {freshness?.isStale === true ? <div className="history-freshness is-stale" role="alert"><AlertTriangle aria-hidden="true" /><div><strong>Evaluación atrasada {freshness.lagDays} {freshness.lagDays === 1 ? 'día' : 'días'}</strong><span>Esta serie termina el {dateLabel(freshness.lastEvaluated!)}; el último precio real diario completo llega al {dateLabel(freshness.expectedThrough!)}.</span></div></div>
+        : freshness?.isStale === false ? <div className="history-freshness is-current"><CheckCircle2 aria-hidden="true" /><div><strong>Evaluación al día</strong><span>Serie evaluada hasta el {dateLabel(freshness.lastEvaluated!)}.</span></div></div>
+          : <div className="history-freshness"><AlertTriangle aria-hidden="true" /><div><strong>Vigencia no disponible</strong><span>No se pudo comparar esta serie con el último día completo de precio real.</span></div></div>}
       <div className="history-kpis">
-        <article><Activity aria-hidden="true" /><span>Ventaja · 30 días</span><strong className={(summary.skill_pct ?? 0) >= 0 ? 'good' : 'bad'}>{percent(summary.skill_pct)}</strong>
+        <article><Activity aria-hidden="true" /><span>Ventaja · {evaluatedRange}</span><strong className={performanceTone(summary.skill_pct)}>{percent(summary.skill_pct)}</strong>
           <small>{summary.evaluated_days}/{summary.window_days} días · {summary.observations} horas</small></article>
-        <article><TrendingUp aria-hidden="true" /><span>Últimos {summary.recent_days}</span><strong className={(summary.recent_skill_pct ?? 0) >= 0 ? 'good' : 'bad'}>{percent(summary.recent_skill_pct)}</strong>
+        <article><TrendingUp aria-hidden="true" /><span>Últimos {summary.recent_days} de la serie</span><strong className={performanceTone(summary.recent_skill_pct)}>{percent(summary.recent_skill_pct)}</strong>
           <small>{summary.recent_evaluated_days}/{summary.recent_days} días evaluados</small></article>
         <article><CalendarCheck2 aria-hidden="true" /><span>Días ganados</span><strong>{summary.days_won} / {summary.evaluated_days}</strong>
           <small>MAE del modelo menor que el naive</small></article>
@@ -114,8 +169,8 @@ export function PerformanceHistory({ onSessionExpired }: { onSessionExpired: () 
           </ResponsiveContainer>
         </div>
         <div className="history-halves">
-          <div className={(summary.first_half_skill_pct ?? 0) >= 0 ? 'good' : 'bad'}><span>Primera mitad</span><strong>{percent(summary.first_half_skill_pct)}</strong></div>
-          <div className={(summary.second_half_skill_pct ?? 0) >= 0 ? 'good' : 'bad'}><span>Segunda mitad</span><strong>{percent(summary.second_half_skill_pct)}</strong></div>
+          <div className={performanceTone(summary.first_half_skill_pct)}><span>Primera mitad</span><strong>{percent(summary.first_half_skill_pct)}</strong></div>
+          <div className={performanceTone(summary.second_half_skill_pct)}><span>Segunda mitad</span><strong>{percent(summary.second_half_skill_pct)}</strong></div>
         </div>
         <p className="history-caption">Las barras conservan el skill diario almacenado. La escala visual se limita a ±80 % para que un día extremo no oculte el resto; el tooltip mantiene el valor real. Los KPI agregan los dos MAE ponderados por horas, no promedian porcentajes diarios.</p>
         <details className="history-method"><summary>Cómo se calcula y qué significa el naive</summary>
@@ -123,10 +178,6 @@ export function PerformanceHistory({ onSessionExpired }: { onSessionExpired: () 
         </details>
       </article>
 
-      <div className="history-insight">
-        <strong>{(summary.first_half_skill_pct ?? 0) >= 0 && (summary.second_half_skill_pct ?? 0) < 0 ? 'La ventaja no se pierde de golpe.' : 'La señal cambia dentro de la ventana.'}</strong>
-        <span>La comparación entre mitades deja visible si el modelo sigue ganando o si el régimen reciente ya se parece más al naive.</span>
-      </div>
     </>}
   </section>;
 }

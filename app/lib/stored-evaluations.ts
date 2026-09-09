@@ -27,3 +27,9 @@ export function bestMae(rows: Evaluation[]) {
   return rows.filter(row => numeric(row.mae) && row.mae >= 0 && numeric(row.n_obs) && row.n_obs > 0)
     .sort((a, b) => a.mae! - b.mae!)[0];
 }
+
+/** Keep KPI candidates comparable: only rows with the largest stored coverage in the group. */
+export function maxCoverageEvaluations(rows: Evaluation[]) {
+  const coverage = Math.max(...rows.map(row => numeric(row.n_obs) && row.n_obs > 0 ? row.n_obs : 0));
+  return coverage > 0 ? rows.filter(row => row.n_obs === coverage) : [];
+}

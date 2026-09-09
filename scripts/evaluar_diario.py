@@ -412,8 +412,14 @@ def main():
         if a.dia:
             desde = hasta = pd.Timestamp(a.dia).date()
         else:
-            hasta = date.today()
-            desde = hasta - timedelta(days=a.dias - 1)   # inclusivo por los dos lados
+            # HASTA MAÑANA, NO HASTA HOY. Lo que se predice es D+1 y su precio se
+            # publica a las 13:00 de D, asi que a las 13:30 -- cuando corre el cron -- el
+            # dia recien predicho YA es evaluable. Con `hasta = hoy` se quedaba fuera y se
+            # recuperaba al dia siguiente: no era un agujero permanente, pero el panel iba
+            # siempre un dia por detras y el resultado del dia nunca estaba. Los dias sin
+            # precio todavia no entran igualmente: el JOIN contra `spot_price` los descarta.
+            hasta = date.today() + timedelta(days=1)
+            desde = hasta - timedelta(days=a.dias)       # `dias` dias cerrados + manana
 
         datos = cargar(con, desde, hasta)
         if datos.empty:
