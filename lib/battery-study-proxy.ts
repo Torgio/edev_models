@@ -6,13 +6,6 @@ const reply = (detail: string, status: number) => Response.json({ detail }, {
 const validDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value)
   && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 const MAX_UPLOAD_BYTES = 11 * 1024 * 1024;
-const launchedTasks = new Set<string>();
-const launchedRuns = new Set<number>();
-
-function remember<T>(values: Set<T>, value: T) {
-  values.add(value);
-  if (values.size > 50) values.delete(values.values().next().value as T);
-}
 
 async function boundedBody(request: Request) {
   const declared = Number(request.headers.get('content-length'));
@@ -32,27 +25,39 @@ async function boundedBody(request: Request) {
   return bytes;
 }
 
-/** Local, read-only bridge for explicitly selected team studies, pending per-user ownership. */
+function studyDestination(base: string, path: string, development: boolean) {
+  const upstream = new URL(base);
+  const local = development && ['localhost', '127.0.0.1', '[::1]'].includes(upstream.hostname);
+  if ((upstream.protocol !== 'https:' && !(local && upstream.protocol === 'http:'))
+      || upstream.username || upstream.password || upstream.search || upstream.hash) throw new Error('invalid-upstream');
+  const configuredPrefix = upstream.pathname.replace(/\/+$/, '');
+  const prefix = configuredPrefix || '/api/bat';
+  upstream.pathname = `${prefix}/${path === 'opciones' ? 'ejecuciones' : path}`.replace(/\/{2,}/g, '/');
+  return upstream;
+}
+
+function webRunIds(data: unknown) {
+  if (!data || typeof data !== 'object' || !Array.isArray((data as { runs?: unknown }).runs)) return null;
+  return (data as { runs: unknown[] }).runs.filter((item): item is { run_id: number; code: string } => Boolean(item)
+    && typeof item === 'object' && Number.isSafeInteger((item as { run_id?: unknown }).run_id)
+    && (item as { run_id: number }).run_id > 0 && typeof (item as { code?: unknown }).code === 'string'
+    && (item as { code: string }).code.startsWith('WEB-')).map(item => item.run_id);
+}
+
+/** Authenticated bridge to the isolated team-study API. It never accepts client identity. */
 export async function proxyBatteryStudy(request: Request, path: string, options: {
-  upstream: string; studyUpstream?: string; development: boolean; allowedRuns: string; fetcher?: typeof fetch;
+  upstream: string; studyUpstream?: string; enabled: boolean; development: boolean; allowedRuns: string; fetcher?: typeof fetch;
 }) {
   const url = new URL(request.url);
-  if (!options.development || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
-    return reply('La consulta de estudios está disponible solo en la prueba local.', 404);
-  }
+  if (!options.enabled) return reply('El estudio de instalación no está habilitado.', 404);
   const upload = request.method === 'POST' && path === 'curvas';
   const launch = request.method === 'POST' && path === 'estudio';
   if (request.method !== 'GET' && !upload && !launch) return reply('Operación no permitida.', 405);
   const ids = [...new Set(options.allowedRuns.split(',').map(s => s.trim())
     .filter(s => /^[1-9]\d*$/.test(s)).map(Number).filter(Number.isSafeInteger))];
-  const availableIds = [...new Set([...launchedRuns, ...ids])];
   const match = /^(resultado|despacho)\/([1-9]\d*)$/.exec(path);
   const taskMatch = /^estudio\/([a-f0-9]{12})$/.exec(path);
-  const allowedTask = taskMatch && launchedTasks.has(taskMatch[1]);
-  if (!upload && !launch && path !== 'opciones'
-      && (!match || !availableIds.includes(Number(match[2]))) && !allowedTask) {
-    return reply('Este estudio no está habilitado para la prueba local.', 404);
-  }
+  if (!upload && !launch && path !== 'opciones' && !match && !taskMatch) return reply('Ruta de estudio no disponible.', 404);
   const allowedKeys = match?.[1] === 'despacho' ? ['desde', 'hasta', 'escenario'] : [];
   if ([...url.searchParams.keys()].some(k => !allowedKeys.includes(k) || url.searchParams.getAll(k).length !== 1)) {
     return reply('Parámetros no permitidos.', 400);
@@ -74,6 +79,12 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
   if (!sessionResponse.ok) return sessionResponse;
   const session = await sessionResponse.json() as { authenticated?: boolean } | null;
   if (session?.authenticated !== true) return reply('Inicia sesión para consultar el estudio.', 401);
+  let destination: URL;
+  try {
+    destination = studyDestination(options.studyUpstream ?? '', path, options.development);
+  } catch {
+    return reply('La conexión con el entorno de prueba no está configurada.', 503);
+  }
   let upstreamBody: BodyInit | undefined;
   if (upload) {
     if (request.headers.get('origin') !== url.origin) return reply('Origen no permitido.', 403);
@@ -143,9 +154,19 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
   const cookie = request.headers.get('cookie')?.split(';').map(c => c.trim())
     .find(c => /^pulso_session=[A-Za-z0-9_.-]{1,1024}$/.test(c));
   if (cookie) headers.set('Cookie', cookie);
-  const destination = new URL(`/api/bat/${path === 'opciones' ? 'ejecuciones' : path}`, options.studyUpstream || options.upstream);
   destination.search = url.search;
   try {
+    if (match && !ids.includes(Number(match[2]))) {
+      const catalogUrl = studyDestination(options.studyUpstream ?? '', 'opciones', options.development);
+      const catalogResponse = await (options.fetcher ?? fetch)(catalogUrl, {
+        headers, redirect: 'manual', cache: 'no-store', signal: AbortSignal.timeout(10000),
+      });
+      if (!catalogResponse.ok || !catalogResponse.headers.get('content-type')?.includes('application/json')) {
+        return reply('No se pudo validar el catálogo de estudios.', 502);
+      }
+      const discovered = webRunIds(await catalogResponse.json());
+      if (!discovered?.includes(Number(match[2]))) return reply('Este estudio no pertenece al entorno de prueba.', 404);
+    }
     const response = await (options.fetcher ?? fetch)(destination, {
       method: upload || launch ? 'POST' : 'GET', headers, body: upstreamBody,
       redirect: 'manual', cache: 'no-store', signal: AbortSignal.timeout(upload ? 60000 : 20000),
@@ -173,26 +194,20 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
     for (const c of chunks) { bytes.set(c, offset); offset += c.length; }
     const data = JSON.parse(new TextDecoder().decode(bytes));
     if (path === 'opciones') {
-      if (!data || !Array.isArray(data.runs)) return reply('El servidor devolvió un catálogo de estudios inválido.', 502);
-      const discovered = data.runs.filter((item: unknown): item is { run_id: number; code: string } => Boolean(item)
-        && typeof item === 'object' && Number.isSafeInteger((item as { run_id?: unknown }).run_id)
-        && (item as { run_id: number }).run_id > 0 && typeof (item as { code?: unknown }).code === 'string'
-        && (item as { code: string }).code.startsWith('WEB-')).map((item: { run_id: number }) => item.run_id);
-      for (const runId of discovered) remember(launchedRuns, runId);
-      return Response.json({ runs: [...new Set([...discovered, ...availableIds])] }, {
+      const discovered = webRunIds(data);
+      if (!discovered) return reply('El servidor devolvió un catálogo de estudios inválido.', 502);
+      return Response.json({ runs: [...new Set([...discovered, ...ids])] }, {
         headers: { 'Cache-Control': 'private, no-store', Vary: 'Cookie' },
       });
     }
     if (launch) {
       if (!data || typeof data.tarea !== 'string' || !/^[a-f0-9]{12}$/.test(data.tarea) || data.estado !== 'corriendo') return reply('El servidor no confirmó la tarea.', 502);
-      remember(launchedTasks, data.tarea);
     }
     if (taskMatch) {
       if (!data || (data.tarea !== undefined && data.tarea !== taskMatch[1]) || !['corriendo', 'hecho', 'error'].includes(data.estado)) return reply('El servidor devolvió otra tarea.', 502);
       data.tarea = taskMatch[1];
       if (data.estado === 'hecho') {
         if (!Number.isSafeInteger(data.run_id) || data.run_id < 1) return reply('El estudio terminó sin una ejecución válida.', 502);
-        remember(launchedRuns, data.run_id);
       }
     }
     const returnedId = match?.[1] === 'resultado' ? data?.run?.run_id : data?.run_id;
