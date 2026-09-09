@@ -1,9 +1,9 @@
 {
-  "descripcion": "LightGBM sobre la matriz nucleo -- UN SOLO modelo para las 24 horas (hora incluida como feature), no 24 modelos separados como la familia 'boosting' de production/models/.",
+  "descripcion": "LightGBM sobre la matriz nucleo (sin Trayport, 9-sep-2026) -- UN SOLO modelo para las 24 horas, no 24 separados como la familia 'boosting'.",
   "matriz": "nucleo",
-  "hash_matriz": "4a8f328e",
+  "hash_matriz": "a8bfaba5",
   "arquitectura": "un_modelo_todas_las_horas",
-  "n_features": 122,
+  "n_features": 120,
   "feature_cols_en_orden": [
     "es_esios_D",
     "es_esios_Dm1",
@@ -74,8 +74,6 @@
     "ssrd_mean_met_Dm2",
     "tp_acum_7d_met_Dm2",
     "gas_mibgas",
-    "co2_eua_dec",
-    "gas_ttf_m1",
     "capinst_total_autoconsume_mw",
     "capinst_wind_mw",
     "capinst_waste_nonrenewable_mw",
@@ -140,7 +138,6 @@
     "reg_lambda": 0.0228121782480138,
     "min_child_samples": 8
   },
-  "mae_validation": 12.915246280783828,
-  "rmse_validation": 17.00807213526146,
-  "como_cargar": "import lightgbm as lgb; modelo = lgb.Booster(model_file='modelo.txt'); pred = modelo.predict(X[feature_cols_en_orden])  -- X debe traer EXACTAMENTE estas columnas, en este orden, construidas desde la matriz nucleo."
+  "mae_validation": 12.805,
+  "rmse_validation": 16.828
 }

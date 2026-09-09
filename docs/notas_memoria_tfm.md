@@ -1790,3 +1790,33 @@ nuevas (`bess_plan`/`bess_result` — resultados del equipo, sin usuario — y 6
 oficial), dejando fuera `app_user` y las `app_*` de estudios hasta que exista un mecanismo real
 de filtrado por usuario. Dieciséis herramientas registradas ahora, de catorce; el rol de solo
 lectura pasa a 14 tablas de las 47 que tiene la base (`sql/registro_cambios_bd.md`, entrada 5).
+
+## 54. Reentrenamiento completo sin Trayport: el ensemble de 8 familias sigue ganando
+
+Con las dos columnas de Trayport retiradas de `matriz_nucleo` (nota 51), se reentrenaron desde
+cero las 8 familias de deep learning (24 entrenamientos: 8 familias × 3 semillas) más el LightGBM
+núcleo y la capa de incertidumbre horaria — nada de esto se pudo reutilizar de una caché, porque
+el conjunto de columnas cambió.
+
+Resultado en test 2026, la partición que nadie tocó durante el diseño: el **ensemble de las 8
+familias sigue siendo el mejor modelo**, con MAE 12,22 €/MWh, 91,2% de captura del margen de
+arbitraje y 79,2% de acierto de pico a 1 hora — mejor que cualquier familia individual (la mejor,
+seq2seq, se queda en 12,89) y mejor que el LightGBM núcleo reentrenado (13,24, 91,5% de captura).
+Sigue confirmándose el Hallazgo 1 ya visto antes de retirar Trayport: el modelo de mejor MAE
+(seq2seq) y el de mejor captura (seq2seq_absoluto, 92,8%) no son el mismo modelo — hay que elegir
+según qué pregunta importa más, error medio o margen de arbitraje capturado.
+
+Retirar Trayport no rompió el modelo: las cifras se mantienen en el mismo rango que con Trayport
+incluido (dentro de lo esperado, dado que el análisis de ablación previo ya indicaba un coste de
+apenas +1,9% en MAE de test al quitarlo, y una mejora en validación). Es la confirmación empírica,
+con el pipeline completo reentrenado y no solo con una ablación puntual, de que la fuente se podía
+retirar sin pagar un coste real de precisión.
+
+Efecto colateral encontrado al reentrenar: la capa de incertidumbre horaria
+(`lightgbm_horario_incertidumbre.joblib`, sección 6.6) también estaba entrenada con Trayport y
+falló con el mismo `KeyError` que el LightGBM núcleo (nota previa) — se regeneró desde
+`modelos/modelo_lightgbm_horario_incertidumbre.py`, que toma las columnas de forma dinámica y no
+tuvo que tocarse. MAE de la mediana (p50) 12,89 €/MWh, cobertura del intervalo [p10,p90] 71,7%
+(por debajo del ~80% objetivo, que es precisamente la razón de ser de la calibración conforme de
+la sección 6.3 — con esta cifra de partida ya sin Trayport, esa calibración sigue pendiente de
+volver a correrse con el dato limpio).
