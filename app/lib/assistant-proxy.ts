@@ -88,9 +88,20 @@ export async function proxyAssistantRequest(request: Request, options: {
     return reply({ detail: 'La pregunta es demasiado larga.' }, 413);
   }
   let pregunta: string;
+  // historial: turnos previos de la conversacion (ver chat.py::_mensajes_con_historial). Se
+  // valida la forma aqui -- el backend ya lo revalida con pydantic, pero un turno mal formado
+  // no debe ni salir de este proxy.
+  let historial: { role: 'user' | 'assistant'; content: string }[] = [];
   try {
     const body = JSON.parse(new TextDecoder().decode(bytes));
     pregunta = typeof body?.pregunta === 'string' ? body.pregunta.trim() : '';
+    if (Array.isArray(body?.historial)) {
+      historial = body.historial
+        .filter((t: unknown): t is { role: unknown; content: unknown } => typeof t === 'object' && t !== null)
+        .filter((t: { role: unknown; content: unknown }) => (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string')
+        .map((t: { role: 'user' | 'assistant'; content: string }) => ({ role: t.role, content: t.content }))
+        .slice(-20);
+    }
   } catch {
     pregunta = '';
   }
@@ -122,7 +133,7 @@ export async function proxyAssistantRequest(request: Request, options: {
     const result = await fetcher(new URL('/api/asistente', assistant.upstream), {
       method: 'POST',
       headers,
-      body: JSON.stringify({ pregunta }),
+      body: JSON.stringify({ pregunta, historial }),
       cache: 'no-store',
       redirect: 'manual',
       signal: AbortSignal.timeout(90000),
