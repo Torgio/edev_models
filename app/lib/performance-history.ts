@@ -50,6 +50,11 @@ export function clippedSkill(value: number | null, limit = 80) {
   return Math.max(-limit, Math.min(limit, value));
 }
 
+export function performanceTone(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) return 'unavailable';
+  return value >= 0 ? 'good' : 'bad';
+}
+
 type ActualCoverage = { date: string; actual_hours: number; expected_hours: number };
 
 export type PerformanceFreshness = {

@@ -24,12 +24,13 @@ import { dailyPrice } from '@/lib/daily-price';
 import { StoredEvaluations } from '@/components/stored-evaluations';
 import { StoredBattery } from '@/components/stored-battery';
 import { BatteryStudy } from '@/components/battery-study';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { predictionUpdate } from '@/lib/prediction-update';
 import { initialDashboardDay, type AvailableDay } from '@/lib/initial-day';
-import { marketHourLabel } from '@/lib/market-hour';
-import { modelColor } from '@/lib/model-color';
+import { marketHourClockLabel } from '@/lib/market-hour';
+import { MODEL_STYLES, modelColor } from '@/lib/model-color';
 import { forecastRamp, negativePriceHours } from '@/lib/market-signals';
+import { priceAxisLower, priceAxisTick, priceAxisUpper } from '@/lib/price-axis';
+import { formatEnergyPrice } from '@/lib/price-format';
 import { modelsToPlot } from '@/lib/visible-models';
 import type { BatteryPayload } from '@/lib/battery-types';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
@@ -37,28 +38,10 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 
-const MODEL_STYLES = [
-  { key: 'ensemble', label: 'Ensemble', color: '#e58b45' },
-  { key: 'gru', label: 'GRU', color: '#43a99f' },
-  { key: 'boosting', label: 'Boosting', color: '#7b8ee8' },
-  { key: 'seq2seq', label: 'Seq2Seq', color: '#cf6f87' },
-  { key: 'denso', label: 'Denso', color: '#b178d3' },
-  { key: 'simplernn', label: 'SimpleRNN', color: '#d19a3a' },
-  { key: 'conv1d_lstm', label: 'Conv1D-LSTM', color: '#4f8fbe' },
-  { key: 'lstm', label: 'LSTM', color: '#829557' },
-  { key: 'seq2seq_absoluto', label: 'Seq2Seq absoluto', color: '#bf685f' },
-  { key: 'ensemble11', label: 'Ensemble 11', color: '#d8783e' },
-  { key: 'lgbm_nucleo', label: 'LightGBM núcleo', color: '#4f9b68' },
-  { key: 'lightgbm', label: 'LightGBM', color: '#6aa84f' },
-  { key: 'xgboost', label: 'XGBoost', color: '#8f6ab8' },
-] as const;
-
 type ModelKey = string;
 type PriceHour = Parameters<typeof dailyPrice>[0][number] & { hour: string };
 type ChartRow = { datetime: string; hour: number; label: string; actual: number | null; consensusBand: [number, number] | null; predictions: Record<string, number> };
 const API_URL = '/api/dashboard';
-const priceFormat = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const averagePrice = (value: number | null | undefined) => value == null ? '—' : `${priceFormat.format(value)} €/MWh`;
 
 function consensusBand(values: number[]): [number, number] | null {
   const ordered = values.filter(Number.isFinite).sort((a, b) => a - b);
@@ -142,7 +125,7 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
   const comparisonPredicted = averages?.pairedHours ? averages.pairedPrediction : averages?.predicted;
   const comparisonActual = averages?.pairedReal;
   const data: ChartRow[] = priceHours.map((point, index) => ({
-    datetime: point.datetime, hour: index, label: marketHourLabel(index), actual: point.actual,
+    datetime: point.datetime, hour: index, label: marketHourClockLabel(index, point.hour), actual: point.actual,
     consensusBand: consensusBand(Object.values(point.predictions).filter((x): x is number => typeof x === 'number')),
     predictions: point.predictions as Record<string, number>,
   }));
@@ -319,11 +302,12 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={340}>
                 <LineChart data={data} margin={{ top: 28, right: 20, left: 4, bottom: 4 }}>
                   <CartesianGrid vertical={false} stroke="#e2e9e5" />
-                  <XAxis dataKey="hour" tickFormatter={index => data[Number(index)]?.label ?? ''} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={20} tick={{ fill: '#66736f', fontSize: 12 }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#66736f', fontSize: 12 }} domain={['dataMin - 8', 'dataMax + 8']} width={62} />
+                  <XAxis dataKey="hour" tickFormatter={index => data[Number(index)]?.label ?? ''} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={48} tick={{ fill: '#52685e', fontSize: 12 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#66736f', fontSize: 12 }}
+                    domain={[priceAxisLower, priceAxisUpper]} allowDecimals={false} tickFormatter={priceAxisTick} width={62} />
                   <Tooltip labelFormatter={index => data[Number(index)]?.label ?? ''} cursor={{ stroke: '#9aaba5', strokeDasharray: '3 4' }}
                     contentStyle={{ borderRadius: 14, border: '1px solid #d8e0dc', boxShadow: '0 12px 35px rgba(16,43,36,.12)' }}
-                    formatter={(value, name) => [Array.isArray(value) ? `${Number(value[0]).toFixed(1)}–${Number(value[1]).toFixed(1)} €/MWh` : `${Number(value).toFixed(1)} €/MWh`, String(name)]} />
+                    formatter={(value, name) => [Array.isArray(value) ? `${formatEnergyPrice(Number(value[0]), { unit: false })}–${formatEnergyPrice(Number(value[1]))}` : formatEnergyPrice(Number(value)), String(name)]} />
                   <Area type="monotone" dataKey="consensusBand" name="Dispersión central" stroke="none" fill="#43a99f" fillOpacity={0.12} activeDot={false} />
                   <ReferenceLine y={0} stroke="#aab6b1" strokeDasharray="3 4" />
                   {negatives.entries.map(mark => <ReferenceArea key={`negative:${mark.index}`} x1={mark.index - .45} x2={mark.index + .45}
@@ -344,8 +328,8 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
               </ResponsiveContainer>
             </div>
             <div className="market-signals" aria-label="Señales calculadas de la curva">
-              <span><small>Valle previsto</small><strong>{minimum ? `${data[minimum.index]?.label} · ${minimum.value.toFixed(1)} €/MWh` : '—'}</strong></span>
-              <span><small>Mayor rampa prevista</small><strong>{ramp ? `${data[ramp.from]?.label}→${data[ramp.to]?.label} · +${ramp.increase.toFixed(1)} €/MWh` : '—'}</strong></span>
+              <span><small>Valle previsto</small><strong>{minimum ? `${data[minimum.index]?.label} · ${formatEnergyPrice(minimum.value)}` : '—'}</strong></span>
+              <span><small>Mayor rampa prevista</small><strong>{ramp ? `${data[ramp.from]?.label}→${data[ramp.to]?.label} · ${formatEnergyPrice(ramp.increase, { sign: true })}` : '—'}</strong></span>
               <span><small>Horas negativas</small><strong>Previstas {negatives.predicted} · reales {negatives.actual}</strong></span>
             </div>
             <p className="chart-caption">Valle, rampa y horas bajo cero se calculan para este día y el modelo de referencia; describen la curva, no atribuyen su causa. La banda es dispersión central entre modelos, no un intervalo de confianza.</p>
@@ -354,13 +338,13 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
           <aside className="forecast-rail" aria-label="Indicadores del día">
             <div className="rail-heading"><p className="section-label">Lectura del día</p><h3>{selectedModel || 'Sin modelo'}</h3><span>{format(date, 'dd/MM/yyyy')}</span></div>
             <div className="price-comparison" aria-label="Comparación entre precio medio previsto y real">
-              <div className="comparison-price predicted"><span>Precio medio previsto</span><strong>{averagePrice(comparisonPredicted)}</strong>
+              <div className="comparison-price predicted"><span>Precio medio previsto</span><strong>{formatEnergyPrice(comparisonPredicted)}</strong>
                 <small>{averages?.pairedHours ? `${averages.pairedHours} horas comunes` : averages?.predictedHours ? `${averages.predictedHours}/${averages.expectedHours} horas previstas` : 'Sin predicción'}</small></div>
-              <div className={`comparison-delta ${averages?.difference == null ? 'pending' : averages.difference > 0 ? 'positive' : averages.difference < 0 ? 'negative' : 'neutral'}`}>
-                <span>Δ previsto − real</span><strong>{averages?.difference == null ? '—' : `${averages.difference > 0 ? '+' : ''}${averagePrice(averages.difference)}`}</strong>
+              <div className={`comparison-delta ${averages?.difference == null ? 'pending' : 'neutral'}`}>
+                <span>Δ previsto − real</span><strong>{formatEnergyPrice(averages?.difference, { sign: true })}</strong>
                 <small>{averages?.pairedHours ? `${averages.pairedHours}/${averages.expectedHours} comparables` : 'Pendiente de precio real'}</small>
               </div>
-              <div className="comparison-price actual"><span>Precio medio real</span><strong>{averagePrice(comparisonActual)}</strong>
+              <div className="comparison-price actual"><span>Precio medio real</span><strong>{formatEnergyPrice(comparisonActual)}</strong>
                 <small>{averages?.pairedHours ? `${averages.pairedHours} horas comunes` : 'Pendiente de cierre del mercado'}</small></div>
             </div>
             <div className="kpi-stack">
@@ -368,9 +352,9 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
                 value={averages ? `${averages.pairedHours}/${averages.expectedHours}` : '—'}
                 detail="Horas con predicción y precio real" />
               <MetricCard icon={ArrowDownRight} eyebrow="Mínimo previsto"
-                value={minimum ? `${minimum.value.toFixed(1)} €/MWh` : '—'} detail={minimum ? data[minimum.index]?.label ?? 'Sin datos' : 'Sin datos'} tone="warm" />
+                value={formatEnergyPrice(minimum?.value)} detail={minimum ? data[minimum.index]?.label ?? 'Sin datos' : 'Sin datos'} tone="warm" />
               <MetricCard icon={ArrowUpRight} eyebrow="Máximo previsto"
-                value={max == null ? '—' : `${max.toFixed(1)} €/MWh`} detail={peak?.label ?? 'Sin datos'} tone="warm" />
+                value={formatEnergyPrice(max)} detail={peak?.label ?? 'Sin datos'} tone="warm" />
             </div>
             <div className="peak-panel"><PeakAccuracy model={selectedModel} day={day} onSessionExpired={onSessionExpired} /></div>
           </aside>
@@ -387,8 +371,8 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
               <TableBody>{data.map(row => (
                 <TableRow key={row.hour} className={row.hour === minimum?.index || row.hour === peak?.hour ? 'highlight-row' : ''}>
                   <TableCell className="hour-cell">{row.label}</TableCell>
-                  {MODELS.map(model => <TableCell key={model.key}>{row.predictions[model.key]?.toFixed(1) ?? '—'}</TableCell>)}
-                  <TableCell>{row.actual === null ? '—' : row.actual.toFixed(1)}</TableCell>
+                  {MODELS.map(model => <TableCell key={model.key}>{formatEnergyPrice(row.predictions[model.key], { unit: false })}</TableCell>)}
+                  <TableCell>{formatEnergyPrice(row.actual, { unit: false })}</TableCell>
                 </TableRow>
               ))}</TableBody>
             </Table>
@@ -397,21 +381,19 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
 
         </> : view === 'evaluation' ? <div className="evaluation-view"><StoredEvaluations onSessionExpired={onSessionExpired} /></div> : view === 'battery' ?
           <div className="battery-view">
-            <Tabs value={batteryView} onValueChange={value => {
-              if (value === 'daily' || value === 'study') setBatteryView(value);
-            }} className="battery-modes">
-              <TabsList aria-label="Vistas de batería"><TabsTrigger value="daily">Operación diaria</TabsTrigger>
-                {process.env.NODE_ENV === 'development' && <TabsTrigger value="study">Estudio de instalación</TabsTrigger>}
-              </TabsList>
-              <TabsContent value="daily">
-            <div className="view-datebar">
-              <div><p className="kicker">Operación diaria</p><h2>Plan BESS guardado</h2><p>Consulta la decisión horaria y su resultado económico sin recalcular la estrategia.</p></div>
-              <DateNavigator date={date} days={availableDays} coverageLabel={dayCoverageLabel} ariaLabel="Navegación por fecha BESS" onChange={setDate} />
+            <div className="battery-modes">
+              <nav className="battery-mode-switch" aria-label="Vistas de batería">
+                <button type="button" aria-pressed={batteryView === 'daily'} onClick={() => setBatteryView('daily')}>Operación diaria</button>
+                {process.env.NODE_ENV === 'development' && <button type="button" aria-pressed={batteryView === 'study'} onClick={() => setBatteryView('study')}>Estudio de instalación</button>}
+              </nav>
+              {batteryView === 'daily' ? <>
+                <div className="view-datebar">
+                  <div><p className="kicker">Operación diaria</p><h2>Plan BESS guardado</h2><p>Consulta la decisión horaria y su resultado económico sin recalcular la estrategia.</p></div>
+                  <DateNavigator date={date} days={availableDays} coverageLabel={dayCoverageLabel} ariaLabel="Navegación por fecha BESS" onChange={setDate} />
+                </div>
+                <StoredBattery day={day} data={currentBattery.data} status={currentBattery.status} />
+              </> : process.env.NODE_ENV === 'development' ? <BatteryStudy /> : null}
             </div>
-            <StoredBattery day={day} data={currentBattery.data} status={currentBattery.status} />
-              </TabsContent>
-              {process.env.NODE_ENV === 'development' && <TabsContent value="study"><BatteryStudy /></TabsContent>}
-            </Tabs>
           </div> :
           <div className="assistant-view">
             <div className="assistant-heading">

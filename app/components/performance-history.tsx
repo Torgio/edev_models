@@ -9,10 +9,11 @@ import { Activity, AlertTriangle, CalendarCheck2, CheckCircle2, TrendingUp } fro
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import {
   clippedSkill, latestCompleteActualDay, parsePerformanceIdentity, performanceFreshness,
-  performanceIdentity, preferredPerformanceIdentity,
+  performanceIdentity, performanceTone, preferredPerformanceIdentity,
   type PerformanceOptionsPayload, type PerformancePayload, type PerformancePoint, type PerformanceModel,
 } from '@/lib/performance-history';
 import type { AvailableDay } from '@/lib/initial-day';
+import { formatEnergyPrice } from '@/lib/price-format';
 
 const percent = (value: number | null) => value === null || !Number.isFinite(value)
   ? '—'
@@ -29,9 +30,9 @@ function HistoryTooltip({ active, payload }: { active?: boolean; payload?: Array
   return <div className="history-tooltip">
     <strong>{dateLabel(row.date)}</strong><span>{row.n_obs} horas comparables · {row.estado}</span>
     <dl>
-      <div><dt>Ventaja diaria</dt><dd className={(row.skill_vs_naive ?? 0) >= 0 ? 'good' : 'bad'}>{percent(row.skill_vs_naive)}</dd></div>
-      <div><dt>MAE modelo</dt><dd>{row.mae.toLocaleString('es-ES', { maximumFractionDigits: 2 })} €/MWh</dd></div>
-      <div><dt>MAE naive</dt><dd>{row.mae_naive.toLocaleString('es-ES', { maximumFractionDigits: 2 })} €/MWh</dd></div>
+      <div><dt>Ventaja diaria</dt><dd className={performanceTone(row.skill_vs_naive)}>{percent(row.skill_vs_naive)}</dd></div>
+      <div><dt>MAE modelo</dt><dd>{formatEnergyPrice(row.mae)}</dd></div>
+      <div><dt>MAE naive</dt><dd>{formatEnergyPrice(row.mae_naive)}</dd></div>
       <div><dt>Skill móvil 7d</dt><dd>{percent(row.skill_7d)}</dd></div>
     </dl>
   </div>;
@@ -138,9 +139,9 @@ export function PerformanceHistory({ onSessionExpired }: { onSessionExpired: () 
         : freshness?.isStale === false ? <div className="history-freshness is-current"><CheckCircle2 aria-hidden="true" /><div><strong>Evaluación al día</strong><span>Serie evaluada hasta el {dateLabel(freshness.lastEvaluated!)}.</span></div></div>
           : <div className="history-freshness"><AlertTriangle aria-hidden="true" /><div><strong>Vigencia no disponible</strong><span>No se pudo comparar esta serie con el último día completo de precio real.</span></div></div>}
       <div className="history-kpis">
-        <article><Activity aria-hidden="true" /><span>Ventaja · {evaluatedRange}</span><strong className={(summary.skill_pct ?? 0) >= 0 ? 'good' : 'bad'}>{percent(summary.skill_pct)}</strong>
+        <article><Activity aria-hidden="true" /><span>Ventaja · {evaluatedRange}</span><strong className={performanceTone(summary.skill_pct)}>{percent(summary.skill_pct)}</strong>
           <small>{summary.evaluated_days}/{summary.window_days} días · {summary.observations} horas</small></article>
-        <article><TrendingUp aria-hidden="true" /><span>Últimos {summary.recent_days} de la serie</span><strong className={(summary.recent_skill_pct ?? 0) >= 0 ? 'good' : 'bad'}>{percent(summary.recent_skill_pct)}</strong>
+        <article><TrendingUp aria-hidden="true" /><span>Últimos {summary.recent_days} de la serie</span><strong className={performanceTone(summary.recent_skill_pct)}>{percent(summary.recent_skill_pct)}</strong>
           <small>{summary.recent_evaluated_days}/{summary.recent_days} días evaluados</small></article>
         <article><CalendarCheck2 aria-hidden="true" /><span>Días ganados</span><strong>{summary.days_won} / {summary.evaluated_days}</strong>
           <small>MAE del modelo menor que el naive</small></article>
@@ -168,8 +169,8 @@ export function PerformanceHistory({ onSessionExpired }: { onSessionExpired: () 
           </ResponsiveContainer>
         </div>
         <div className="history-halves">
-          <div className={(summary.first_half_skill_pct ?? 0) >= 0 ? 'good' : 'bad'}><span>Primera mitad</span><strong>{percent(summary.first_half_skill_pct)}</strong></div>
-          <div className={(summary.second_half_skill_pct ?? 0) >= 0 ? 'good' : 'bad'}><span>Segunda mitad</span><strong>{percent(summary.second_half_skill_pct)}</strong></div>
+          <div className={performanceTone(summary.first_half_skill_pct)}><span>Primera mitad</span><strong>{percent(summary.first_half_skill_pct)}</strong></div>
+          <div className={performanceTone(summary.second_half_skill_pct)}><span>Segunda mitad</span><strong>{percent(summary.second_half_skill_pct)}</strong></div>
         </div>
         <p className="history-caption">Las barras conservan el skill diario almacenado. La escala visual se limita a ±80 % para que un día extremo no oculte el resto; el tooltip mantiene el valor real. Los KPI agregan los dos MAE ponderados por horas, no promedian porcentajes diarios.</p>
         <details className="history-method"><summary>Cómo se calcula y qué significa el naive</summary>
@@ -177,10 +178,6 @@ export function PerformanceHistory({ onSessionExpired }: { onSessionExpired: () 
         </details>
       </article>
 
-      <div className="history-insight">
-        <strong>{(summary.first_half_skill_pct ?? 0) >= 0 && (summary.second_half_skill_pct ?? 0) < 0 ? 'La ventaja no se pierde de golpe.' : 'La señal cambia dentro de la ventana.'}</strong>
-        <span>La comparación entre mitades deja visible si el modelo sigue ganando o si el régimen reciente ya se parece más al naive.</span>
-      </div>
     </>}
   </section>;
 }

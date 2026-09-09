@@ -1,11 +1,11 @@
 'use client';
 import { useState } from 'react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { Database, TrendingUp, Zap } from 'lucide-react';
+import { CalendarX2, Database, TrendingUp, Zap } from 'lucide-react';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { metric, numeric } from '@/lib/stored-evaluations';
-import { batteryModels, preferredBatteryModel, storedPlanSummary } from '@/lib/stored-battery';
+import { batteryModels, batteryRecordState, preferredBatteryModel, storedPlanSummary } from '@/lib/stored-battery';
 import type { BatteryPayload } from '@/lib/battery-types';
 const hour = new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const timestamp = new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -23,13 +23,20 @@ export function StoredBattery({ day, data, status }: { day: string; data: Batter
   const [chosenModel, setChosenModel] = useState('');
   if (status === 'loading') return <section className="battery-section battery-loading" aria-label="Optimización BESS" aria-busy="true">Consultando optimización BESS…</section>;
   if (status === 'error') return <section className="battery-section battery-empty" aria-label="Optimización BESS">Optimización BESS no disponible. No se sustituye por una simulación.</section>;
-  if (!data || data.date !== day) return null;
-  if (!data.results.length && !data.plan.length) return null;
+  if (!data || data.date !== day) return <section className="battery-section battery-empty" aria-label="Optimización BESS">La API no devolvió información válida para la fecha seleccionada.</section>;
+  const availability = batteryRecordState(data.plan.length, data.results.length);
+  if (availability === 'empty') return <section className="battery-section battery-empty battery-empty-detail" aria-label="Optimización BESS sin datos">
+    <CalendarX2 aria-hidden="true" />
+    <div><h3>No hay operación BESS guardada para esta fecha</h3>
+      <p>La base no contiene ni un plan horario ni un resultado liquidado para el {planDate.format(new Date(`${day}T12:00:00`))}. Puedes consultar otro día desde el selector de fecha.</p>
+      <small>No se genera una simulación de reserva para rellenar este espacio.</small></div>
+  </section>;
 
   const models = batteryModels(data.plan, data.results);
   const model = preferredBatteryModel(data.plan, data.results, chosenModel);
   const plan = data.plan.filter(row => row.model === model).sort((a, b) => Date.parse(a.datetime) - Date.parse(b.datetime));
   const result = data.results.find(row => row.model === model);
+  const modelState = batteryRecordState(plan.length, result ? 1 : 0);
   const assumptions = plan[0]?.simulador ?? result?.simulador;
   const points = plan.map(row => ({
     datetime: row.datetime,
@@ -54,12 +61,16 @@ export function StoredBattery({ day, data, status }: { day: string; data: Batter
     <div className="battery-header">
       <div><p className="section-label">Segundo paso · datos guardados</p><h2 id="battery-title">Optimización de la batería</h2>
         <p>Del precio previsto a un plan operativo de carga y descarga. La API solo lee el plan y el resultado almacenados.</p></div>
-      <label>Modelo
+      <label>Modelo evaluado
         <NativeSelect value={model} onChange={event => setChosenModel(event.target.value)}>
           {models.map(value => <NativeSelectOption key={value} value={value}>{value}</NativeSelectOption>)}
         </NativeSelect>
       </label>
     </div>
+
+    {modelState === 'result-only' ? <div className="battery-record-status is-result">Hay resultado económico liquidado para este modelo, pero no se guardó su plan horario.</div>
+      : modelState === 'plan-only' ? <div className="battery-record-status is-plan">El plan horario está guardado. Su resultado aparecerá cuando exista precio real y se ejecute la evaluación.</div>
+        : null}
 
     {plan.length > 0 ? <article className="battery-decision-card" aria-label="Resumen del plan BESS guardado">
       <div className="decision-copy">

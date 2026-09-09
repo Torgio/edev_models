@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import './battery-study.css';
+import { formatEnergyPrice } from '@/lib/price-format';
 import { Battery, CalendarDays, Factory, Info } from 'lucide-react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Button } from '@/components/ui/button';
@@ -192,7 +193,7 @@ function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; prefe
               </AreaChart></ResponsiveContainer></div>
             <div><h4>Precio utilizado · €/MWh</h4><ResponsiveContainer width="100%" height={190} minWidth={0}>
               <AreaChart data={points} margin={{ left: 0, right: 16 }}><XAxis dataKey="label" minTickGap={60} tick={{ fontSize: 12 }} /><YAxis width={60} />
-                <Tooltip formatter={v => metric(Number(v), ' €/MWh')} /><Area type="linear" dataKey="price" name="Precio del escenario" stroke="#7b8ee8" fill="#7b8ee8" fillOpacity={.1} connectNulls={false} />
+                <Tooltip formatter={v => formatEnergyPrice(Number(v))} /><Area type="linear" dataKey="price" name="Precio del escenario" stroke="#7b8ee8" fill="#7b8ee8" fillOpacity={.1} connectNulls={false} />
               </AreaChart></ResponsiveContainer></div>
           </div>
           <p className="study-series-note">h1–h24 son horas del calendario nominal del estudio. El precio pertenece a esta ejecución; no se sustituye por la curva publicada hoy.</p>

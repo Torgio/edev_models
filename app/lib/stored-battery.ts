@@ -19,6 +19,15 @@ export function batteryModels(plan: Array<{ model: string }>, results: Array<{ m
   return [...new Set([...plan.map(row => row.model), ...results.map(row => row.model)])].sort();
 }
 
+export type BatteryRecordState = 'empty' | 'plan-only' | 'result-only' | 'complete';
+
+export function batteryRecordState(planRows: number, resultRows: number): BatteryRecordState {
+  if (planRows > 0 && resultRows > 0) return 'complete';
+  if (planRows > 0) return 'plan-only';
+  if (resultRows > 0) return 'result-only';
+  return 'empty';
+}
+
 /**
  * Open BESS on an operational plan, not on the first alphabetic evaluation.
  * A deliberate user choice is preserved even when that model only has a result.
