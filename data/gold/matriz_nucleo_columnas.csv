@@ -79,8 +79,6 @@ tcc_mean_met_Dm2,era5_weather_agg,meteorologia
 ssrd_mean_met_Dm2,era5_weather_agg,meteorologia
 tp_acum_7d_met_Dm2,era5_weather_agg,meteorologia
 gas_mibgas,commodities,combustibles
-co2_eua_dec,commodities,combustibles
-gas_ttf_m1,commodities,combustibles
 capinst_total_autoconsume_mw,esios_capacity_installed,capacidad
 capinst_wind_mw,esios_capacity_installed,capacidad
 capinst_waste_nonrenewable_mw,esios_capacity_installed,capacidad

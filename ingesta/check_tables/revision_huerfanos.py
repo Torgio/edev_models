@@ -49,7 +49,6 @@ from config import load_config
 
 # Tablas que sabemos sustituidas, con el motivo. Se comprueban aparte.
 SUSTITUIDAS = {
-    "trayport_daily": "sustituida por trayport_trades + trayport_daily_ohlc",
     "entsoe_data": "partida en entsoe_gen_data + entsoe_load_inter (ago-2026)",
     "esios_marketdata": "partida en esios_gen + esios_load_inter + spot_price (14-ago)",
     "esios_load_inter": "fusionada en load_inter (18-ago)",

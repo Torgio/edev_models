@@ -392,10 +392,17 @@ def _features_diferencia_previsiones(conn) -> pd.DataFrame:
 
 # co2_ets, gas_ttf y carbon_api2 se retiraron el 22-ago-2026 a peticion del equipo (ver
 # conversacion) -- OJO: la importancia de features del LightGBM ganador (nota 14 de la memoria)
-# tenia a gas_ttf en la posicion #6 y carbon_api2 en la #8 de 237 variables, asi que este cambio
-# se aplica siguiendo la instruccion explicita del equipo, no porque la evidencia propia lo
-# respalde. Vale la pena revisar el impacto una vez reentrenados los modelos.
-COLS_COMMODITIES = ["gas_mibgas", "co2_eua_dec", "gas_ttf_m1"]
+# tenia a gas_ttf en la posicion #6 y carbon_api2 en la #8 de 237 variables, asi que ese cambio
+# se aplico siguiendo la instruccion explicita del equipo, no porque la evidencia propia lo
+# respaldara.
+#
+# co2_eua_dec y gas_ttf_m1 se retiran aqui, 9-sep-2026, por decision del equipo de eliminar
+# todo rastro de Trayport del proyecto (proteccion de datos, requisito del informe) -- las dos
+# vienen de trayport_daily_ohlc via commodities_futuros_history.py. gas_mibgas NO es de
+# Trayport (pipeline propio sobre MIBGAS) y se queda. Verificado con una ablacion real antes de
+# quitarlas (docs/notas_memoria_tfm.md): costo ~+1,9% de MAE en test, incluso mejora en
+# validacion -- impacto pequeño, no un pilar del modelo.
+COLS_COMMODITIES = ["gas_mibgas"]
 
 
 def _features_dia_d(conn) -> pd.DataFrame:

@@ -1,13 +1,13 @@
 {
   "nombre": "nucleo",
-  "hash": "4a8f328e",
-  "generada": "2026-08-29 19:35",
+  "hash": "a8bfaba5",
+  "generada": "2026-09-09 19:06",
   "aisla": "columnas (¿sobran variables?)",
   "origen": "Postgres vía construir_matriz.construir()",
   "bloque_generacion": "PDBC horario leído de esios_pdbc_gen; el bombeo de esios_pbf_gen, donde los ceros están intactos",
   "filas": 57521,
-  "columnas": 133,
-  "n_inputs": 113,
+  "columnas": 131,
+  "n_inputs": 111,
   "reparto": {
     "train": 43699,
     "validation": 8759,
@@ -36,7 +36,7 @@
     "esios_capacity_installed": 4,
     "esios_pdbc_gen": 12,
     "esios_pbf_gen": 4,
-    "commodities": 3,
+    "commodities": 1,
     "CLAVE": 5,
     "era5_weather_agg": 14,
     "spot_price (TARGET)": 1,
@@ -48,5 +48,15 @@
     "esios_pbf_load_inter": 8,
     "esios_pbf_bilateral": 6,
     "generation (real D-1/D-6)": 39
+  },
+  "trayport_retirado": {
+    "fecha": "2026-09-09",
+    "columnas_quitadas": [
+      "co2_eua_dec",
+      "gas_ttf_m1"
+    ],
+    "motivo": "eliminacion de todo rastro de Trayport del proyecto (proteccion de datos, requisito del informe) -- ver docs/notas_memoria_tfm.md",
+    "hash_anterior": "4a8f328e",
+    "backup": "data/gold/z_matriz_nucleo_con_trayport/"
   }
 }
