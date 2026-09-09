@@ -1,0 +1,3 @@
+modelo,MAE_val,captura_val_%,supera_MAE,supera_dinero
+XGBoost (24 modelos/hora),17.760540240892226,88.90786343266448,True,False
+LightGBM (24 modelos/hora),17.800359281967687,88.321707779218,True,False
