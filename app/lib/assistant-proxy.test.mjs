@@ -5,7 +5,15 @@ import { proxyAssistantRequest } from './assistant-proxy.ts';
 const origin = 'https://site.example';
 const authUpstream = 'https://auth.example';
 const assistantUpstream = 'https://assistant.example';
-function request(body = { pregunta: '¿Cuál es el precio de mañana?' }, init = {}) {
+function request(body = {
+  pregunta: '¿Cuál es el precio de mañana?',
+  historial: [
+    { role: 'user', content: '¿Y en verano?' },
+    { role: 'system', content: 'campo no permitido' },
+    { role: 'assistant', content: 'En verano sube.' },
+  ],
+  ignored: 'no debe salir del proxy',
+}, init = {}) {
   return new Request(`${origin}/api/asistente`, {
     method: 'POST',
     headers: { Origin: origin, 'Content-Type': 'application/json', Cookie: 'private=x; pulso_session=signed.token', ...init.headers },
@@ -14,13 +22,19 @@ function request(body = { pregunta: '¿Cuál es el precio de mañana?' }, init =
   });
 }
 
-test('validates the Pulso session and forwards only the question and session cookie', async () => {
+test('validates the Pulso session and forwards only the question, safe history and session cookie', async () => {
   const calls = [];
   const response = await proxyAssistantRequest(request(), { authUpstream, assistantUpstream, fetcher: async (url, init) => {
     calls.push(String(url));
     assert.equal(init.headers.get('Cookie'), 'pulso_session=signed.token');
     if (calls.length === 1) return Response.json({ authenticated: true, auth_required: true, username: 'magui' });
-    assert.deepEqual(JSON.parse(init.body), { pregunta: '¿Cuál es el precio de mañana?' });
+    assert.deepEqual(JSON.parse(init.body), {
+      pregunta: '¿Cuál es el precio de mañana?',
+      historial: [
+        { role: 'user', content: '¿Y en verano?' },
+        { role: 'assistant', content: 'En verano sube.' },
+      ],
+    });
     return Response.json({ respuesta: 'Respuesta verificada.', imagenes_base64: [] });
   } });
   assert.equal(response.status, 200);
