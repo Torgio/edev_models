@@ -7,6 +7,7 @@ import { Area, AreaChart, Bar, BarChart, CartesianGrid, ComposedChart, Legend, L
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
+import { BatteryCurveUpload } from '@/components/battery-curve-upload';
 import { metric } from '@/lib/stored-evaluations';
 import { nominalDayOffset, studyCoverage, studyInputs, studyPoints, toKilo, type StudyDispatch, type StudyResult } from '@/lib/battery-study';
 
@@ -29,6 +30,11 @@ async function read<T>(path: string, signal: AbortSignal): Promise<T> {
 }
 
 export function BatteryStudy() {
+  const [creating, setCreating] = useState(false);
+  return creating ? <BatteryCurveUpload onCancel={() => setCreating(false)} /> : <SavedBatteryStudy onNew={() => setCreating(true)} />;
+}
+
+function SavedBatteryStudy({ onNew }: { onNew: () => void }) {
   const [ids, setIds] = useState<number[]>([]);
   const [runId, setRunId] = useState<number | null>(null);
   const [result, setResult] = useState<StudyResult | null>(null);
@@ -93,6 +99,7 @@ export function BatteryStudy() {
       <div><p className="kicker">Estudio de instalación · prueba local</p><h2 id="study-heading">Una batería, a lo largo del tiempo</h2>
         <p>Consulta una ejecución guardada y explora su operación horaria.</p></div>
       <div className="study-controls">
+        <Button onClick={onNew}>Nuevo estudio</Button>
         {ids.length > 0 && <label>Estudio guardado<NativeSelect value={runId ?? ''} onChange={e => setRunId(Number(e.target.value))}>
           {ids.map(id => <NativeSelectOption key={id} value={id}>Estudio {id}</NativeSelectOption>)}
         </NativeSelect></label>}
