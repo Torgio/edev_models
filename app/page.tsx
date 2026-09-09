@@ -9,47 +9,39 @@ import {
   Zap,
 } from 'lucide-react';
 import {
-  Area, CartesianGrid, Line, LineChart, ReferenceArea, ReferenceDot, ResponsiveContainer, Tooltip,
+  Area, CartesianGrid, Line, LineChart, ReferenceArea, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip,
   XAxis, YAxis,
 } from 'recharts';
 
 import { Button } from '@/components/ui/button';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { TeamAccess } from '@/components/team-access';
+import { AsistenteWidget } from '@/components/asistente-widget';
 import { PeakAccuracy } from '@/components/peak-accuracy';
 import { forecastMinimum } from '@/lib/forecast-minimum';
 import { dailyPrice } from '@/lib/daily-price';
 import { StoredEvaluations } from '@/components/stored-evaluations';
 import { StoredBattery } from '@/components/stored-battery';
+import { BatteryStudy } from '@/components/battery-study';
 import { predictionUpdate } from '@/lib/prediction-update';
 import { initialDashboardDay, type AvailableDay } from '@/lib/initial-day';
+import { marketHourClockLabel } from '@/lib/market-hour';
+import { MODEL_STYLES, modelColor } from '@/lib/model-color';
+import { forecastRamp, negativePriceHours } from '@/lib/market-signals';
+import { priceAxisLower, priceAxisTick, priceAxisUpper } from '@/lib/price-axis';
+import { formatEnergyPrice } from '@/lib/price-format';
+import { modelsToPlot } from '@/lib/visible-models';
 import type { BatteryPayload } from '@/lib/battery-types';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 
-const MODEL_STYLES = [
-  { key: 'ensemble', label: 'Ensemble', color: '#e58b45' },
-  { key: 'gru', label: 'GRU', color: '#43a99f' },
-  { key: 'boosting', label: 'Boosting', color: '#7b8ee8' },
-  { key: 'seq2seq', label: 'Seq2Seq', color: '#cf6f87' },
-  { key: 'denso', label: 'Denso', color: '#b178d3' },
-  { key: 'simplernn', label: 'SimpleRNN', color: '#d19a3a' },
-  { key: 'conv1d_lstm', label: 'Conv1D-LSTM', color: '#4f8fbe' },
-  { key: 'lstm', label: 'LSTM', color: '#829557' },
-  { key: 'seq2seq_absoluto', label: 'Seq2Seq absoluto', color: '#bf685f' },
-  { key: 'ensemble11', label: 'Ensemble 11', color: '#d8783e' },
-  { key: 'lgbm_nucleo', label: 'LightGBM núcleo', color: '#4f9b68' },
-  { key: 'lightgbm', label: 'LightGBM', color: '#6aa84f' },
-  { key: 'xgboost', label: 'XGBoost', color: '#8f6ab8' },
-] as const;
-
 type ModelKey = string;
 type PriceHour = Parameters<typeof dailyPrice>[0][number] & { hour: string };
 type ChartRow = { datetime: string; hour: number; label: string; actual: number | null; consensusBand: [number, number] | null; predictions: Record<string, number> };
 const API_URL = '/api/dashboard';
-const priceFormat = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const averagePrice = (value: number | null | undefined) => value == null ? '—' : `${priceFormat.format(value)} €/MWh`;
 
 function consensusBand(values: number[]): [number, number] | null {
   const ordered = values.filter(Number.isFinite).sort((a, b) => a - b);
@@ -71,16 +63,51 @@ function MetricCard({ icon: Icon, eyebrow, value, detail, tone = 'neutral' }: {
   );
 }
 
+function DateNavigator({ date, days, coverageLabel, ariaLabel, onChange }: {
+  date: Date; days: AvailableDay[]; coverageLabel: string; ariaLabel: string; onChange: (date: Date) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const available = new Set(days.map(item => item.date));
+  const closed = days.filter(item => item.closed).map(item => new Date(`${item.date}T12:00:00`));
+  const partial = days.filter(item => !item.closed && item.actual_hours > 0).map(item => new Date(`${item.date}T12:00:00`));
+  const pending = days.filter(item => !item.actual_hours).map(item => new Date(`${item.date}T12:00:00`));
+  return <div className="date-stepper" aria-label={ariaLabel}>
+    <Button variant="ghost" size="icon-lg" aria-label="Día anterior" onClick={() => onChange(addDays(date, -1))}><ChevronLeft /></Button>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger className="date-picker-trigger" aria-label="Elegir fecha en el calendario">
+        <CalendarDays aria-hidden="true" />
+        <span>{format(date, "EEEE, d 'de' MMMM", { locale: es })}</span>
+        <strong>{coverageLabel}</strong>
+      </PopoverTrigger>
+      <PopoverContent className="date-calendar-popover" align="center" sideOffset={8}>
+        <Calendar key={format(date, 'yyyy-MM-dd')} mode="single" selected={date} defaultMonth={date} locale={es}
+          disabled={candidate => !available.has(format(candidate, 'yyyy-MM-dd'))}
+          modifiers={{ closed, partial, pending }}
+          modifiersClassNames={{ closed: 'calendar-day-closed', partial: 'calendar-day-partial', pending: 'calendar-day-pending' }}
+          onSelect={candidate => {
+            if (!candidate || !available.has(format(candidate, 'yyyy-MM-dd'))) return;
+            onChange(candidate); setOpen(false);
+          }} />
+        <div className="calendar-status-legend" aria-label="Estado de las fechas">
+          <span className="closed">Cerrado</span><span className="partial">Parcial</span><span className="pending">Previsto</span>
+        </div>
+      </PopoverContent>
+    </Popover>
+    <Button variant="ghost" size="icon-lg" aria-label="Día siguiente" onClick={() => onChange(addDays(date, 1))}><ChevronRight /></Button>
+  </div>;
+}
+
 export default function Home() {
   return <TeamAccess>{(controls) => <Dashboard {...controls} />}</TeamAccess>;
 }
 
-function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => void; onLogout: () => Promise<void> }) {
+function Dashboard({ username, onSessionExpired, onLogout }: { username: string | null; onSessionExpired: () => void; onLogout: () => Promise<void> }) {
   const [date, setDate] = useState(new Date());
   const day = format(date, 'yyyy-MM-dd');
   const [availableDays, setAvailableDays] = useState<AvailableDay[]>([]);
   const [visible, setVisible] = useState<ModelKey[]>([]);
-  const [view, setView] = useState<'prediction' | 'evaluation' | 'battery'>('prediction');
+  const [view, setView] = useState<'prediction' | 'evaluation' | 'battery' | 'assistant'>('prediction');
+  const [batteryView, setBatteryView] = useState<'daily' | 'study'>('daily');
   const [referenceModel, setReferenceModel] = useState('');
   const [dayState, setDayState] = useState<{ day: string; hours: PriceHour[]; updated: string | null } | null>(null);
   const [dataStatus, setDataStatus] = useState<'loading' | 'live' | 'error'>('loading');
@@ -89,7 +116,7 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
   const priceHours = current?.hours ?? [];
   const availableModels = [...new Set(priceHours.flatMap(point => Object.keys(point.predictions)))].sort();
   const MODELS = availableModels.map(key => MODEL_STYLES.find(model => model.key === key) ?? {
-    key, label: key, color: `hsl(${[...key].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 360, 0)} 45% 45%)`,
+    key, label: key, color: modelColor(key),
   });
   const selectedModel = availableModels.includes(referenceModel) ? referenceModel : availableModels.includes('ensemble') ? 'ensemble' : availableModels[0] ?? '';
   const currentMinimum = current ? forecastMinimum(priceHours, selectedModel) : null;
@@ -98,7 +125,7 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
   const comparisonPredicted = averages?.pairedHours ? averages.pairedPrediction : averages?.predicted;
   const comparisonActual = averages?.pairedReal;
   const data: ChartRow[] = priceHours.map((point, index) => ({
-    datetime: point.datetime, hour: index, label: point.hour, actual: point.actual,
+    datetime: point.datetime, hour: index, label: marketHourClockLabel(index, point.hour), actual: point.actual,
     consensusBand: consensusBand(Object.values(point.predictions).filter((x): x is number => typeof x === 'number')),
     predictions: point.predictions as Record<string, number>,
   }));
@@ -112,8 +139,7 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
   const dayCoverageLabel = hasDayCoverage
     ? `${isClosed ? 'día cerrado' : actualHours ? 'cierre parcial' : 'precio real pendiente'} · ${actualHours}/${expectedHours} h reales`
     : format(date, 'yyyy');
-  const plotted = visible.filter(key => availableModels.includes(key));
-  const visibleModels = plotted.length ? plotted : availableModels.slice(0, 3);
+  const visibleModels = modelsToPlot(availableModels, visible, selectedModel);
 
   useEffect(() => {
     if (!API_URL) return;
@@ -172,6 +198,8 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
   const validReference = data.filter(row => Number.isFinite(row.predictions[selectedModel]));
   const peak = validReference.reduce<ChartRow | null>((best, row) => !best || row.predictions[selectedModel] > best.predictions[selectedModel] ? row : best, null);
   const max = peak?.predictions[selectedModel];
+  const ramp = forecastRamp(data, selectedModel);
+  const negatives = negativePriceHours(data, selectedModel);
   const lastPredictionUpdate = predictionUpdate(current?.updated ?? null, current !== null);
   const currentBattery = batteryState.day === day ? batteryState : { day, data: null, status: 'loading' as const };
   const batteryPlan = currentBattery.data?.plan.filter(row => row.model === selectedModel) ?? [];
@@ -186,6 +214,7 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
   const dischargeLabels = batteryMarks.filter(mark => mark.action === 'discharge').map(mark => mark.label);
 
   function toggleModel(key: ModelKey) {
+    if (key === selectedModel) return;
     setVisible(visibleModels.includes(key)
       ? visibleModels.length === 1 ? visibleModels : visibleModels.filter(item => item !== key)
       : [...visibleModels, key]);
@@ -202,6 +231,7 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
           <button type="button" className={view === 'prediction' ? 'active' : ''} aria-pressed={view === 'prediction'} onClick={() => setView('prediction')}>Predicción</button>
           <button type="button" className={view === 'evaluation' ? 'active' : ''} aria-pressed={view === 'evaluation'} onClick={() => setView('evaluation')}>Evaluación</button>
           <button type="button" className={view === 'battery' ? 'active' : ''} aria-pressed={view === 'battery'} onClick={() => setView('battery')}>BESS</button>
+          <button type="button" className={view === 'assistant' ? 'active' : ''} aria-pressed={view === 'assistant'} onClick={() => setView('assistant')}>Asistente</button>
         </nav>
         <div className="system-status">
           <Clock3 size={16} aria-hidden="true" />
@@ -210,7 +240,7 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
       </header>
 
       <section className="content-wrap" id="prevision">
-        <div className="access-toolbar"><span>Acceso del equipo</span><Button variant="outline" size="sm" onClick={() => void onLogout()}>Cerrar sesión</Button></div>
+        <div className="access-toolbar"><span>{username ? `Sesión: ${username}` : 'Acceso del equipo'}</span><Button variant="outline" size="sm" onClick={() => void onLogout()}>Cerrar sesión</Button></div>
         {view === 'prediction' ? <>
         <div className="page-heading">
           <div>
@@ -226,11 +256,7 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
               ? `Compara lo previsto con las ${expectedHours} horas reales del mercado. Los días futuros con predicciones siguen disponibles con la flecha.`
               : 'Este día aún no tiene el precio real completo; muestra el plan previsto y deja pendientes los resultados.'}</p>
           </div>
-          <div className="date-stepper" aria-label="Navegación por fecha">
-            <Button variant="ghost" size="icon-lg" aria-label="Día anterior" onClick={() => setDate((day) => addDays(day, -1))}><ChevronLeft /></Button>
-            <div><CalendarDays aria-hidden="true" /><span>{format(date, "EEEE, d 'de' MMMM", { locale: es })}</span><strong>{dayCoverageLabel}</strong></div>
-            <Button variant="ghost" size="icon-lg" aria-label="Día siguiente" onClick={() => setDate((day) => addDays(day, 1))}><ChevronRight /></Button>
-          </div>
+          <DateNavigator date={date} days={availableDays} coverageLabel={dayCoverageLabel} ariaLabel="Navegación por fecha" onChange={setDate} />
         </div>
 
         <section className="forecast-workspace" aria-labelledby="forecast-title">
@@ -253,8 +279,9 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
                 <summary>Series visibles <strong>{visibleModels.length}</strong></summary>
                 <div className="model-toggles" aria-label="Modelos visibles">
                   {MODELS.map(model => (
-                    <button key={model.key} type="button" className={visibleModels.includes(model.key) ? 'selected' : ''}
-                      onClick={() => toggleModel(model.key)} aria-pressed={visibleModels.includes(model.key)}>
+                    <button key={model.key} type="button" className={`${visibleModels.includes(model.key) ? 'selected' : ''} ${model.key === selectedModel ? 'reference-series' : ''}`}
+                      onClick={() => toggleModel(model.key)} aria-pressed={visibleModels.includes(model.key)}
+                      disabled={model.key === selectedModel} title={model.key === selectedModel ? 'El modelo de referencia siempre permanece visible' : undefined}>
                       <span style={{ background: model.color }} />{model.label}
                     </button>
                   ))}
@@ -263,6 +290,7 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
               <div className="chart-legend">
                 <span className="consensus-legend" title="Rango central entre modelos; no es un intervalo predictivo."><i />Dispersión central</span>
                 {hasActual && <span className="actual-legend"><i />Precio real</span>}
+                {negatives.entries.length > 0 && <span className="negative-price-legend"><i />Horas bajo cero</span>}
                 {batteryMarks.some(mark => mark.action === 'charge') && <span className="battery-overlay-legend charge"><i />Carga BESS</span>}
                 {batteryMarks.some(mark => mark.action === 'discharge') && <span className="battery-overlay-legend discharge"><i />Descarga BESS</span>}
               </div>
@@ -274,12 +302,17 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={340}>
                 <LineChart data={data} margin={{ top: 28, right: 20, left: 4, bottom: 4 }}>
                   <CartesianGrid vertical={false} stroke="#e2e9e5" />
-                  <XAxis dataKey="hour" tickFormatter={index => data[Number(index)]?.label ?? ''} axisLine={false} tickLine={false} interval={2} tick={{ fill: '#66736f', fontSize: 12 }} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#66736f', fontSize: 12 }} domain={['dataMin - 8', 'dataMax + 8']} width={62} />
+                  <XAxis dataKey="hour" tickFormatter={index => data[Number(index)]?.label ?? ''} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={48} tick={{ fill: '#52685e', fontSize: 12 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#66736f', fontSize: 12 }}
+                    domain={[priceAxisLower, priceAxisUpper]} allowDecimals={false} tickFormatter={priceAxisTick} width={62} />
                   <Tooltip labelFormatter={index => data[Number(index)]?.label ?? ''} cursor={{ stroke: '#9aaba5', strokeDasharray: '3 4' }}
                     contentStyle={{ borderRadius: 14, border: '1px solid #d8e0dc', boxShadow: '0 12px 35px rgba(16,43,36,.12)' }}
-                    formatter={(value, name) => [Array.isArray(value) ? `${Number(value[0]).toFixed(1)}–${Number(value[1]).toFixed(1)} €/MWh` : `${Number(value).toFixed(1)} €/MWh`, String(name)]} />
+                    formatter={(value, name) => [Array.isArray(value) ? `${formatEnergyPrice(Number(value[0]), { unit: false })}–${formatEnergyPrice(Number(value[1]))}` : formatEnergyPrice(Number(value)), String(name)]} />
                   <Area type="monotone" dataKey="consensusBand" name="Dispersión central" stroke="none" fill="#43a99f" fillOpacity={0.12} activeDot={false} />
+                  <ReferenceLine y={0} stroke="#aab6b1" strokeDasharray="3 4" />
+                  {negatives.entries.map(mark => <ReferenceArea key={`negative:${mark.index}`} x1={mark.index - .45} x2={mark.index + .45}
+                    fill={mark.actual ? '#b85f3b' : '#e8a36f'} fillOpacity={mark.actual && mark.predicted ? .16 : .1} strokeOpacity={0} ifOverflow="hidden" />)}
+                  {ramp && <ReferenceArea x1={ramp.from} x2={ramp.to} fill="#6689a8" fillOpacity={.08} strokeOpacity={0} ifOverflow="hidden" />}
                   {batteryMarks.map(mark => <ReferenceArea key={`${mark.action}:${mark.index}`} x1={mark.index - .45} x2={mark.index + .45}
                     fill={mark.action === 'charge' ? '#43a99f' : '#e58b45'} fillOpacity={.14} strokeOpacity={0} ifOverflow="hidden" />)}
                   {MODELS.filter(model => visibleModels.includes(model.key)).map(model => (
@@ -289,23 +322,29 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
                   ))}
                   {hasActual && <Line type="monotone" dataKey="actual" name="Precio real" stroke="#142e28" strokeWidth={2.4} strokeDasharray="4 4" dot={false} />}
                   {minimum && <ReferenceDot x={minimum.index} y={minimum.value} r={5} fill="#e58b45" stroke="#142e28" ifOverflow="extendDomain"
-                    label={{ value: 'Mínimo', position: 'top', fontSize: 11, fill: '#142e28' }} />}
+                    label={{ value: 'Valle previsto', position: 'top', fontSize: 11, fill: '#142e28' }} />}
+                  {ramp && <ReferenceDot x={ramp.to} y={ramp.value} r={4} fill="#6689a8" stroke="#fff" ifOverflow="extendDomain" />}
                 </LineChart>
               </ResponsiveContainer>
             </div>
-            <p className="chart-caption">La banda representa el rango central entre los modelos recibidos; no es un intervalo de confianza. El modelo de referencia aparece destacado.</p>
+            <div className="market-signals" aria-label="Señales calculadas de la curva">
+              <span><small>Valle previsto</small><strong>{minimum ? `${data[minimum.index]?.label} · ${formatEnergyPrice(minimum.value)}` : '—'}</strong></span>
+              <span><small>Mayor rampa prevista</small><strong>{ramp ? `${data[ramp.from]?.label}→${data[ramp.to]?.label} · ${formatEnergyPrice(ramp.increase, { sign: true })}` : '—'}</strong></span>
+              <span><small>Horas negativas</small><strong>Previstas {negatives.predicted} · reales {negatives.actual}</strong></span>
+            </div>
+            <p className="chart-caption">Valle, rampa y horas bajo cero se calculan para este día y el modelo de referencia; describen la curva, no atribuyen su causa. La banda es dispersión central entre modelos, no un intervalo de confianza.</p>
           </div>
 
           <aside className="forecast-rail" aria-label="Indicadores del día">
             <div className="rail-heading"><p className="section-label">Lectura del día</p><h3>{selectedModel || 'Sin modelo'}</h3><span>{format(date, 'dd/MM/yyyy')}</span></div>
             <div className="price-comparison" aria-label="Comparación entre precio medio previsto y real">
-              <div className="comparison-price predicted"><span>Precio medio previsto</span><strong>{averagePrice(comparisonPredicted)}</strong>
+              <div className="comparison-price predicted"><span>Precio medio previsto</span><strong>{formatEnergyPrice(comparisonPredicted)}</strong>
                 <small>{averages?.pairedHours ? `${averages.pairedHours} horas comunes` : averages?.predictedHours ? `${averages.predictedHours}/${averages.expectedHours} horas previstas` : 'Sin predicción'}</small></div>
-              <div className={`comparison-delta ${averages?.difference == null ? 'pending' : averages.difference > 0 ? 'positive' : averages.difference < 0 ? 'negative' : 'neutral'}`}>
-                <span>Δ previsto − real</span><strong>{averages?.difference == null ? '—' : `${averages.difference > 0 ? '+' : ''}${averagePrice(averages.difference)}`}</strong>
+              <div className={`comparison-delta ${averages?.difference == null ? 'pending' : 'neutral'}`}>
+                <span>Δ previsto − real</span><strong>{formatEnergyPrice(averages?.difference, { sign: true })}</strong>
                 <small>{averages?.pairedHours ? `${averages.pairedHours}/${averages.expectedHours} comparables` : 'Pendiente de precio real'}</small>
               </div>
-              <div className="comparison-price actual"><span>Precio medio real</span><strong>{averagePrice(comparisonActual)}</strong>
+              <div className="comparison-price actual"><span>Precio medio real</span><strong>{formatEnergyPrice(comparisonActual)}</strong>
                 <small>{averages?.pairedHours ? `${averages.pairedHours} horas comunes` : 'Pendiente de cierre del mercado'}</small></div>
             </div>
             <div className="kpi-stack">
@@ -313,9 +352,9 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
                 value={averages ? `${averages.pairedHours}/${averages.expectedHours}` : '—'}
                 detail="Horas con predicción y precio real" />
               <MetricCard icon={ArrowDownRight} eyebrow="Mínimo previsto"
-                value={minimum ? `${minimum.value.toFixed(1)} €/MWh` : '—'} detail={minimum ? minimum.hour : 'Sin datos'} tone="warm" />
+                value={formatEnergyPrice(minimum?.value)} detail={minimum ? data[minimum.index]?.label ?? 'Sin datos' : 'Sin datos'} tone="warm" />
               <MetricCard icon={ArrowUpRight} eyebrow="Máximo previsto"
-                value={max == null ? '—' : `${max.toFixed(1)} €/MWh`} detail={peak?.label ?? 'Sin datos'} tone="warm" />
+                value={formatEnergyPrice(max)} detail={peak?.label ?? 'Sin datos'} tone="warm" />
             </div>
             <div className="peak-panel"><PeakAccuracy model={selectedModel} day={day} onSessionExpired={onSessionExpired} /></div>
           </aside>
@@ -328,29 +367,41 @@ function Dashboard({ onSessionExpired, onLogout }: { onSessionExpired: () => voi
           </summary>
           <div className="table-scroll">
             <Table>
-              <TableHeader><TableRow><TableHead>Hora</TableHead>{MODELS.map(model => <TableHead key={model.key}>{model.label}</TableHead>)}<TableHead>Real</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Hora mercado</TableHead>{MODELS.map(model => <TableHead key={model.key}>{model.label}</TableHead>)}<TableHead>Real</TableHead></TableRow></TableHeader>
               <TableBody>{data.map(row => (
                 <TableRow key={row.hour} className={row.hour === minimum?.index || row.hour === peak?.hour ? 'highlight-row' : ''}>
                   <TableCell className="hour-cell">{row.label}</TableCell>
-                  {MODELS.map(model => <TableCell key={model.key}>{row.predictions[model.key]?.toFixed(1) ?? '—'}</TableCell>)}
-                  <TableCell>{row.actual === null ? '—' : row.actual.toFixed(1)}</TableCell>
+                  {MODELS.map(model => <TableCell key={model.key}>{formatEnergyPrice(row.predictions[model.key], { unit: false })}</TableCell>)}
+                  <TableCell>{formatEnergyPrice(row.actual, { unit: false })}</TableCell>
                 </TableRow>
               ))}</TableBody>
             </Table>
           </div>
         </details>
 
-        </> : view === 'evaluation' ? <div className="evaluation-view"><StoredEvaluations onSessionExpired={onSessionExpired} /></div> :
+        </> : view === 'evaluation' ? <div className="evaluation-view"><StoredEvaluations onSessionExpired={onSessionExpired} /></div> : view === 'battery' ?
           <div className="battery-view">
-            <div className="view-datebar">
-              <div><p className="kicker">Operación diaria</p><h2>Plan BESS guardado</h2><p>Consulta la decisión horaria y su resultado económico sin recalcular la estrategia.</p></div>
-              <div className="date-stepper" aria-label="Navegación por fecha BESS">
-                <Button variant="ghost" size="icon-lg" aria-label="Día anterior" onClick={() => setDate((day) => addDays(day, -1))}><ChevronLeft /></Button>
-                <div><CalendarDays aria-hidden="true" /><span>{format(date, "EEEE, d 'de' MMMM", { locale: es })}</span><strong>{dayCoverageLabel}</strong></div>
-                <Button variant="ghost" size="icon-lg" aria-label="Día siguiente" onClick={() => setDate((day) => addDays(day, 1))}><ChevronRight /></Button>
-              </div>
+            <div className="battery-modes">
+              <nav className="battery-mode-switch" aria-label="Vistas de batería">
+                <button type="button" aria-pressed={batteryView === 'daily'} onClick={() => setBatteryView('daily')}>Operación diaria</button>
+                {process.env.NODE_ENV === 'development' && <button type="button" aria-pressed={batteryView === 'study'} onClick={() => setBatteryView('study')}>Estudio de instalación</button>}
+              </nav>
+              {batteryView === 'daily' ? <>
+                <div className="view-datebar">
+                  <div><p className="kicker">Operación diaria</p><h2>Plan BESS guardado</h2><p>Consulta la decisión horaria y su resultado económico sin recalcular la estrategia.</p></div>
+                  <DateNavigator date={date} days={availableDays} coverageLabel={dayCoverageLabel} ariaLabel="Navegación por fecha BESS" onChange={setDate} />
+                </div>
+                <StoredBattery day={day} data={currentBattery.data} status={currentBattery.status} />
+              </> : process.env.NODE_ENV === 'development' ? <BatteryStudy /> : null}
             </div>
-            <StoredBattery day={day} data={currentBattery.data} status={currentBattery.status} />
+          </div> :
+          <div className="assistant-view">
+            <div className="assistant-heading">
+              <p className="kicker">Consulta guiada · herramientas del proyecto</p>
+              <h2>Pregunta a los datos de Pulso.</h2>
+              <p>Consulta precios, predicciones, batería y metodología. La respuesta identifica la fuente utilizada y diferencia las funciones verificadas de las consultas dinámicas.</p>
+            </div>
+            <AsistenteWidget onSessionExpired={onSessionExpired} />
           </div>}
       </section>
 
