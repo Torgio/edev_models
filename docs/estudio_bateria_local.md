@@ -1,8 +1,8 @@
-# Estudio de instalación — primera integración local
+# Estudio de instalación — integración aislada
 
 Esta vista complementa **BESS → Operación diaria**, sin sustituirlo. Está disponible
-en **BESS → Estudio de instalación** únicamente durante el desarrollo local.
-No se ha publicado esta integración.
+en **BESS → Estudio de instalación**. En producción se conecta exclusivamente a
+`tfm_energia_test`; la base operativa `tfm_energia` no recibe sus curvas ni estudios.
 
 ## Preparación y acceso
 
@@ -17,7 +17,19 @@ BESS_STUDY_RUN_IDS=16
 Para leer una API BESS aislada por un túnel local sin cambiar dónde se valida la
 sesión, configurar además `BESS_STUDY_API_URL=http://127.0.0.1:8011`. Este origen
 solo se usa para `/api/bat/*`; `DASHBOARD_API_URL` continúa siendo la autoridad de
-autenticación. La ruta sigue deshabilitada fuera de desarrollo.
+autenticación. En desarrollo la función queda habilitada automáticamente.
+
+En Sites se usan estos valores de producción:
+
+```dotenv
+BESS_STUDY_ENABLED=1
+BESS_STUDY_API_URL=https://vps-16d0afbc.vps.ovh.net/api/bat-test
+```
+
+La ruta `/api/bat-test/` de Nginx conserva el login de Pulso, pero se dirige al
+servicio local 8011, cuya unidad debe declarar `TFM_TEST_DB_NAME=tfm_energia_test`.
+El instalador `production/app/deploy/install_snapshot_test_proxy.sh` verifica esa
+condición antes de publicar la ruta y rechaza la instalación si no se cumple.
 
 El estudio 16 es el ejemplo comunicado por el equipo; configurarlo no garantiza
 que siga existiendo, que tenga despacho para todas las fechas o que su metodología
