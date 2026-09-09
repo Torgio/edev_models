@@ -15,6 +15,8 @@ const dateText = (value: string | null) => value ? new Date(value).toLocaleStrin
 const chartNumber = (value: number) => value.toLocaleString('es-ES', { maximumFractionDigits: 0 });
 const dayCount = (value: number | null | undefined) => typeof value === 'number' && Number.isInteger(value) && value >= 0 ? chartNumber(value) : '—';
 const nominalDateText = (value: string) => value.split('-').reverse().join('/');
+const scenarioCount = (value: number) => `${value} escenario${value === 1 ? '' : 's'}`;
+const originText = (value: string) => value === 'historico' ? 'Histórico' : value === 'simulado' ? 'Simulado' : value;
 
 async function read<T>(path: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(`${API}/${path}`, { cache: 'no-store', signal });
@@ -184,12 +186,16 @@ export function BatteryStudy() {
       </article>
       <details className="study-card study-details"><summary>Procedencia y valores guardados</summary>
         <p>Estudio {run.run_id} · caso {run.case_id} · ejecutado {dateText(run.run_at)}.</p>
-        <p>Curva utilizada: {dateText(run.curve_generated_at)}. {run.n_scenarios} escenarios.</p>
+        <p>{run.curve_generated_at
+          ? <>Curva futura utilizada: {dateText(run.curve_generated_at)} · {scenarioCount(run.n_scenarios)}.</>
+          : run.days_simulated === 0
+            ? <>Curva futura: no aplica; todo el período es histórico · {scenarioCount(run.n_scenarios)}.</>
+            : <>Curva futura: fecha no guardada · {scenarioCount(run.n_scenarios)}.</>}</p>
         {run.curve_matrix_hash && <p>Huella de matriz: <code>{run.curve_matrix_hash}</code></p>}
         {run.notes && <p>Notas guardadas: {run.notes}</p>}
         <p>Los indicadores y el despacho se leen del estudio. En pantalla solo se convierten unidades y se formatean valores. {inputs ? `Parámetros conservados el ${dateText(inputs.captured_at)} (versión ${inputs.schema_version}).` : 'Los parámetros originales de la instalación no están incluidos en esta respuesta.'}</p>
-        <div className="table-scroll"><table><caption>Resultados anuales de la ejecución</caption><thead><tr>{['Año', 'Origen', 'Días', 'Valor medio €', 'P10 €', 'P50 €', 'P90 €'].map(h => <th key={h}>{h}</th>)}</tr></thead>
-          <tbody>{annual.map(row => <tr key={row.ano}><td>{row.ano}</td><td>{row.origen}</td><td>{row.dias}</td><td>{metric(row.margen)}</td><td>{metric(row.p10)}</td><td>{metric(row.p50)}</td><td>{metric(row.p90)}</td></tr>)}</tbody>
+        <div className="table-scroll"><table><caption>Resultados anuales de la ejecución</caption><thead><tr>{['Año', 'Origen', 'Días', 'Valor medio €', 'P10 €', 'P50 €', 'P90 €'].map(h => <th scope="col" key={h}>{h}</th>)}</tr></thead>
+          <tbody>{annual.map(row => <tr key={row.ano}><td>{row.ano}</td><td>{originText(row.origen)}</td><td>{row.dias}</td><td>{metric(row.margen)}</td><td>{metric(row.p10)}</td><td>{metric(row.p50)}</td><td>{metric(row.p90)}</td></tr>)}</tbody>
         </table></div>
       </details>
     </>}
