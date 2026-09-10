@@ -18,29 +18,32 @@ from __future__ import annotations
 
 import argparse
 import glob
+import json
+import hashlib
 import os
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
+from bess_evaluation import DEFAULT, SIMULADOR, optimizar, valorar
+from tiempo_mercado import serie_local, dia_completo, naive_local
+
 REPO = Path(__file__).resolve().parent.parent
 MATRIZ = REPO / "data" / "gold" / "matriz_nucleo.csv"
 
-# --- SUPUESTOS DE LA BATERIA -------------------------------------------------------
-# Fijos y escritos aqui a proposito: son los de la radiografia del LightGBM afinado.
-# Cambiarlos cambia TODAS las capturas a la vez, que es justo lo que se quiere.
-POTENCIA_MW = 1.0
-CAPACIDAD_MWH = 2.0
-EFICIENCIA = 0.90          # ida y vuelta
-HORAS = int(CAPACIDAD_MWH / POTENCIA_MW)   # 2 h de carga y 2 h de descarga
+# Alias conservados para los scripts del equipo; la definicion vive en el motor.
+POTENCIA_MW = DEFAULT.potencia_mw
+CAPACIDAD_MWH = DEFAULT.capacidad_mwh
+EFICIENCIA = DEFAULT.eficiencia
+HORAS = int(CAPACIDAD_MWH / POTENCIA_MW)  # duracion nominal, no horas de despacho
 
 
 # ---------------------------------------------------------------- lectura de precios
 def precio_real():
     m = pd.read_csv(MATRIZ, usecols=["ts", "target_price", "split"])
     m["ts"] = pd.to_datetime(m["ts"])
-    return m.set_index("ts")
+    return serie_local(m.set_index("ts"))
 
 
 def a_largo(ruta, modelo_id):
@@ -49,73 +52,54 @@ def a_largo(ruta, modelo_id):
     d.columns = range(24)
     s = d.stack()
     ts = s.index.get_level_values(0) + pd.to_timedelta(s.index.get_level_values(1), "h")
-    return pd.Series(s.values, index=ts, name=modelo_id)
+    return serie_local(pd.Series(s.values, index=ts, name=modelo_id))
 
 
 def de_largo(ruta):
-    """Largo (modelo_id, datetime_utc, precio_pred, p10, p90). El formato de la directriz.
-
-    OJO CON LA ZONA HORARIA. La columna viene en UTC y la matriz guarda `ts` en hora
-    peninsular. Quitar la zona sin convertir (tz_localize(None)) desplaza la serie una
-    hora en invierno y dos en verano: no rompe nada, solo empeora todas las metricas a la
-    vez -- que es peor, porque parece un modelo malo. Se detecto porque los cinco modelos
-    en formato largo compartian firma: captura ~60% y acierto de pico ~33%, frente a
-    ~92% y ~78% de los de formato ancho.
-    """
+    """Formato UTC: conservar las dos horas de octubre como instantes diferentes."""
     d = pd.read_csv(ruta)
-    d["ts"] = (pd.to_datetime(d["datetime_utc"], utc=True)
-                 .dt.tz_convert("Europe/Madrid").dt.tz_localize(None))
-    # en octubre la 02:00 local ocurre dos veces; la matriz solo tiene una fila
-    d = d[~d["ts"].duplicated(keep="first")]
-    d = d.set_index("ts")
+    d["ts"] = pd.to_datetime(d["datetime_utc"], utc=True)
+    d = serie_local(d.set_index("ts"))
     cols = ["precio_pred"] + [c for c in ("p10", "p90") if c in d and d[c].notna().any()]
     return d[cols]
 
 
 # ------------------------------------------------------------------------ arbitraje
 def arbitraje(pred, real):
-    """Ingreso diario de la bateria decidiendo con `pred` y cobrando a precio `real`.
-
-    Un ciclo al dia: se carga en las HORAS mas baratas PREDICHAS y se descarga en las
-    HORAS mas caras PREDICHAS. El dinero se liquida siempre a precio real -- el modelo
-    elige el cuando, el mercado pone el cuanto.
-    """
-    df = pd.DataFrame({"p": pred, "y": real}).dropna()
-    df["dia"] = df.index.normalize()
-    ing = []
-    for dia, g in df.groupby("dia"):
-        if len(g) < 24:
+    """Mismo motor fisico para modelo y oraculo; solo dias completos del calendario."""
+    df = pd.DataFrame({"p": serie_local(pred), "y": serie_local(real)}).replace(
+        [np.inf, -np.inf], np.nan).dropna().sort_index()
+    ingresos = []
+    for _, g in df.groupby(df.index.normalize()):
+        if not dia_completo(g.index):
             continue
-        orden = g.p.values.argsort()
-        carga, descarga = orden[:HORAS], orden[-HORAS:]
-        y = g.y.values
-        ing.append({
-            "dia": dia,
-            "modelo": EFICIENCIA * y[descarga].sum() - y[carga].sum(),
-            "oraculo": EFICIENCIA * np.sort(y)[-HORAS:].sum() - np.sort(y)[:HORAS].sum(),
-        })
-    d = pd.DataFrame(ing)
-    if d.empty or d.oraculo.sum() == 0:
+        ingresos.append((valorar(optimizar(g.p), g.y).sum(),
+                         valorar(optimizar(g.y), g.y).sum()))
+    if not ingresos:
         return np.nan, np.nan
-    return 100 * d.modelo.sum() / d.oraculo.sum(), d.modelo.sum() / len(d)
+    modelo, oraculo = np.sum(ingresos, axis=0)
+    return (100 * modelo / oraculo if oraculo > 1e-8 else np.nan,
+            modelo / len(ingresos))
 
 
 def pico_1h(pred, real):
     """% de dias en que la hora mas cara predicha cae a <=1 h de la real."""
-    df = pd.DataFrame({"p": pred, "y": real}).dropna()
+    df = pd.DataFrame({"p": serie_local(pred), "y": serie_local(real)}).replace([np.inf, -np.inf], np.nan).dropna().sort_index()
     df["dia"] = df.index.normalize()
     ok = tot = 0
     for _, g in df.groupby("dia"):
-        if len(g) < 24:
+        if not dia_completo(g.index):
             continue
         tot += 1
-        ok += abs(int(g.p.values.argmax()) - int(g.y.values.argmax())) <= 1
+        predicted_peak = g.index[int(g.p.values.argmax())]
+        actual_peaks = g.index[g.y.eq(g.y.max())]
+        ok += min(abs((predicted_peak - t).total_seconds()) for t in actual_peaks) <= 3600
     return 100 * ok / tot if tot else np.nan
 
 
 # -------------------------------------------------------------------------- metricas
 def metricas(pred, real, p10=None, p90=None, mae_ref=None):
-    j = pd.DataFrame({"p": pred, "y": real}).dropna()
+    j = pd.DataFrame({"p": serie_local(pred), "y": serie_local(real)}).replace([np.inf, -np.inf], np.nan).dropna().sort_index()
     if j.empty:
         return None
     e = j.p - j.y
@@ -130,10 +114,10 @@ def metricas(pred, real, p10=None, p90=None, mae_ref=None):
         "eur_dia": eur_dia,
         "pico_1h_%": pico_1h(j.p, j.y),
     }
-    if mae_ref:
+    if mae_ref is not None and np.isfinite(mae_ref) and mae_ref > 0:
         m["skill_%"] = 100 * (1 - m["MAE"] / mae_ref)
     if p10 is not None and p90 is not None:
-        q = pd.DataFrame({"lo": p10, "hi": p90, "y": real}).dropna()
+        q = pd.DataFrame({"lo": serie_local(p10), "hi": serie_local(p90), "y": serie_local(real)}).dropna()
         if len(q):
             m["cobertura_IC80_%"] = 100 * ((q.y >= q.lo) & (q.y <= q.hi)).mean()
     return m
@@ -153,6 +137,24 @@ def inventario(tramo):
     return fuentes
 
 
+def comparar(pred, real, naive, p10=None, p90=None):
+    """MAE y referencia usan la misma interseccion de instantes finitos."""
+    pairs = pd.DataFrame({"p": serie_local(pred), "y": serie_local(real),
+                          "nv": serie_local(naive)}).replace([np.inf, -np.inf], np.nan).dropna()
+    if pairs.empty:
+        return None
+    return metricas(pairs.p, pairs.y, p10, p90, (pairs.nv - pairs.y).abs().mean())
+
+
+def metadata_evaluacion(index):
+    """La huella impide mezclar ventanas distintas aunque tengan el mismo numero de filas."""
+    idx = pd.DatetimeIndex(index).tz_convert("UTC").sort_values()
+    digest = hashlib.sha256("\n".join(idx.astype(str)).encode()).hexdigest()
+    return {**SIMULADOR, "muestra_sha256": digest, "n_periodos": len(idx),
+            "desde_utc": idx[0].isoformat(), "hasta_utc": idx[-1].isoformat(),
+            "tipo": "simulacion_fuera_de_muestra"}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--tramo", default="validation", choices=["validation", "test"])
@@ -165,37 +167,36 @@ def main():
 
     # referencias, calculadas aqui para que nadie las traiga de su notebook
     todo = m["target_price"]
-    f = pd.DataFrame({"y": todo})
-    f["dia"], f["h"] = f.index.normalize(), f.index.hour
-    piv = f.pivot_table(index="dia", columns="h", values="y")
-    # media de los 7 dias anteriores HORA A HORA (no una media plana del periodo)
-    mm = piv.rolling(7, min_periods=7).mean().shift(1).stack()
     refs = {
-        "naive_D1": todo.shift(freq=pd.Timedelta(days=1)),
-        "media_movil_7d": pd.Series(
-            mm.values,
-            index=mm.index.get_level_values(0)
-            + pd.to_timedelta(mm.index.get_level_values(1), "h")),
+        "naive_D1": naive_local(todo, real.index),
+        "media_movil_7d": pd.concat([
+            naive_local(todo, real.index, dias=k)
+            for k in range(1, 8)
+        ], axis=1).mean(axis=1, skipna=False),
     }
-    mae_naive = metricas(refs["naive_D1"], real)["MAE"]
 
-    filas = []
+    candidatos = []
     for mid, fmt, ruta in inventario(a.tramo):
         try:
-            if fmt == "largo":
-                d = de_largo(ruta)
-                r = metricas(d.precio_pred, real, d.get("p10"), d.get("p90"), mae_naive)
-            else:
-                r = metricas(a_largo(ruta, mid), real, mae_ref=mae_naive)
-        except Exception as e:                       # un fichero roto no tumba el resto
-            print(f"  !! {mid}: {type(e).__name__}: {e}")
-            continue
+            d = de_largo(ruta) if fmt == "largo" else a_largo(ruta, mid).to_frame("precio_pred")
+            candidatos.append((mid, fmt, d))
+        except (ValueError, OSError, KeyError) as exc:
+            print(f"  !! {mid}: no se carga: {exc}")
+    candidatos += [(mid, "referencia", series.to_frame("precio_pred")) for mid, series in refs.items()]
+    comunes = real[np.isfinite(real)].index
+    for _, _, d in candidatos:
+        comunes = comunes.intersection(d.index[np.isfinite(d.precio_pred)])
+    if comunes.empty:
+        print("Sin instantes comunes: no se publica un ranking de coberturas distintas.")
+        return
+    real = real.reindex(comunes)
+    spec = metadata_evaluacion(comunes)
+    filas = []
+    for mid, fmt, d in candidatos:
+        d = d.reindex(comunes)
+        r = comparar(d.precio_pred, real, refs["naive_D1"], d.get("p10"), d.get("p90"))
         if r:
-            filas.append({"modelo": mid, "formato": fmt, **r})
-    for mid, s in refs.items():
-        r = metricas(s, real, mae_ref=mae_naive)
-        if r:
-            filas.append({"modelo": mid, "formato": "referencia", **r})
+            filas.append({"modelo": mid, "formato": fmt, **r, "simulador": json.dumps(spec)})
 
     t = pd.DataFrame(filas).sort_values("MAE").reset_index(drop=True)
     cols = ["modelo", "MAE", "skill_%", "captura_%", "eur_dia", "pico_1h_%",
@@ -207,7 +208,7 @@ def main():
     out.parent.mkdir(exist_ok=True)
     t.to_csv(out, index=False)
     print(f"\nbateria: {POTENCIA_MW} MW / {CAPACIDAD_MWH} MWh · eficiencia {EFICIENCIA:.0%} "
-          f"· 1 ciclo/dia ({HORAS} h de carga y {HORAS} de descarga)")
+          f"· hasta {DEFAULT.ciclos_max:g} ciclo equivalente/dia · SOC cerrado · {SIMULADOR['version']}")
     print(f"guardado en {out.relative_to(REPO)}")
 
 

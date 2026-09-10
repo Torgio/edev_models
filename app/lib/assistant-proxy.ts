@@ -121,7 +121,9 @@ export async function proxyAssistantRequest(request: Request, options: {
       signal: AbortSignal.timeout(8000),
     });
     if (!sessionResponse.ok) return reply({ detail: 'Inicia sesión para utilizar el asistente.' }, sessionResponse.status === 401 ? 401 : 503);
-    const session = await sessionResponse.json();
+    const rawSession: unknown = await sessionResponse.json();
+    if (!rawSession || typeof rawSession !== 'object' || Array.isArray(rawSession)) throw new Error('Respuesta de sesión no válida.');
+    const session = rawSession as Record<string, unknown>;
     if (session.auth_required !== true && !auth.local) {
       return reply({ detail: 'El acceso seguro aún no está configurado.' }, 503);
     }

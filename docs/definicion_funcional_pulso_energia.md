@@ -185,3 +185,11 @@ La versión actual no incluye:
 - garantía de respuesta del LLM si el proveedor, la clave, el servicio o una fuente requerida no están disponibles.
 
 La publicación de cambios de la interfaz y la actualización de servicios siguen siendo operaciones separadas y controladas.
+
+
+## 12. Evolución local de la evaluación (10 de septiembre de 2026)
+
+La implementación local incorpora un evaluador físico BESS v2 y conserva los instantes
+con zona en los cambios de hora. Su contrato, pruebas y condiciones de activación están
+en [Evaluación BESS v2](evaluacion_bess_v2.md). Esta nota no confirma que el servidor ya
+esté ejecutando esa versión; los registros se distinguen por sus supuestos guardados.
