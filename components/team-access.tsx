@@ -19,7 +19,9 @@ export function TeamAccess({ children }: { children: (controls: AccessControls) 
     try {
       const response = await fetch('/api/dashboard/session', { cache: 'no-store', signal });
       if (!response.ok) throw new Error('Servicio de acceso no disponible.');
-      const session = await response.json();
+      const rawSession: unknown = await response.json();
+    if (!rawSession || typeof rawSession !== 'object' || Array.isArray(rawSession)) throw new Error('Respuesta de sesión no válida.');
+    const session = rawSession as Record<string, unknown>;
       setUsername(typeof session.username === 'string' ? session.username : null);
       setState(session.authenticated === true ? 'open' : 'locked');
     } catch (error) {

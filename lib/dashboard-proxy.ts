@@ -54,9 +54,11 @@ export async function proxyDashboardRequest(request: Request, path: string, opti
     const sessionResponse = await fetcher(new URL('/session', upstream), { headers, cache: 'no-store', redirect: 'manual', signal: AbortSignal.timeout(8000) });
     if (!sessionResponse.ok && !(local && sessionResponse.status === 404)) return reply({ detail: 'Servicio de acceso no disponible.' }, 503);
     // Compatibilidad con la API local anterior; nunca se permite en producción.
-    const session = local && sessionResponse.status === 404
+    const rawSession: unknown = local && sessionResponse.status === 404
       ? { authenticated: true, auth_required: false }
       : await sessionResponse.json();
+    if (!rawSession || typeof rawSession !== 'object' || Array.isArray(rawSession)) return reply({ detail: 'Respuesta de sesión no válida.' }, 503);
+    const session = rawSession as Record<string, unknown>;
     if (session.auth_required !== true && !local) return reply({ detail: 'El acceso seguro aún no está configurado.' }, 503);
     if (path === 'session') return reply({
       authenticated: session.authenticated === true,
