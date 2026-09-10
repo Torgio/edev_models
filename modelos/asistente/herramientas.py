@@ -22,6 +22,7 @@ Uso:
     )
 """
 
+import logging
 import re
 import sys
 import warnings
@@ -33,6 +34,14 @@ import pandas as pd
 import psycopg2
 
 warnings.filterwarnings("ignore")
+
+# El texto de una excepcion (nombre de rol, clave que falta en credentials.json, ruta del
+# servidor...) NUNCA debe llegar al usuario -- el LLM repite fielmente lo que la herramienta
+# le devuelve, asi que un error tecnico dentro de un {"error": ...} se cuela en la respuesta
+# tal cual (encontrado en una revision externa de la app en produccion: la respuesta incluia
+# el nombre del rol de solo lectura y la clave exacta que faltaba en credentials.json). El
+# detalle real se registra aqui, solo visible en el log del servidor.
+logger = logging.getLogger(__name__)
 
 REPO = Path(__file__).parent.parent.parent
 sys.path.append(str(REPO / "ingesta"))
@@ -944,8 +953,9 @@ def consulta_sql_lectura(sql: str) -> dict:
     from config import load_config_asistente_solo_lectura
     try:
         conn = psycopg2.connect(**load_config_asistente_solo_lectura())
-    except KeyError as e:
-        return {"error": f"Falta configurar el rol de solo lectura en credentials.json: {e}"}
+    except KeyError:
+        logger.exception("consulta_sql_lectura: credentials.json mal configurado")
+        return {"error": "No se pudo conectar a la base de datos de solo lectura en este momento."}
 
     try:
         conn.autocommit = True
@@ -954,8 +964,10 @@ def consulta_sql_lectura(sql: str) -> dict:
         cur.execute(sql_limpio)
         columnas = [d.name for d in cur.description] if cur.description else []
         filas = cur.fetchmany(500)
-    except psycopg2.Error as e:
-        return {"error": f"Error de Postgres al ejecutar la consulta: {e}", "sql_ejecutado": sql_limpio}
+    except psycopg2.Error:
+        logger.exception("consulta_sql_lectura: fallo al ejecutar sql_ejecutado=%r", sql_limpio)
+        return {"error": "La consulta no se pudo ejecutar (SQL invalido o columna/tabla inexistente). "
+                          "Revisa la consulta e intenta de nuevo.", "sql_ejecutado": sql_limpio}
     finally:
         conn.close()
 
