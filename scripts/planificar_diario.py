@@ -80,7 +80,7 @@ def main():
                        AND (datetime AT TIME ZONE 'Europe/Madrid')::date = %s""",
                     (modelo, objetivo))
                 n = cur.fetchone()[0]
-            aviso = "  -- faltan para planificar (<23 horas)" if n < 23 else "  -- suficiente"
+            aviso = "  -- cobertura incorrecta" if n != len(rd.periodos_dia(objetivo)) else "  -- numero esperado; validar instantes al planificar"
             rd._log("5 bateria", f"(simulacro) {modelo}: {n} horas de {objetivo} en predictions{aviso}")
             return
 

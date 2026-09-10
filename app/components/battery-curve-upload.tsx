@@ -6,6 +6,8 @@ import { Line, LineChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, X
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { previewCurve, type CurveKind, type CurvePreview } from '@/lib/battery-curve-preview';
+import { StudySteps } from '@/components/study-steps';
+import { DEFAULT_BATTERY } from '@/lib/battery-draft';
 import { BatterySetup } from '@/components/battery-setup';
 import { BatteryStudyLaunch } from '@/components/battery-study-launch';
 import type { BatteryDraft } from '@/lib/battery-draft';
@@ -40,7 +42,7 @@ function CurveInput({ kind, selected, onChange }: { kind: CurveKind; selected: S
 
 export function BatteryCurveUpload({ onCancel, onComplete }: { onCancel: () => void; onComplete: (runId: number) => void }) {
   const [step, setStep] = useState<'curves' | 'battery' | 'launch'>('curves');
-  const [battery, setBattery] = useState<BatteryDraft | null>(null);
+  const [battery, setBattery] = useState<BatteryDraft>(DEFAULT_BATTERY);
   const [consumption, setConsumption] = useState<Selected | null>(null);
   const [generation, setGeneration] = useState<Selected | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -64,9 +66,10 @@ export function BatteryCurveUpload({ onCancel, onComplete }: { onCancel: () => v
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : 'No se pudieron guardar las curvas.'); }
     finally { setUploading(false); }
   };
-  if (step === 'battery') return <BatterySetup onBack={() => setStep('curves')} onConfirm={value => { setBattery(value); setStep('launch'); }} />;
-  if (step === 'launch' && battery) return <BatteryStudyLaunch battery={battery} generationIncluded={generation !== null} onBack={() => setStep('battery')} onComplete={onComplete} />;
+  if (step === 'battery') return <><StudySteps step={2} /><BatterySetup draft={battery} onChange={setBattery} onBack={() => setStep('curves')} onConfirm={value => { setBattery(value); setStep('launch'); }} /></>;
+  if (step === 'launch') return <><StudySteps step={3} /><BatteryStudyLaunch consumptionName={consumption?.file.name} generationName={generation?.file.name} battery={battery} generationIncluded={generation !== null} onBack={() => setStep('battery')} onComplete={onComplete} /></>;
   return <section className="study-view" aria-labelledby="curve-upload-heading">
+    <StudySteps step={1} />
     <div className="study-heading"><div><p className="kicker">Estudio de instalación · paso 1 de 3</p><h2 id="curve-upload-heading">Sube tus curvas</h2><p>Comprueba primero la forma de consumo y generación. El servidor volverá a validarlas antes de guardarlas.</p></div><Button variant="outline" onClick={onCancel}>Ver resultados guardados</Button></div>
     <div className="study-upload-grid"><CurveInput kind="consumo" selected={consumption} onChange={value => { setConsumption(value); setSaved([]); setMessage(''); }} /><CurveInput kind="generacion" selected={generation} onChange={value => { setGeneration(value); setSaved([]); setMessage(''); }} /></div>
     {consumption && <article className="study-card"><div className="study-chart-heading"><div><h3>El día medio de tus curvas</h3><p>Consumo y generación medios por hora. Una fotovoltaica debe caer a cero durante la noche.</p></div></div><div className="study-profile-chart"><ResponsiveContainer width="100%" height="100%" minWidth={0}><LineChart data={chart} margin={{ top: 18, right: 18, left: 8, bottom: 8 }}><CartesianGrid vertical={false} stroke="#e1e8e4" /><XAxis dataKey="hour" interval={2} /><YAxis width={62} unit=" kW" /><Tooltip formatter={value => `${metric(Number(value))} kW`} /><Legend /><Line dataKey="consumption" name="Consumo" stroke="#173f35" strokeWidth={2.5} dot={false} /><Line dataKey="generation" name="Generación" stroke="#e6a229" strokeWidth={2.5} dot={false} /></LineChart></ResponsiveContainer></div></article>}

@@ -17,6 +17,7 @@ REPO = Path(__file__).resolve().parent.parent
 for p in ("scripts", "modelos", "ingesta"):
     sys.path.insert(0, str(REPO / p))
 
+from tiempo_mercado import periodos_dia
 from evaluar_diario import NAIVE_REGLA, serie_diaria      # noqa: E402
 
 
@@ -39,7 +40,7 @@ class ConexionFalsa:
 
 
 def horas(dia, n=24, inicio=0):
-    return pd.date_range(f"{dia} {inicio:02d}:00", periods=n, freq="h")
+    return pd.date_range(f"{dia} {inicio:02d}:00", periods=n, freq="h", tz="Europe/Madrid")
 
 
 def marco(idx, pred, real):
@@ -85,12 +86,11 @@ class SerieDiariaTests(unittest.TestCase):
     def test_marzo_23_horas_queda_marcado_y_sigue_siendo_medible(self):
         """El domingo de marzo la 02:00 no existe: 23 horas.
 
-        El MAE de ese dia es perfectamente comparable con el de cualquier otro -- lo que
-        no lo es es su dinero, que necesita 24 h para cerrar el ciclo. Por eso se guarda
-        marcado en vez de descartarse.
+        El dia conserva su MAE y puede liquidarse con el motor fisico. La marca
+        informa del cambio de hora y de su efecto en la persistencia.
         """
         idx1 = horas("2026-03-28")
-        idx2 = horas("2026-03-29", n=23)
+        idx2 = periodos_dia("2026-03-29")
         real = pd.concat([pd.Series([40.0] * 24, index=idx1),
                           pd.Series([44.0] * 23, index=idx2)])
         fila = self._escribir(marco(idx2, [48.0] * 23, [44.0] * 23), real)[date(2026, 3, 29)]
@@ -116,7 +116,7 @@ class SerieDiariaTests(unittest.TestCase):
              "2026-10-25 02:00", "2026-10-25 02:00"]          # la repetida, dos veces
             + [f"2026-10-25 {h:02d}:00" for h in range(3, 24)])
         self.assertEqual(len(idx2), 25)
-        real_ayer = pd.Series([40.0] * 24, index=idx1)        # ya deduplicado, como curva_real
+        real_ayer = pd.Series([40.0] * 24, index=idx1)        # el dia anterior tiene 24 instantes
 
         pred = [48.0, 48.0, 44.0, 64.0] + [48.0] * 21         # errores 4, 4, 0, 20, luego 4
         datos = marco(idx2, pred, [44.0] * 25)
@@ -161,8 +161,8 @@ class SerieDiariaTests(unittest.TestCase):
         esta medida contra una de las dos. El dia sale bien en todo lo demas: por eso hay
         que decirlo, o pasaria por `ok`.
         """
-        idx1, idx2 = horas("2026-10-25"), horas("2026-10-26")
-        real = pd.concat([pd.Series([40.0] * 24, index=idx1),
+        idx1, idx2 = periodos_dia("2026-10-25"), periodos_dia("2026-10-26")
+        real = pd.concat([pd.Series([40.0] * 25, index=idx1),
                           pd.Series([44.0] * 24, index=idx2)])
         fila = self._escribir(marco(idx2, [48.0] * 24, [44.0] * 24), real)[date(2026, 10, 26)]
         self.assertEqual(fila[8], "ayer_cambio_hora")
@@ -170,7 +170,7 @@ class SerieDiariaTests(unittest.TestCase):
 
     def test_marzo_29_el_dia_de_despues_no_pasa_por_normal(self):
         """El 30 de marzo hereda el problema al reves: ayer no tuvo 02:00."""
-        idx1, idx2 = horas("2026-03-29", n=23), horas("2026-03-30")
+        idx1, idx2 = periodos_dia("2026-03-29"), horas("2026-03-30")
         real = pd.concat([pd.Series([40.0] * 23, index=idx1),
                           pd.Series([44.0] * 24, index=idx2)])
         fila = self._escribir(marco(idx2, [48.0] * 24, [44.0] * 24), real)[date(2026, 3, 30)]

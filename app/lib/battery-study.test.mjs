@@ -189,3 +189,11 @@ test('nominal DST hours retain h3 and h4 and units convert without inventing nul
   assert.equal(nominalDayOffset('2027-03-28', 1), '2027-03-29');
   assert.throws(() => studyPoints({ ...data, soc: [] }), /incompletas/);
 });
+
+test('empty and non-finite battery fields cannot pass validation', () => {
+  for (const key of Object.keys(DEFAULT_BATTERY)) {
+    for (const value of [NaN, Infinity, -Infinity]) {
+      assert.ok(batteryIssues({ ...DEFAULT_BATTERY, [key]: value }).length > 0, key);
+    }
+  }
+});

@@ -1,55 +1,28 @@
-"""Cerrar el bucle: cuando OMIE publica el precio, medir lo que se predijo.
+"""Evaluacion diaria con corte operativo D-1 12:00 (Europe/Madrid).
 
-QUE PROBLEMA RESUELVE
-`run_diario.py` deja cada dia 264 filas en `predictions` y un plan en `bess_plan`. Eso es
-una promesa, no una medida. A las 13:00 del dia siguiente OMIE publica el PMD y la promesa
-se puede contrastar -- pero si nadie la contrasta, el unico numero que tenemos para
-defender el trabajo sigue siendo el MAE del tramo de test, que es una foto de enero a
-julio de 2026 sobre dias que eligio el reparto.
+bess_result liquida exclusivamente planes v2 completos guardados antes del corte.
+model_metrics simula modelo y naive sobre una interseccion exacta de instantes.
+model_metrics_daily conserva MAEs pareados por dia, modelo y semilla.
+Se mantienen instantes con zona, incluidos los dias de 23 y 25 horas.
 
-POR QUE ESTE NUMERO VALE MAS QUE EL DEL TEST
-En test los dias los eligio un `split`. Aqui son simplemente los que han pasado: nadie los
-escogio, ningun modelo los vio al entrenar, y el precio con el que se liquidan se publico
-DESPUES de la prediccion. Es la unica metrica del proyecto que no admite la sospecha de
-haber mirado al futuro.
+`updated_at` es una comprobacion conservadora: una prediccion sobrescrita despues del
+corte se excluye, aunque hubiera existido una version anterior. No sustituye un archivo
+inmutable de emisiones ni demuestra la disponibilidad temporal de todas las features.
 
-DOS TABLAS, DOS GRANULARIDADES, Y NO ES CAPRICHO
-    bess_result     una fila por (dia, modelo). El dinero es un hecho de un dia concreto:
-                    el 2 de septiembre la bateria gano X. Guardarlo por dia permite
-                    reconstruir despues cualquier ventana, y ver el dia malo que una media
-                    de 30 dias esconde.
-    model_metrics   una fila por modelo con `periodo='prod_30d'`. Es una ventana movil que
-                    se RECALCULA entera en cada pasada, no se acumula. El panel pregunta
-                    "¿como va ahora?", y ahora son los ultimos 30 dias, no los ultimos 300.
-
-EL SIMULADOR ES EL MISMO QUE EL DEL BACKTEST
-Potencia, capacidad, eficiencia y ciclos se importan de `evaluar_modelos.py`. Si aqui se
-declararan otra vez, la captura de produccion y la de validacion dejarian de ser
-comparables sin que nadie se diera cuenta -- que es exactamente el problema del que nacio
-el leaderboard unico. Los supuestos viajan en la columna `simulador` junto a cada numero.
-
-    python scripts/evaluar_diario.py                    # todos los dias pendientes
-    python scripts/evaluar_diario.py --dia 2026-09-02
-    python scripts/evaluar_diario.py --simulacro        # calcula y enseña, no escribe
-    python scripts/evaluar_diario.py --rehacer          # recalcula dias ya evaluados
-
-En el cron, despues de que OMIE publique:
-
-    CRON_TZ=Europe/Madrid
-    30 13 * * * /home/ubuntu/tfm-env/bin/python /home/ubuntu/scripts/evaluar_diario.py \
-                >> /home/ubuntu/scripts/logs/evaluar_diario.log 2>&1
+    python scripts/evaluar_diario.py --simulacro
+    python scripts/evaluar_diario.py --dia 2026-09-02 --simulacro
+    python scripts/evaluar_diario.py
 """
 from __future__ import annotations
 
 import argparse
 import json
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from zoneinfo import ZoneInfo
 
 REPO = Path(__file__).resolve().parent.parent
 for p in ("scripts", "modelos", "ingesta"):
@@ -58,12 +31,9 @@ for p in ("scripts", "modelos", "ingesta"):
 TZ = "Europe/Madrid"
 VENTANA = 30                       # dias de la ventana movil de produccion
 
-from evaluar_modelos import (POTENCIA_MW, CAPACIDAD_MWH, EFICIENCIA, HORAS,  # noqa: E402
-                             metricas)
-
-SIMULADOR = {"potencia_mw": POTENCIA_MW, "capacidad_mwh": CAPACIDAD_MWH,
-             "eficiencia": EFICIENCIA, "ciclos_dia": 1, "horizonte": "D+1",
-             "regla": "carga en las HORAS mas baratas predichas, descarga en las mas caras"}
+from evaluar_modelos import metricas, comparar, metadata_evaluacion  # noqa: E402
+from bess_evaluation import SIMULADOR, optimizar, valorar, ciclos, validar_plan
+from tiempo_mercado import indice_local, serie_local, naive_local, dia_completo, periodos_dia
 
 
 def _f(x):
@@ -88,78 +58,98 @@ def cargar(con, desde: date, hasta: date) -> pd.DataFrame:
     return pd.read_sql("""
         SELECT p.model,
                COALESCE(p.seed, -1)                          AS seed,
-               (p.datetime AT TIME ZONE 'Europe/Madrid')     AS ts,
+               p.datetime                                      AS ts,
                p.prediction::double precision                AS pred,
                s.es_esios::double precision                  AS real
           FROM predictions p
           JOIN spot_price s ON s.datetime = p.datetime
          WHERE p.source = 'production'
            AND s.es_esios IS NOT NULL
+           AND p.updated_at < (((p.datetime AT TIME ZONE 'Europe/Madrid')::date - 1
+                                 + TIME '12:00') AT TIME ZONE 'Europe/Madrid')
            AND (p.datetime AT TIME ZONE 'Europe/Madrid')::date BETWEEN %s AND %s
          ORDER BY p.model, p.datetime""", con, params=(desde, hasta))
 
 
 def curva_real(con, desde: date, hasta: date) -> pd.Series:
-    """El PMD publicado, indexado por hora local. Sirve de verdad y de baseline naive."""
+    """Precio real con instantes unicos; no eliminar la segunda hora de octubre."""
     d = pd.read_sql("""
-        SELECT (datetime AT TIME ZONE 'Europe/Madrid') AS ts,
-               es_esios::double precision              AS real
+        SELECT datetime AS ts, es_esios::double precision AS real
           FROM spot_price
          WHERE es_esios IS NOT NULL
            AND (datetime AT TIME ZONE 'Europe/Madrid')::date BETWEEN %s AND %s
-         -- El segundo criterio no es decorativo: el domingo de octubre las dos 02:00
-         -- comparten la primera clave y sin desempate el orden lo decide el planificador.
-         -- Ordenando tambien por el instante, "la primera" es SIEMPRE la de +02:00.
-         ORDER BY 1, datetime""", con, params=(desde, hasta))
-    s = d.set_index(pd.to_datetime(d.ts))["real"]
-    # El domingo de octubre la 02:00 aparece DOS veces al convertir a hora local (la
-    # +02:00 y la +01:00). En timestamptz son horas distintas, pero como indice local son
-    # el mismo valor y `reindex` estalla con "cannot reindex on an axis with duplicates".
-    # Esa hora solo se usa para el naive del dia siguiente. Se elige LA PRIMERA, que con el
-    # ORDER BY de arriba es la de +02:00 (la anterior al retraso del reloj). La otra no se
-    # usa: el dia siguiente queda marcado `ayer_cambio_hora` para que se sepa.
-    return s[~s.index.duplicated(keep="first")]
+         ORDER BY datetime""", con, params=(desde, hasta))
+    return serie_local(d.set_index(pd.to_datetime(d.ts, utc=True))["real"])
 
 
 # ------------------------------------------------------------------ la liquidacion
 def liquidar(pred: np.ndarray, real: np.ndarray) -> float:
-    """Lo que gana la bateria decidiendo con `pred` y cobrando a precio `real`.
-
-    Identico a `arbitraje()` en evaluar_modelos, pero para un solo dia: el modelo elige el
-    cuando, el mercado pone el cuanto. La eficiencia se aplica a la descarga porque el MWh
-    que sale es menos que el que entro.
-    """
-    orden = pred.argsort()
-    carga, descarga = orden[:HORAS], orden[-HORAS:]
-    return float(EFICIENCIA * real[descarga].sum() - real[carga].sum())
+    """Simulacion fuera de muestra: decidir con pred y valorar con real."""
+    return float(valorar(optimizar(pred), real).sum())
 
 
-def dia_de(g: pd.DataFrame, real_ayer: np.ndarray | None) -> dict | None:
-    """Las tres cifras de un dia: lo que gano el modelo, el techo y el suelo."""
+def dia_de(g: pd.DataFrame, real_ayer: np.ndarray | None, plan=None) -> dict | None:
+    """Liquidar un plan fijo (o simular si se invoca sin plan), con horizonte completo."""
+    g = g.copy()
+    g["ts"] = indice_local(g.ts)
     g = g.sort_values("ts")
-    if len(g) != 24:               # 23 en marzo, 25 en octubre: no comparables con el resto
+    if not dia_completo(g.ts) or not np.isfinite(g.real.to_numpy()).all():
         return None
-    p, y = g.pred.values, g.real.values
-    ingreso = liquidar(p, y)
-    oraculo = liquidar(y, y)       # decidir con el precio real = prevision perfecta
-    naive = liquidar(real_ayer, y) if real_ayer is not None and len(real_ayer) == 24 else None
-    return {
-        "ingreso_eur": ingreso,
-        "ingreso_oraculo_eur": oraculo,
-        "ingreso_naive_eur": naive,
-        "captura_pct": 100 * ingreso / oraculo if oraculo else None,
-        # Un ciclo por dia por construccion: se cargan HORAS horas a POTENCIA y se
-        # descargan otras tantas, o sea CAPACIDAD_MWH dentro y CAPACIDAD_MWH fuera.
-        "ciclos": HORAS * POTENCIA_MW / CAPACIDAD_MWH,
-    }
+    y = g.real.to_numpy()
+    dispatch = optimizar(g.pred.to_numpy()) if plan is None else plan
+    ingreso = float(valorar(dispatch, y).sum())
+    oraculo = liquidar(y, y)
+    naive = (liquidar(real_ayer, y) if real_ayer is not None
+             and len(real_ayer) == len(y) and np.isfinite(real_ayer).all() else None)
+    return {"ingreso_eur": ingreso, "ingreso_oraculo_eur": oraculo,
+            "ingreso_naive_eur": naive,
+            "captura_pct": 100 * ingreso / oraculo if oraculo > 1e-8 else None,
+            "ciclos": ciclos(dispatch)}
 
 
-def evaluar_dias(con, datos: pd.DataFrame, real: pd.Series, escribir: bool) -> int:
+def cargar_planes(con, desde, hasta):
+    return pd.read_sql("""
+        SELECT datetime AS ts, model, carga_mw, descarga_mw, soc_mwh, simulador
+          FROM bess_plan
+         WHERE (datetime AT TIME ZONE 'Europe/Madrid')::date BETWEEN %s AND %s
+           AND updated_at < (((datetime AT TIME ZONE 'Europe/Madrid')::date - 1
+                               + TIME '12:00') AT TIME ZONE 'Europe/Madrid')
+         ORDER BY model, datetime""", con, params=(desde, hasta))
+
+
+def evaluar_dias(con, datos: pd.DataFrame, real: pd.Series, escribir: bool,
+                 desde=None, hasta=None) -> int:
     filas = []
-    datos = datos.assign(dia=pd.to_datetime(datos.ts).dt.date)
-    for (modelo, dia), g in datos.groupby(["model", "dia"]):
-        ayer = real[pd.to_datetime(real.index).date == dia - timedelta(days=1)].values
-        r = dia_de(g, ayer if len(ayer) == 24 else None)
+    if desde is None or hasta is None:
+        if datos.empty:
+            return 0
+        dates = indice_local(datos.ts).date
+        desde, hasta = min(dates), max(dates)
+    planes = cargar_planes(con, desde, hasta)
+    if planes.empty:
+        _log("bess_result", "sin planes previos al corte; no se reconstruyen operaciones")
+        return 0
+    planes = planes.assign(ts=indice_local(planes.ts))
+    planes = planes.assign(dia=planes.ts.dt.date)
+    real = serie_local(real)
+    for (modelo, dia), saved in planes.groupby(["model", "dia"]):
+        saved = saved.sort_values("ts")
+        if (not dia_completo(saved.ts)
+                or not saved.simulador.map(lambda x: x == SIMULADOR).all()):
+            _log("bess_result", f"{modelo} {dia}: plan legado o incompatible; no se liquida")
+            continue
+        # La liquidacion depende del plan y el precio real, no de predictions actual.
+        g = pd.DataFrame({"ts": saved.ts.to_numpy(),
+                          "real": real.reindex(pd.DatetimeIndex(saved.ts)).to_numpy()})
+        dispatch = {key: saved[col].to_numpy(dtype=float) for key, col in
+                    (("carga", "carga_mw"), ("descarga", "descarga_mw"), ("soc", "soc_mwh"))}
+        try:
+            validar_plan(dispatch)
+        except ValueError as exc:
+            _log("bess_result", f"{modelo} {dia}: {exc}; no se liquida")
+            continue
+        ayer = naive_local(real, g.ts).to_numpy()
+        r = dia_de(g, ayer, dispatch)
         if r is None:
             continue
         filas.append((dia, modelo, r["ingreso_eur"], r["ingreso_oraculo_eur"],
@@ -198,23 +188,40 @@ def ventana(con, datos: pd.DataFrame, real: pd.Series, escribir: bool):
     # `prod_30d` son 30 dias POR DEFINICION. Una pasada puede cargar mas -- el backfill de
     # la serie diaria pide `--dias 40` -- y entonces esta fila diria 30 y serian 40. Se
     # recorta aqui, no en main, para que la etiqueta y el contenido no puedan divergir.
-    fechas = pd.to_datetime(datos.ts).dt.date
+    if datos.empty:
+        return 0
+    datos = datos.assign(ts=indice_local(datos.ts))
+    fechas = datos.ts.dt.date
     datos = datos[fechas >= fechas.max() - timedelta(days=VENTANA - 1)]
 
-    idx = pd.to_datetime(real.index)
-    naive = pd.Series(real.values, index=idx + pd.Timedelta(days=1))   # el precio de ayer
+    groups = list(datos.groupby(["model", "seed"]))
+    common = None
+    for _, g in groups:
+        valid = g[np.isfinite(g[["pred", "real"]].to_numpy()).all(axis=1)]
+        idx = pd.DatetimeIndex(valid.ts)
+        if idx.has_duplicates:
+            raise ValueError("Instantes duplicados por modelo/semilla")
+        common = idx if common is None else common.intersection(idx)
+    if common is None or common.empty:
+        _log("ventana", "sin instantes comunes entre modelos; no hay ranking comparable")
+        return 0
+    baseline = naive_local(real, common)
+    common = common[np.isfinite(baseline.to_numpy())]
+    datos = datos[datos.ts.isin(common)]
+    if datos.empty:
+        return 0
+    spec = metadata_evaluacion(common)
     filas = []
     for (modelo, seed), g in datos.groupby(["model", "seed"]):
         g = g.set_index(pd.to_datetime(g.ts))
-        nv = naive.reindex(g.index)
-        mae_naive = (nv - g.real).abs().mean()
-        m = metricas(g.pred, g.real, mae_ref=mae_naive if pd.notna(mae_naive) else None)
+        nv = naive_local(real, g.index)
+        m = comparar(g.pred, g.real, nv)
         if m is None:
             continue
         filas.append((modelo, int(seed), "prod_30d", "global", int(m["n_horas"]),
                       _f(m["MAE"]), _f(m["RMSE"]), _f(m["sMAPE"]), None, None,
                       _f(m["captura_%"]), _f(m["eur_dia"]), _f(m["pico_1h_%"]),
-                      _f(m.get("skill_%")), json.dumps(SIMULADOR)))
+                      _f(m.get("skill_%")), json.dumps(spec)))
     # LA PERSISTENCIA, COMO UN MODELO MAS. Sin esta fila la tabla no contesta la unica
     # pregunta que importa: ¿aporta el modelo, o el dinero lo pone la horquilla del
     # mercado? En un mes de dias parecidos, predecir "manana como hoy" puede capturar casi
@@ -222,13 +229,13 @@ def ventana(con, datos: pd.DataFrame, real: pd.Series, escribir: bool):
     # Se mide sobre las MISMAS horas que el modelo con mas cobertura, no sobre todas.
     ref = max(datos.groupby(["model", "seed"]), key=lambda kv: len(kv[1]))[1]
     ridx = pd.to_datetime(ref.ts)
-    nv = naive.reindex(ridx)
+    nv = naive_local(real, ridx)
     mn = metricas(nv, pd.Series(ref.real.values, index=ridx))
     if mn is not None:
         filas.append(("naive_D1", -1, "prod_30d", "global", int(mn["n_horas"]),
                       _f(mn["MAE"]), _f(mn["RMSE"]), _f(mn["sMAPE"]), None, None,
                       _f(mn["captura_%"]), _f(mn["eur_dia"]), _f(mn["pico_1h_%"]), 0.0,
-                      json.dumps(SIMULADOR)))
+                      json.dumps(spec)))
 
     if escribir and filas:
         with con.cursor() as cur:
@@ -245,55 +252,23 @@ def ventana(con, datos: pd.DataFrame, real: pd.Series, escribir: bool):
                     simulador=EXCLUDED.simulador, calculado_en=now()""", filas)
         con.commit()
 
-    # COMPARABILIDAD. Un modelo con 3 dias y otro con 31 no se pueden ordenar juntos: no
-    # han corrido los mismos dias y agosto no reparte la dificultad por igual. Se marcan
-    # los que no cubren la ventana entera y se listan aparte, en vez de mezclarlos en un
-    # ranking que invita a leer como "peor" lo que solo es "medido en otros dias".
-    completo = max((r[4] for r in filas), default=0)
-    llenos = sorted([r for r in filas if r[4] >= completo * 0.9], key=lambda r: r[5])
-    cojos = sorted([r for r in filas if r[4] < completo * 0.9], key=lambda r: r[5])
-
-    def cuadro(rs, titulo):
-        if not rs:
-            return
-        print(f"\n  {titulo}\n")
-        print(f"    {'model':18s} {'sem':>4s} {'dias':>5s} {'MAE':>7s} {'sMAPE':>7s} "
-              f"{'captura':>8s} {'pico':>6s} {'skill':>7s} {'EUR/dia':>8s}")
-        for r in rs:
-            sk = f"{r[13]:6.1f}%" if r[13] is not None and pd.notna(r[13]) else "     --"
-            sem = "--" if r[1] == -1 else str(r[1])
-            print(f"    {r[0]:18s} {sem:>4s} {r[4]//24:5d} {r[5]:7.2f} {r[7]:6.1f}% "
-                  f"{r[10]:7.2f}% {r[12]:5.1f}% {sk} {r[11]:8.2f}")
-
-    marca = "" if escribir else "   [simulacro, no escrito]"
-    cuadro(llenos, f"produccion · ventana completa ({completo // 24} dias){marca}")
-    cuadro(cojos, "cobertura parcial · NO comparables con los de arriba: son otros dias")
+    def fmt(value):
+        return "--" if value is None or not np.isfinite(value) else f"{value:.2f}"
+    print(f"\n  Produccion · {len(common)} horas comunes · simulacion {SIMULADOR['version']}")
+    print("    modelo / semilla · MAE · captura % · pico % · skill % · EUR/dia")
+    for row in sorted(filas, key=lambda r: r[5]):
+        print(f"    {row[0]} / {row[1]} · " + " · ".join(fmt(row[i]) for i in (5, 10, 12, 13, 11)))
     return len(filas)
 
 
 NAIVE_REGLA = ("precio de la MISMA HORA LOCAL del dia anterior. Los dos domingos del "
                "cambio de hora el desfase real no son 24 h sino 23 o 25, porque el indice "
-               "es hora peninsular; esos dias quedan marcados estado='cambio_hora'")
+               "es hora peninsular; esos dias quedan marcados estado='cambio_hora'. "
+               "Si ayer tuvo dos horas iguales se usa la primera; si no existio, no se imputa.")
 
 
 def horas_del_dia(d: date) -> int:
-    """23, 24 o 25: las horas que tiene ESE dia en hora peninsular, segun el calendario.
-
-    El estado de un dia no se puede deducir de cuantas filas llegaron. Marzo llega con 23
-    porque la 02:00 no existe, pero un dia normal al que le falta una hora tambien llega
-    con 23 y no es lo mismo: uno es el calendario y el otro es un hueco que hay que ver.
-
-    Octubre si llega entero con sus 25 horas -- `cargar()` une por `datetime`, que es
-    timestamptz, y los dos instantes de las 02:00 son filas distintas aunque compartan
-    etiqueta local. Lo que se pierde es otra cosa y en otro dia: `curva_real()` descarta la
-    02:00 repetida para poder reindexar, asi que el naive del 26 a las 02:00 sale de la
-    PRIMERA de las dos 02:00 del 25 -- la de +02:00, fijada por el ORDER BY de la consulta.
-    Por eso el 25 sale `cambio_hora` y el 26 `ayer_cambio_hora`.
-    """
-    tz = ZoneInfo(TZ)
-    ini = datetime(d.year, d.month, d.day, tzinfo=tz)
-    return int(((ini + timedelta(days=1)).astimezone(timezone.utc)
-                - ini.astimezone(timezone.utc)).total_seconds() // 3600)
+    return len(periodos_dia(d))
 
 
 # --------------------------------------------------------------- la serie diaria
@@ -311,18 +286,19 @@ def serie_diaria(con, datos: pd.DataFrame, real: pd.Series, escribir: bool) -> i
     1 - sum(mae*n)/sum(mae_naive*n), y para eso hacen falta los dos numeradores.
 
     LOS DIAS RAROS SE MARCAN, NO SE TIRAN. Un dia de 23 o 25 horas tiene un MAE
-    perfectamente comparable; lo que no lo es es su dinero, que necesita 24 h para cerrar
-    el ciclo. Guardarlos con `estado` deja que el panel diga cuantos excluye y por que, como
+    perfectamente comparable; lo que no lo es es su baseline en las horas afectadas por el cambio de hora. Guardarlos con `estado` deja que el panel diga cuantos excluye y por que, como
     ya hace el contador de acierto de pico.
     """
-    idx = pd.to_datetime(real.index)
-    naive = pd.Series(real.values, index=idx + pd.Timedelta(days=1))   # el precio de ayer
     filas = []
-    d = datos.assign(dia=pd.to_datetime(datos.ts).dt.date)
+    d = datos.assign(ts=indice_local(datos.ts))
+    d = d[~d.ts.isna()]
+    d = d.assign(dia=d.ts.dt.date)
     for (modelo, seed, dia), g in d.groupby(["model", "seed", "dia"]):
         g = g.set_index(pd.to_datetime(g.ts)).sort_index()
-        err = (g.pred - g.real).abs()
-        errn = (naive.reindex(g.index) - g.real).abs()
+        if g.index.has_duplicates:
+            raise ValueError("Instantes duplicados por modelo/semilla/dia")
+        err = (g.pred - g.real).abs().replace([np.inf, -np.inf], np.nan)
+        errn = (naive_local(real, g.index) - g.real).abs().replace([np.inf, -np.inf], np.nan)
         # LOS DOS MAE, SOBRE LAS MISMAS HORAS. Sin esta mascara, una hora sin naive entra
         # en el numerador y no en el denominador: el cociente compararia dos coberturas
         # distintas y el skill saldria sesgado sin que nada avisara. Hoy coinciden; el dia
@@ -422,20 +398,18 @@ def main():
             desde = hasta - timedelta(days=a.dias)       # `dias` dias cerrados + manana
 
         datos = cargar(con, desde, hasta)
+        real = curva_real(con, desde - timedelta(days=1), hasta)
+        evaluar_dias(con, datos, real, escribir, desde, hasta)
         if datos.empty:
             print(f"\n  No hay predicciones de produccion con precio publicado entre "
                   f"{desde} y {hasta}.")
             print("  Si la pasada de hoy es de esta manana, el PMD del dia objetivo aun no")
             print("  existe: OMIE lo publica a las 13:00 del dia anterior al objetivo.")
             return
-        dias = sorted(pd.to_datetime(datos.ts).dt.date.unique())
+        dias = sorted(indice_local(datos.ts).date)
         _log("datos", f"{len(datos):,} horas · {datos.model.nunique()} modelos · "
                       f"{len(dias)} dias ({dias[0]} -> {dias[-1]})")
 
-        # un dia mas por detras: el naive del primer dia es el precio del dia anterior
-        real = curva_real(con, desde - timedelta(days=1), hasta)
-
-        evaluar_dias(con, datos, real, escribir)
         serie_diaria(con, datos, real, escribir)
         ventana(con, datos, real, escribir)
     finally:
