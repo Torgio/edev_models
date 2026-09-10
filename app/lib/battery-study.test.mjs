@@ -28,19 +28,36 @@ test('coverage preserves missing years and does not invent exact period dates', 
   assert.equal(studyCoverage([]), 'No disponibles');
 });
 
-const options = { upstream: 'https://auth.example.test', studyUpstream: 'http://127.0.0.1:8011', development: true, allowedRuns: '16' };
+const options = { upstream: 'https://auth.example.test', studyUpstream: 'http://127.0.0.1:8011', enabled: true, development: true, allowedRuns: '16' };
 const request = (path, params = '') => new Request(`http://localhost:3000/api/battery-study/${path}${params}`, {
   headers: { Cookie: 'pulso_session=signed.token; other=private' },
 });
-test('study bridge is unavailable outside local development and denies unlisted studies and writes', async () => {
+test('study bridge requires its explicit switch and denies unknown routes and writes', async () => {
   const fetcher = async () => { throw new Error('must not reach upstream'); };
   for (const [req, config, status] of [
-    [request('resultado/16'), { ...options, development: false }, 404],
-    [new Request('https://public.test/api/battery-study/resultado/16'), options, 404],
-    [request('resultado/17'), options, 404],
+    [request('resultado/16'), { ...options, enabled: false }, 404],
     [request('resultado/16', '?email=another'), options, 400],
     [new Request(request('resultado/16'), { method: 'POST' }), options, 405],
-  ]) assert.equal((await proxyBatteryStudy(req, req.url.includes('/17') ? 'resultado/17' : 'resultado/16', { ...config, fetcher })).status, status);
+  ]) assert.equal((await proxyBatteryStudy(req, 'resultado/16', { ...config, fetcher })).status, status);
+});
+test('production bridge accepts an HTTPS path prefix and validates discovered runs without local memory', async () => {
+  const production = { ...options, studyUpstream: 'https://api.example.test/api/bat-test/', development: false, allowedRuns: '' };
+  const req = new Request('https://public.test/api/battery-study/resultado/23', {
+    headers: { Cookie: 'pulso_session=signed.token' },
+  });
+  const paths = [];
+  const fetcher = async url => {
+    paths.push(url.pathname);
+    if (url.origin === 'https://auth.example.test') return Response.json({ authenticated: true, auth_required: true });
+    if (url.pathname === '/api/bat-test/ejecuciones') return Response.json({ runs: [{ run_id: 23, code: 'WEB-ABC' }] });
+    return Response.json({ run: { run_id: 23 }, anual: [] });
+  };
+  assert.equal((await proxyBatteryStudy(req, 'resultado/23', { ...production, fetcher })).status, 200);
+  assert.deepEqual(paths, ['/session', '/api/bat-test/ejecuciones', '/api/bat-test/resultado/23']);
+  const unknown = new Request('https://public.test/api/battery-study/resultado/24', {
+    headers: { Cookie: 'pulso_session=signed.token' },
+  });
+  assert.equal((await proxyBatteryStudy(unknown, 'resultado/24', { ...production, fetcher })).status, 404);
 });
 test('study bridge verifies session before reading and forwards only the Pulso cookie', async () => {
   let count = 0;

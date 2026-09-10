@@ -384,7 +384,7 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
             <div className="battery-modes">
               <nav className="battery-mode-switch" aria-label="Vistas de batería">
                 <button type="button" aria-pressed={batteryView === 'daily'} onClick={() => setBatteryView('daily')}>Operación diaria</button>
-                {process.env.NODE_ENV === 'development' && <button type="button" aria-pressed={batteryView === 'study'} onClick={() => setBatteryView('study')}>Estudio de instalación</button>}
+                <button type="button" aria-pressed={batteryView === 'study'} onClick={() => setBatteryView('study')}>Estudio de instalación</button>
               </nav>
               {batteryView === 'daily' ? <>
                 <div className="view-datebar">
@@ -392,7 +392,7 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
                   <DateNavigator date={date} days={availableDays} coverageLabel={dayCoverageLabel} ariaLabel="Navegación por fecha BESS" onChange={setDate} />
                 </div>
                 <StoredBattery day={day} data={currentBattery.data} status={currentBattery.status} />
-              </> : process.env.NODE_ENV === 'development' ? <BatteryStudy /> : null}
+              </> : <BatteryStudy />}
             </div>
           </div> :
           <div className="assistant-view">
