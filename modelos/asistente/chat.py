@@ -34,6 +34,7 @@ Uso:
 """
 
 import json
+import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,6 +50,26 @@ import herramientas as _h
 
 MODELO_POR_DEFECTO = "claude-opus-5"
 HISTORIAL_PATH = Path(__file__).parent / "historial.jsonl"
+logger = logging.getLogger(__name__)
+
+
+def _tool_seguro(fn, *args, **kwargs):
+    """Ejecuta una funcion de `herramientas.py` atajando CUALQUIER excepcion no prevista.
+
+    Sin esto, un fallo (conexion caida, columna inexistente, credencial mal puesta) se propaga
+    tal cual hasta el LLM -- que lo repite FIELMENTE en su respuesta, porque no tiene forma de
+    saber que ese texto no debia salir. Una revision externa de la app en produccion encontro
+    justo esto: la respuesta al usuario incluia el nombre del rol de base de datos de solo
+    lectura y la clave exacta que faltaba en `credentials.json`. `herramientas.py` ya atajaba
+    algunos errores esperados (SQL invalido, fechas sin dato...) y los sigue devolviendo tal
+    cual -- esta capa es la red de seguridad para todo lo demas, lo que nadie prevé todavía. El
+    detalle real de la excepcion solo queda en el log del servidor, nunca en la respuesta."""
+    try:
+        return fn(*args, **kwargs)
+    except Exception:
+        logger.exception("Fallo inesperado en la herramienta %s", getattr(fn, "__name__", fn))
+        return {"error": "Esta herramienta no esta disponible en este momento. Prueba con otra "
+                          "pregunta o vuelve a intentarlo en unos minutos."}
 
 
 def _registrar_historial(pregunta: str, texto: str, modelo: str, tokens_entrada: int,
@@ -162,7 +183,7 @@ def precio_historico_percentiles(hora: int | None = None, mes: int | None = None
         anio_desde: Año inicial del rango a considerar (inclusive). Omitir para no acotar.
         anio_hasta: Año final del rango a considerar (inclusive). Omitir para no acotar.
     """
-    return json.dumps(_h.precio_historico_percentiles(hora, mes, dia_semana, anio_desde, anio_hasta),
+    return json.dumps(_tool_seguro(_h.precio_historico_percentiles, hora, mes, dia_semana, anio_desde, anio_hasta),
                        ensure_ascii=False)
 
 
@@ -181,7 +202,7 @@ def simular_bateria(potencia_mw: float, capacidad_mwh: float, eficiencia: float,
         desde: Fecha de inicio del backtest, formato YYYY-MM-DD.
         hasta: Fecha de fin del backtest, formato YYYY-MM-DD.
     """
-    return json.dumps(_h.simular_bateria(potencia_mw, capacidad_mwh, eficiencia, desde, hasta),
+    return json.dumps(_tool_seguro(_h.simular_bateria, potencia_mw, capacidad_mwh, eficiencia, desde, hasta),
                        ensure_ascii=False)
 
 
@@ -196,7 +217,7 @@ def precio_tabla_horaria(desde: str, hasta: str) -> str:
         desde: Fecha de inicio, YYYY-MM-DD.
         hasta: Fecha de fin, YYYY-MM-DD (inclusive). Para "hoy", pon la misma fecha en ambas.
     """
-    return json.dumps(_h.precio_tabla_horaria(desde, hasta), ensure_ascii=False)
+    return json.dumps(_tool_seguro(_h.precio_tabla_horaria, desde, hasta), ensure_ascii=False)
 
 
 @beta_tool
@@ -210,7 +231,7 @@ def precio_tendencia_mensual(desde: str, hasta: str) -> str:
         desde: Fecha de inicio, YYYY-MM-DD.
         hasta: Fecha de fin, YYYY-MM-DD.
     """
-    return json.dumps(_h.precio_tendencia_mensual(desde, hasta), ensure_ascii=False)
+    return json.dumps(_tool_seguro(_h.precio_tendencia_mensual, desde, hasta), ensure_ascii=False)
 
 
 @beta_tool
@@ -222,7 +243,7 @@ def precio_negativos(anio: int | None = None) -> str:
     Args:
         anio: Año a consultar. Omitir para usar el año en curso.
     """
-    return json.dumps(_h.precio_negativos(anio), ensure_ascii=False)
+    return json.dumps(_tool_seguro(_h.precio_negativos, anio), ensure_ascii=False)
 
 
 @beta_tool
@@ -236,7 +257,7 @@ def precio_horas_negativas(anio: int | None = None, limite: int = 100) -> str:
         anio: Año a consultar. Omitir para usar el año en curso.
         limite: Cuantas horas devolver como maximo (100 por defecto, tope duro 500).
     """
-    return json.dumps(_h.precio_horas_negativas(anio, limite), ensure_ascii=False)
+    return json.dumps(_tool_seguro(_h.precio_horas_negativas, anio, limite), ensure_ascii=False)
 
 
 @beta_tool
@@ -258,7 +279,7 @@ def simular_autoconsumo_solar(potencia_solar_kwp: float, potencia_bateria_mw: fl
         hasta: Fecha de fin del backtest, YYYY-MM-DD.
     """
     return json.dumps(
-        _h.simular_autoconsumo_solar(potencia_solar_kwp, potencia_bateria_mw, capacidad_bateria_mwh,
+        _tool_seguro(_h.simular_autoconsumo_solar, potencia_solar_kwp, potencia_bateria_mw, capacidad_bateria_mwh,
                                       eficiencia_bateria, consumo_anual_mwh, desde, hasta),
         ensure_ascii=False)
 
@@ -280,7 +301,7 @@ def precio_futuro_curva(desde: str, hasta: str, nivel_por_anio: dict[int, float]
             automaticamente, no hace falta dar todos los años. Si el usuario no da ninguno,
             omitir este parametro -- la herramienta avisa que usara un marcador de posicion.
     """
-    return json.dumps(_h.precio_futuro_curva(desde, hasta, nivel_por_anio), ensure_ascii=False)
+    return json.dumps(_tool_seguro(_h.precio_futuro_curva, desde, hasta, nivel_por_anio), ensure_ascii=False)
 
 
 @beta_tool
@@ -295,7 +316,7 @@ def extrapolar_consumo_cliente(historico_mensual_mwh: list[float], anios_a_futur
             longitud multiplo de 12 (minimo 12 meses).
         anios_a_futuro: Cuantos años extrapolar hacia adelante (por defecto 2).
     """
-    return json.dumps(_h.extrapolar_consumo_cliente(historico_mensual_mwh, anios_a_futuro),
+    return json.dumps(_tool_seguro(_h.extrapolar_consumo_cliente, historico_mensual_mwh, anios_a_futuro),
                        ensure_ascii=False)
 
 
@@ -305,7 +326,7 @@ def prediccion_d_mas_1() -> str:
     24 horas del dia siguiente. No acepta parametros -- siempre es "mañana" respecto a la fecha
     mas reciente que el pipeline de datos tiene disponible (puede traer una advertencia si esa
     fecha no es literalmente mañana, ver el campo `advertencia` de la respuesta)."""
-    return json.dumps(_h.prediccion_d_mas_1(), ensure_ascii=False)
+    return json.dumps(_tool_seguro(_h.prediccion_d_mas_1), ensure_ascii=False)
 
 
 @beta_tool
@@ -321,7 +342,7 @@ def capacidad_instalada(fecha: str | None = None) -> str:
     Args:
         fecha: YYYY-MM-DD. Si se omite, usa la fecha mas reciente disponible (serie desde 2020).
     """
-    return json.dumps(_h.capacidad_instalada(fecha), ensure_ascii=False)
+    return json.dumps(_tool_seguro(_h.capacidad_instalada, fecha), ensure_ascii=False)
 
 
 @beta_tool
@@ -338,7 +359,7 @@ def precio_ponderado_por_generacion(tecnologia: str, desde: str | None = None,
         desde: YYYY-MM-DD, opcional.
         hasta: YYYY-MM-DD, opcional.
     """
-    return json.dumps(_h.precio_ponderado_por_generacion(tecnologia, desde, hasta), ensure_ascii=False)
+    return json.dumps(_tool_seguro(_h.precio_ponderado_por_generacion, tecnologia, desde, hasta), ensure_ascii=False)
 
 
 @beta_tool
@@ -351,7 +372,7 @@ def resultado_estudio_bateria(modelo: str | None = None) -> str:
     Args:
         modelo: nombre del modelo (p.ej. "ensemble", "gru"). Si se omite, todos los modelos.
     """
-    return json.dumps(_h.resultado_estudio_bateria(modelo), ensure_ascii=False)
+    return json.dumps(_tool_seguro(_h.resultado_estudio_bateria, modelo), ensure_ascii=False)
 
 
 @beta_tool
@@ -398,7 +419,7 @@ def consulta_sql_lectura(sql: str) -> str:
     Args:
         sql: La consulta SELECT completa, en SQL de Postgres.
     """
-    return json.dumps(_h.consulta_sql_lectura(sql), ensure_ascii=False)
+    return json.dumps(_tool_seguro(_h.consulta_sql_lectura, sql), ensure_ascii=False)
 
 
 @beta_tool
@@ -411,7 +432,7 @@ def buscar_documentacion(pregunta: str) -> str:
     Args:
         pregunta: La pregunta o tema a buscar en la documentacion, en lenguaje natural.
     """
-    return json.dumps(_h.buscar_documentacion(pregunta), ensure_ascii=False)
+    return json.dumps(_tool_seguro(_h.buscar_documentacion, pregunta), ensure_ascii=False)
 
 
 CODE_EXECUTION = {"type": "code_execution_20260521", "name": "code_execution"}

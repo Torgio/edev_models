@@ -18,6 +18,7 @@ confiar en que cuadre.
 """
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from contextlib import contextmanager
@@ -184,8 +185,13 @@ def asistente(cuerpo: PreguntaAsistente):
     except KeyError:
         raise HTTPException(500, "Falta 'anthropic_api_key' en credentials.json -- "
                                   "cada persona necesita la suya propia para usar el asistente.")
-    except Exception as e:
-        raise HTTPException(500, f"Error del asistente: {e}")
+    except Exception:
+        # El texto de la excepcion (rutas del servidor, nombres internos) no debe llegar al
+        # cliente -- se registra aqui, y el que llama solo ve un mensaje generico. El proxy de
+        # la web (assistant-proxy.ts) ya sanea cualquier respuesta que no sea 2xx, pero esto
+        # tambien cubre a quien llame a este endpoint directamente.
+        logging.exception("Error inesperado en /api/asistente")
+        raise HTTPException(500, "El asistente no esta disponible en este momento.")
     return {"respuesta": r["texto"], "imagenes_base64": r["imagenes_base64"]}
 
 

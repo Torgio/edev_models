@@ -1790,3 +1790,30 @@ nuevas (`bess_plan`/`bess_result` — resultados del equipo, sin usuario — y 6
 oficial), dejando fuera `app_user` y las `app_*` de estudios hasta que exista un mecanismo real
 de filtrado por usuario. Dieciséis herramientas registradas ahora, de catorce; el rol de solo
 lectura pasa a 14 tablas de las 47 que tiene la base (`sql/registro_cambios_bd.md`, entrada 5).
+## 54. El asistente repetía fielmente los errores internos — el LLM no sabe que un `{"error": ...}` no se debe repetir
+
+Una revisión externa de la app en producción (probando la sesión real, no el código) encontró que
+al preguntarle por el modelo campeón, el asistente respondió con una tabla de errores internos:
+`Read-only file system`, el nombre del rol de base de datos `asistente_solo_lectura`, la clave
+exacta que faltaba en `credentials.json`, y la ruta `sql/registro_cambios_bd.md`. No era una
+alucinación — el LLM nunca inventa el texto de un error, lo copia de lo que la herramienta le
+devuelve. El problema estaba en `herramientas.py`: `consulta_sql_lectura` capturaba las
+excepciones de conexión y de SQL, pero las devolvía interpolando `{e}` sin más — el mensaje real
+de Postgres (que a veces incluye el nombre del rol) y el de Python (el nombre exacto de la clave
+que falta) pasaban tal cual al `{"error": ...}` que el LLM lee y repite con toda fidelidad, porque
+para él es un dato de la herramienta como cualquier otro.
+
+Peor aún: de las 15 herramientas del asistente, solo `consulta_sql_lectura` tenía algún
+`try/except` — las otras 14 no tenían ninguno. Un fallo de conexión, un bug o cualquier excepción
+no prevista en cualquiera de ellas se propagaba sin filtro hasta el `tool_result` que ve el LLM,
+que no tiene forma de distinguir "esto es información legítima de la herramienta" de "esto es un
+traceback de Python que nunca debió salir de el servidor" — simplemente confía en lo que la
+herramienta le entrega y lo comunica.
+
+Arreglo en dos capas: (1) los dos únicos `except` que interpolaban `{e}` directamente en el
+mensaje al usuario pasan a devolver un mensaje genérico, con el detalle real solo en el log del
+servidor (`logger.exception(...)`); (2) un wrapper nuevo, `_tool_seguro` en `chat.py`, envuelve
+las 15 llamadas a `herramientas.py` — cualquier excepción no prevista, sea cual sea su origen,
+cae en el mismo `{"error": "Esta herramienta no esta disponible..."}` genérico en vez de
+propagarse. Es la regla general que faltaba: nunca confiar en que el texto de una excepción es
+seguro para mostrar, sin importar de dónde venga.
