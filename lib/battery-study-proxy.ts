@@ -96,7 +96,8 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
       if ([...parsed.keys()].some(key => !['consumo', 'generacion'].includes(key))) return reply('El formulario contiene campos no permitidos.', 400);
       const consumption = parsed.get('consumo'), generation = parsed.get('generacion');
       if (!consumption || typeof consumption === 'string') return reply('La curva de consumo es obligatoria.', 400);
-      for (const file of [consumption, generation].filter(Boolean)) {
+      for (const file of [consumption, generation]) {
+        if (file === null) continue;
         if (typeof file === 'string' || file.size > 5 * 1024 * 1024 || !/\.(csv|txt)$/i.test(file.name)) return reply('Solo se admiten CSV o TXT de hasta 5 MB.', 400);
       }
       const uploadForm = new FormData();
