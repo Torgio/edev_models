@@ -10,6 +10,7 @@ import { bestMae, evaluationGroup, maxCoverageEvaluations, metric, numeric, rank
 import { PerformanceHistory } from '@/components/performance-history';
 import { modelColor } from '@/lib/model-color';
 import { formatEnergyPrice } from '@/lib/price-format';
+import { evaluationGroupLabels } from '@/lib/evaluation-group-label';
 import { EvaluationReport } from '@/components/evaluation-report';
 import { FileDown } from 'lucide-react';
 
@@ -41,7 +42,7 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
   const [rows, setRows] = useState<Evaluation[]>([]);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [group, setGroup] = useState('');
-  const [selection, setSelection] = useState<string[]>([]);
+  const [slots, setSlots] = useState<(string | null)[]>([null, null, null]);
   const [maximumOnly, setMaximumOnly] = useState(true);
   const [order, setOrder] = useState<Order>('captura_pct');
 
@@ -64,24 +65,42 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
   const comparable = maxCoverageEvaluations(ranked);
   const rankingRows = maximumOnly ? comparable : ranked;
   const identity = (row: Evaluation) => `${row.model}:${row.seed}`;
-  const chosen = ranked.filter(row => selection.includes(identity(row)));
+  const slotRows = slots.map(key => ranked.find(row => identity(row) === key) ?? null);
+  const chosen = slotRows.filter((row): row is Evaluation => row !== null);
+  const bestOf = (key: 'mae' | 'captura_pct' | 'skill_vs_naive') => {
+    const values = chosen.filter(row => numeric(row[key])).map(row => row[key]!);
+    if (values.length < 2) return null;
+    return key === 'mae' ? Math.min(...values) : Math.max(...values);
+  };
+  const best = { mae: bestOf('mae'), captura_pct: bestOf('captura_pct'), skill_vs_naive: bestOf('skill_vs_naive') };
+  const setSlot = (index: number, value: string) => setSlots(current => current.map((key, position) => (position === index ? value || null : key)));
   const scatter = rankingRows.filter(row => numeric(row.mae) && numeric(row.captura_pct));
   const context = ranked[0];
   const lowMae = bestMae(comparable);
   const highCapture = bestBy(comparable, 'captura_pct');
   const highSkill = bestBy(comparable, 'skill_vs_naive');
   const [preview, setPreview] = useState(false);
+  const groupLabels = evaluationGroupLabels(groups);
+  const currentLabel = groupLabels.find(entry => entry.key === selected) ?? null;
 
   return <><section className="evaluation-section" id="hitos" aria-labelledby="evaluation-title">
     <div className="evaluation-header">
       <div><p className="section-label">Comparación por período</p><h2 id="evaluation-title">Evaluación de modelos</h2>
         <p>Compara precisión y captura económica bajo la misma configuración. Cada semilla conserva sus resultados.</p></div>
       <div className="evaluation-header-actions">
-      {groups.length > 0 && <label>Período y configuración
-        <NativeSelect value={selected} onChange={event => { setGroup(event.target.value); setSelection([]); }}>
-          {groups.map(([key, row], index) => <NativeSelectOption key={key} value={key}>{row.periodo} · {row.corte} · configuración {index + 1}</NativeSelectOption>)}
-        </NativeSelect>
-      </label>}
+      {groups.length > 0 && <div className="group-picker">
+      <label>Período y configuración
+          <NativeSelect value={selected} onChange={event => { setGroup(event.target.value); setSlots([null, null, null]); }}>
+            {groupLabels.map(entry => <NativeSelectOption key={entry.key} value={entry.key}>{entry.label}</NativeSelectOption>)}
+          </NativeSelect>
+        </label>
+        <dl>
+          <div><dt>Período</dt><dd>{context?.periodo ?? '—'}</dd></div>
+          <div><dt>Corte</dt><dd>{context?.corte ?? '—'}</dd></div>
+          <div><dt>Supuestos</dt><dd>{currentLabel?.detail ?? 'Sin registrar'}</dd></div>
+          <div><dt>Evaluaciones</dt><dd>{rows.length}</dd></div>
+        </dl>
+      </div>}
       {status === 'ready' && rows.length > 0 && <Button className="evaluation-pdf-button" variant="outline" onClick={() => setPreview(true)}><FileDown aria-hidden="true" /> Exportar informe PDF</Button>}
       </div>
     </div>
@@ -134,12 +153,49 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
       </div>
 
       <section className="evaluation-compare" aria-labelledby="evaluation-compare-title">
-        <h3 id="evaluation-compare-title">Comparar evaluaciones</h3><p>Elige hasta tres modelos y semillas. Las métricas pertenecen al período seleccionado.</p>
-        <div className="evaluation-choices">{ranked.map(row => <label key={identity(row)}><Checkbox checked={selection.includes(identity(row))} disabled={chosen.length >= 3 && !selection.includes(identity(row))} onCheckedChange={checked => setSelection(current => checked ? [...current, identity(row)].slice(0, 3) : current.filter(key => key !== identity(row)))} />{row.model} · semilla {seed(row.seed)}</label>)}</div>
-        {chosen.length > 0 && <div className="evaluation-comparison-grid" aria-live="polite">{chosen.map(row => <article key={identity(row)}><h4>{row.model}</h4><p>Semilla {seed(row.seed)} · {row.estado ?? 'Sin estado'}</p><dl>
-          <div><dt>Error medio absoluto ↓</dt><dd>{formatEnergyPrice(row.mae)}</dd></div><div><dt>Captura económica ↑</dt><dd>{metric(row.captura_pct, ' %')}</dd></div><div><dt>Mejora frente al modelo simple ↑</dt><dd>{metric(row.skill_vs_naive, ' %')}</dd></div><div><dt>Cobertura</dt><dd>{coverage(row)}</dd></div>
-        </dl></article>)}</div>}
-        {chosen.length > 1 && <p className="evaluation-coverage-note">{chosen.some(row => !numeric(row.n_obs) || row.n_obs !== chosen[0].n_obs) ? 'Coberturas distintas o incompletas: la comparación no equivale a evaluar las mismas horas.' : 'Misma cantidad de horas registrada; las fechas coincidentes no están verificadas.'}</p>}
+        <div className="compare-heading">
+          <div><p className="section-label">Hasta tres a la vez</p><h3 id="evaluation-compare-title">Comparar evaluaciones</h3></div>
+          <p>Las métricas pertenecen al período y la configuración seleccionados. Cada semilla es una observación distinta y no se promedia con las demás.</p>
+          {chosen.length > 0 && <Button variant="outline" onClick={() => setSlots([null, null, null])}>Vaciar ranuras</Button>}
+        </div>
+
+        <div className="compare-slots" aria-live="polite">
+          {slotRows.map((row, index) => {
+            const tag = ['A', 'B', 'C'][index];
+            if (!row) return <article className="compare-slot is-empty" key={`slot:${index}`}>
+              <span className="compare-slot-tag">{tag}</span>
+              <div><strong>Ranura libre</strong><small>Elige un modelo y una semilla del período actual.</small></div>
+              <NativeSelect value="" aria-label={`Añadir evaluación a la ranura ${tag}`} onChange={event => setSlot(index, event.target.value)}>
+                <NativeSelectOption value="">Añadir evaluación…</NativeSelectOption>
+                {ranked.map(option => <NativeSelectOption key={identity(option)} value={identity(option)} disabled={slots.includes(identity(option))}>
+                  {option.model} · semilla {seed(option.seed)} · MAE {metric(option.mae)}
+                </NativeSelectOption>)}
+              </NativeSelect>
+            </article>;
+            return <article className="compare-slot" key={identity(row)}>
+              <header>
+                <i style={{ background: modelColor(row.model) }} />
+                <div><strong>{row.model}</strong><small>Ranura {tag} · semilla {seed(row.seed)}</small></div>
+                <button type="button" aria-label={`Quitar ${row.model} de la comparación`} onClick={() => setSlot(index, '')}>×</button>
+              </header>
+              <dl>
+                <div><dt>Error medio absoluto ↓</dt><dd>{formatEnergyPrice(row.mae)}{best.mae != null && row.mae === best.mae && <em>Mejor</em>}</dd></div>
+                <div><dt>Captura económica ↑</dt><dd>{metric(row.captura_pct, ' %')}{best.captura_pct != null && row.captura_pct === best.captura_pct && <em>Mejor</em>}</dd></div>
+                <div><dt>Mejora frente al modelo simple ↑</dt><dd>{metric(row.skill_vs_naive, ' %')}{best.skill_vs_naive != null && row.skill_vs_naive === best.skill_vs_naive && <em>Mejor</em>}</dd></div>
+                <div><dt>Cobertura</dt><dd>{coverage(row)}</dd></div>
+              </dl>
+              <p>{row.estado ?? 'Sin estado registrado'}</p>
+            </article>;
+          })}
+        </div>
+
+        <p className={`compare-notice ${chosen.length > 1 && chosen.some(row => !numeric(row.n_obs) || row.n_obs !== chosen[0].n_obs) ? 'is-warning' : ''}`}>
+          {chosen.length < 2
+            ? 'Añade al menos dos evaluaciones para comparar. Solo aparecen las del período y la configuración seleccionados: no se mezclan cortes ni supuestos distintos.'
+            : chosen.some(row => !numeric(row.n_obs) || row.n_obs !== chosen[0].n_obs)
+              ? 'Coberturas distintas o incompletas: la comparación no equivale a evaluar las mismas horas.'
+              : 'Misma cantidad de horas registrada; las fechas coincidentes no están verificadas.'}
+        </p>
       </section>
       <details className="method-card"><summary>Definición, supuestos y tabla completa</summary>
         <div className="method-copy">

@@ -31,6 +31,7 @@ class ConexionFalsa:
         class Cur:
             def __enter__(self_): return self_
             def __exit__(self_, *a): return False
+            def execute(self_, sql, params): pass
             def executemany(self_, sql, filas): con.filas.extend(filas)
         return Cur()
 
