@@ -21,5 +21,5 @@ export const durationErrorCost = (row: DurationStudy) => row.oracle - row.model;
 
 export const euro = (value: number | null | undefined) =>
   typeof value === 'number' && Number.isFinite(value)
-    ? `${Math.round(value).toLocaleString('es-ES')} €`
+      ? `${Math.round(value).toLocaleString('es-ES', { useGrouping: 'always' })} €`
     : '—';

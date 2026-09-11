@@ -4,10 +4,9 @@
 
 .market-heading.page-heading h2 { font-size: clamp(28px, 3vw, 38px); letter-spacing: -.04em; line-height: 1.15; }
 .market-heading .kicker { margin-bottom: 7px; }
-.market-heading-actions { display: grid; justify-items: end; gap: 9px; }
+.market-heading-actions { display: grid; justify-items: end; gap: 16px; }
 .pdf-export-button { min-height: 38px; gap: 8px; background: rgba(255,255,255,.8); color: #24483e; }
 .pdf-export-button svg { width: 16px; height: 16px; }
-.print-report-header { display: none; }
 .day-bar { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 18px 28px; padding: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
 .day-bar-main { display: flex; flex-direction: column; gap: 6px; margin-right: auto; min-width: 0; padding-top: 2px; }
 .day-bar .eyebrow { margin: 0; color: #52685e; font-size: 11px; letter-spacing: .09em; text-transform: uppercase; font-weight: 700; }
@@ -43,6 +42,14 @@
 .day-comparison-summary [data-slot="native-select-wrapper"] { width: 100%; background: #f8faf8; }
 .chart-view-controls { display: flex; gap: 20px; flex-wrap: wrap; }
 .chart-view-controls label { display: flex; align-items: center; gap: 9px; min-height: 40px; font-size: 14px; cursor: pointer; }
+.chart-view-controls
+.layer-switch { display: flex; align-items: center; gap: 6px; }
+.layer-switch > span { color: #52685e; font-size: 12px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
+.layer-switch button { min-height: 40px; padding: 0 12px; border: 1px solid #dce3df; border-radius: 9px; background: #fff; color: #52685e; font: inherit; font-size: 13px; cursor: pointer; }
+.layer-switch button:hover { border-color: #173f35; color: #173f35; }
+.layer-switch button[aria-pressed="true"] { border-color: #173f35; background: #173f35; color: #fff; }
+.ramp-legend { padding: 6px 7px; color: #52685e; font-size: 11px; white-space: nowrap; }
+.ramp-legend i { display: inline-block; width: 12px; height: 9px; margin-right: 6px; border-radius: 2px; background: #a8842c; opacity: .32; vertical-align: middle; }
 .comparison-day-legend, .forecast-day-legend { padding: 6px 7px; color: #52685e; font-size: 11px; white-space: nowrap; }
 .comparison-day-legend i, .forecast-day-legend i, .actual-legend i { width: 20px; height: 0; display: inline-block; margin-right: 6px; border-radius: 0; vertical-align: middle; }
 .comparison-day-legend i { border-top: 2px dashed #5f736c; }
@@ -180,7 +187,7 @@ button, a { font: inherit; }
 .actual-legend { padding: 6px 7px; font-size: 11px; color: #62726c; }
 .actual-legend i { border-top: 2px dotted #17322b; }
 .consensus-legend { padding: 6px 7px; font-size: 11px; color: #62726c; }
-.consensus-legend i { width: 12px; border-radius: 3px; background: rgba(67,169,159,.28); border: 1px solid rgba(67,169,159,.45); }
+.consensus-legend i { width: 12px; border-radius: 3px; background: rgba(107,127,120,.28); border: 1px solid rgba(107,127,120,.45); }
 .chart-wrap { height: 330px; margin-top: 10px; }
 .chart-insights { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; padding-top: 15px; border-top: 1px solid #e3e9e6; }
 .chart-insights > div { display: flex; align-items: center; gap: 9px; padding: 9px 12px; }
@@ -722,53 +729,8 @@ footer svg { width: 13px; }
   @page { size: A4 portrait; margin: 13mm 14mm 16mm; }
   html, body { background: #fff !important; color: #17322b; }
   body { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-  .topbar, .access-toolbar, .date-navigation, .pdf-export-button, .chart-view-controls,
-  .model-picker, .audit-card, footer { display: none !important; }
+  .topbar, .access-toolbar, footer { display: none !important; }
   .dashboard-shell, .content-wrap { width: 100% !important; max-width: none !important; margin: 0 !important; padding: 0 !important; }
-  .print-report-header { display: grid; grid-template-columns: 1fr auto; gap: 10px 22px; margin-bottom: 14px; padding: 0 0 12px; border-bottom: 2px solid #20594b; }
-  .print-report-brand { display: flex; align-items: center; gap: 10px; }
-  .print-report-brand > span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; background: #173f35; color: #fff; }
-  .print-report-brand svg { width: 18px; }
-  .print-report-brand small, .print-report-brand strong { display: block; }
-  .print-report-brand small, .print-report-title > small { color: #52685e; font-size: 9px; font-weight: 750; letter-spacing: .11em; text-transform: uppercase; }
-  .print-report-brand strong { margin-top: 2px; font-size: 18px; }
-  .print-report-title { text-align: right; }
-  .print-report-title h2 { margin: 3px 0 0; font-size: 22px; }
-  .print-report-title p { margin: 2px 0 0; color: #52685e; font-size: 10px; }
-  .print-report-header dl { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(4,1fr); margin: 0; border: 1px solid #d8e1dc; border-radius: 9px; overflow: hidden; }
-  .print-report-header dl div { padding: 7px 10px; }
-  .print-report-header dl div + div { border-left: 1px solid #d8e1dc; }
-  .print-report-header dt { color: #52685e; font-size: 8px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
-  .print-report-header dd { margin: 3px 0 0; font-size: 10px; font-weight: 700; }
-  .print-report-note { grid-column: 1 / -1; margin: -5px 0 0; color: #65766f; font-size: 8px; }
-  .market-heading { margin-bottom: 10px; }
-  .day-bar { display: block; padding: 0 0 10px; border: 0; border-bottom: 2px solid #20594b; border-radius: 0; box-shadow: none; }
-  .day-bar-main { display: block; }
-  .day-bar .market-heading-actions { display: none; }
-  .market-heading h2 { font-size: 25px; }
-  .market-heading .intro { font-size: 11px; }
-  .market-updated { font-size: 9px; }
-  .market-summary, .day-comparison-summary, .forecast-main, .forecast-rail { box-shadow: none !important; break-inside: avoid; }
-  .market-summary { grid-template-columns: repeat(2, 1fr); gap: 0; border: 1px solid #d8e1dc; border-radius: 10px; overflow: hidden; }
-  .market-summary article { padding: 12px 14px; border-radius: 0; box-shadow: none; }
-  .market-summary article + article { border-left: 1px solid #d8e1dc; }
-  .market-summary article span { font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
-  .market-summary article strong { font-size: 18px; }
-  .market-summary article p { font-size: 9px; }
-  .market-summary-note { margin-bottom: 10px; }
-  .day-comparison-summary { margin-bottom: 10px; }
-  .day-comparison-summary > label { display: none; }
-  .day-comparison-summary { grid-template-columns: 1fr 1fr; }
-  .forecast-workspace { gap: 10px; }
-  .forecast-workspace > * { break-inside: avoid; }
-  .forecast-rail { order: 0; grid-template-columns: 130px minmax(330px,1fr) minmax(260px,.8fr) 190px; }
-  .forecast-main { padding: 16px 18px 12px; }
-  .chart-toolbar { min-height: 38px; margin-top: 6px; }
-  .chart-wrap { height: 285px; }
-  .market-alert-layout { grid-template-columns: minmax(0,1fr) 235px; }
-  .market-alerts { padding-top: 8px; gap: 6px; }
-  .market-alerts > button:not([data-slot]) { min-height: 54px; padding: 9px; }
-  .chart-caption { font-size: 9px; }
 }
 
 .evaluation-kpis article strong { white-space: normal; overflow-wrap: anywhere; }

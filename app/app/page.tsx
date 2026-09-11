@@ -28,6 +28,7 @@ import { dailyPrice } from '@/lib/daily-price';
 import { StoredEvaluations } from '@/components/stored-evaluations';
 import { StoredBattery } from '@/components/stored-battery';
 import { BatteryStudy } from '@/components/battery-study';
+import { PredictionReport } from '@/components/prediction-report';
 import { predictionUpdate } from '@/lib/prediction-update';
 import { initialDashboardDay, type AvailableDay } from '@/lib/initial-day';
 import { marketHourClockLabel } from '@/lib/market-hour';
@@ -130,6 +131,7 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
   const [comparisonChoice, setComparisonChoice] = useState('previous');
   const [comparisonState, setComparisonState] = useState<{ day: string; hours: PriceHour[]; status: 'loading' | 'ready' | 'error' } | null>(null);
   const [selectedAlert, setSelectedAlert] = useState<string | null>(null);
+  const [layer, setLayer] = useState<'none' | 'shape' | 'negative'>('shape');
   const [reportGeneratedAt, setReportGeneratedAt] = useState<string | null>(null);
   const [referenceModel, setReferenceModel] = useState('');
   const [dayState, setDayState] = useState<{ day: string; hours: PriceHour[]; updated: string | null } | null>(null);
@@ -261,6 +263,7 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
   const negatives = negativePriceHours(data, selectedModel);
   const lastPredictionUpdate = predictionUpdate(current?.updated ?? null, current !== null);
   const currentBattery = batteryState.day === day ? batteryState : { day, data: null, status: 'loading' as const };
+  const batteryResult = currentBattery.data?.results?.find(item => item.model === selectedModel) ?? currentBattery.data?.results?.[0] ?? null;
 
   function toggleModel(key: ModelKey) {
     if (key === selectedModel) return;
@@ -301,18 +304,7 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
       <section className="content-wrap" id="prevision">
         <div className="access-toolbar"><span>{username ? `Sesión: ${username}` : 'Acceso del equipo'}</span><Button variant="outline" size="sm" onClick={() => void onLogout()}>Cerrar sesión</Button></div>
         {daysError && <div className="study-notice" role="alert">No se pudieron consultar las fechas disponibles. <Button variant="outline" onClick={() => setDaysRetry(value => value + 1)}>Reintentar calendario</Button></div>}
-        {view === 'prediction' ? <>
-        <header className="print-report-header" aria-hidden="true">
-          <div className="print-report-brand"><span><Zap /></span><div><small>TFM · Mercado eléctrico</small><strong>Pulso Energía</strong></div></div>
-          <div className="print-report-title"><small>Informe diario de mercado</small><h2>{selectedDayLabel}</h2><p>Resumen de precios, previsión, comparación y alertas</p></div>
-          <dl>
-            <div><dt>Modelo</dt><dd>{selectedModel || 'Sin modelo'}</dd></div>
-            <div><dt>Comparación</dt><dd>{comparisonDayLabel ?? 'Sin comparación'}</dd></div>
-            <div><dt>Estado de datos</dt><dd>{isClosed ? 'Día cerrado' : actualHours ? 'Cierre parcial' : 'Precio real pendiente'}</dd></div>
-            <div><dt>Generado</dt><dd>{reportGeneratedAt ?? 'Al exportar'}</dd></div>
-          </dl>
-          <p className="print-report-note">Informe académico · TFM UCM 2026 · Datos en UTC, visualización Europe/Madrid</p>
-        </header>
+        {view === 'prediction' ? <div className="prediction-view">
         <section className="day-bar market-heading" aria-label="Fecha y estado del mercado">
           <div className="day-bar-main">
             <p className="eyebrow">Mercado eléctrico · España</p>
@@ -367,7 +359,15 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
             </div>
 
             <div className="chart-toolbar">
-              <div className="chart-view-controls"><label><Checkbox checked={compareModels} onCheckedChange={setCompareModels} />Comparar modelos</label></div>
+              <div className="chart-view-controls">
+                <label><Checkbox checked={compareModels} onCheckedChange={setCompareModels} />Comparar modelos</label>
+                <div className="layer-switch" role="group" aria-label="Capa de anotaciones del gráfico">
+                  <span>Anotaciones</span>
+                  {([['none', 'Ninguna'], ['shape', 'Valles y rampas'], ['negative', 'Horas negativas']] as const).map(([key, text]) => (
+                    <button key={key} type="button" aria-pressed={layer === key} onClick={() => setLayer(key)}>{text}</button>
+                  ))}
+                </div>
+              </div>
               {compareModels && <details className="model-picker">
                 <summary>Series visibles <strong>{visibleModels.length}</strong></summary>
                 <div className="model-groups" aria-label="Modelos visibles">
@@ -394,10 +394,11 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
               </details>}
               <div className="chart-legend">
                 {compareModels && <span className="consensus-legend"><i />Dispersión central</span>}
+                {layer === 'shape' && ramp && <span className="ramp-legend"><i />Mayor rampa prevista</span>}
                 {selectedModel && <span className="forecast-day-legend"><i style={{ borderColor: modelColor(selectedModel) }} />{selectedDayLabel} · previsión {selectedModel}</span>}
                 {hasActual && <span className="actual-legend"><i />{selectedDayLabel} · precio real</span>}
                 {comparisonDayLabel && comparisonState?.status === 'ready' && <span className="comparison-day-legend"><i />{comparisonDayLabel} · {comparedSeries.kind === 'real' ? 'precio real' : `previsión ${selectedModel}`}</span>}
-                {negatives.entries.length > 0 && <span className="negative-price-legend"><i />Horas bajo cero</span>}
+                {layer === 'negative' && negatives.entries.length > 0 && <span className="negative-price-legend"><i />Horas bajo cero</span>}
               </div>
             </div>
 
@@ -418,9 +419,9 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
                       : formatEnergyPrice(Number(value), { sign: String(name).startsWith('Diferencia ') }), String(name)]} />
                   {compareModels && <Area type="monotone" dataKey="consensusBand" name="Dispersión central" stroke="none" fill={ANNOTATION_COLORS.spread} fillOpacity={0.14} activeDot={false} />}
                   <ReferenceLine y={0} stroke="#aab6b1" strokeDasharray="3 4" />
-                  {negatives.entries.map(mark => <ReferenceArea key={`negative:${mark.index}`} x1={mark.index - .45} x2={mark.index + .45}
+                  {layer === 'negative' && negatives.entries.map(mark => <ReferenceArea key={`negative:${mark.index}`} x1={mark.index - .45} x2={mark.index + .45}
                     fill={mark.actual ? ANNOTATION_COLORS.negative : ANNOTATION_COLORS.negativeForecast} fillOpacity={mark.actual && mark.predicted ? .16 : .1} strokeOpacity={0} ifOverflow="hidden" />)}
-                  {ramp && <ReferenceArea x1={ramp.from} x2={ramp.to} fill={ANNOTATION_COLORS.ramp} fillOpacity={.1} strokeOpacity={0} ifOverflow="hidden" />}
+                  {layer === 'shape' && ramp && <ReferenceArea x1={ramp.from} x2={ramp.to} fill={ANNOTATION_COLORS.ramp} fillOpacity={.1} strokeOpacity={0} ifOverflow="hidden" />}
                   {activeAlert && <ReferenceArea x1={activeAlert.from - .45} x2={activeAlert.to + .45} fill="#e58b45" fillOpacity={.24} stroke="#b9662f" strokeWidth={1.5} strokeOpacity={.9} ifOverflow="hidden" />}
                   {MODELS.filter(model => plottedModels.includes(model.key)).map(model => (
                     <Line key={model.key} type="monotone" dataKey={(row: ChartRow) => row.predictions[model.key]} name={`${selectedDayLabel} · previsión ${model.label}`}
@@ -433,9 +434,9 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
                   {activeAlert && <ReferenceLine x={activeAlert.to} stroke="#b9662f" strokeWidth={2} strokeDasharray="3 3"
                     label={{ value: activeAlert.title, position: 'insideTopRight', fontSize: 11, fontWeight: 700, fill: '#8b4b26' }} />}
                   {activeAlert && Number.isFinite(data[activeAlert.to]?.marketValue) && <ReferenceDot x={activeAlert.to} y={data[activeAlert.to].marketValue!} r={7} fill="#e58b45" stroke="#8b4b26" strokeWidth={2} ifOverflow="extendDomain" />}
-                  {minimum && <ReferenceDot x={minimum.index} y={minimum.value} r={5} fill={ANNOTATION_COLORS.mark} stroke={ANNOTATION_COLORS.actual} ifOverflow="extendDomain"
+                  {layer === 'shape' && minimum && <ReferenceDot x={minimum.index} y={minimum.value} r={5} fill={ANNOTATION_COLORS.mark} stroke={ANNOTATION_COLORS.actual} ifOverflow="extendDomain"
                     label={{ value: 'Valle previsto', position: 'top', fontSize: 11, fill: ANNOTATION_COLORS.actual }} />}
-                  {ramp && <ReferenceDot x={ramp.to} y={ramp.value} r={4} fill={ANNOTATION_COLORS.ramp} stroke="#fff" ifOverflow="extendDomain" />}
+                  {layer === 'shape' && ramp && <ReferenceDot x={ramp.to} y={ramp.value} r={4} fill={ANNOTATION_COLORS.ramp} stroke="#fff" ifOverflow="extendDomain" />}
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -535,8 +536,22 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
           </div>
         </details>
 
-        </> : view === 'evaluation' ? <div className="evaluation-view"><StoredEvaluations onSessionExpired={onSessionExpired} /></div> : view === 'battery' ?
-          <div className="battery-view">
+<PredictionReport
+          dayLabel={selectedDayLabel}
+          model={selectedModel}
+          comparisonLabel={comparisonDayLabel}
+          statusLabel={isClosed ? 'Día cerrado' : actualHours ? 'Cierre parcial' : 'Precio real pendiente'}
+          generatedAt={reportGeneratedAt}
+          coverageLabel={averages ? `${averages.pairedHours}/${averages.expectedHours} h` : '—'}
+          hours={data.map(row => ({ label: row.label, forecast: row.predictions[selectedModel] ?? null, actual: row.actual, comparison: row.comparison }))}
+          averages={averages}
+          windows={windows}
+          comparison={comparisonResult}
+          ramp={ramp}
+          negatives={negatives}
+          battery={batteryResult ? { income: batteryResult.ingreso_eur ?? null, oracle: batteryResult.ingreso_oraculo_eur ?? null } : null}
+        />
+        </div> : view === 'evaluation' ? <div className="evaluation-view"><StoredEvaluations onSessionExpired={onSessionExpired} /></div> : view === 'battery' ?          <div className="battery-view">
             <div className="battery-modes">
               <nav className="battery-mode-switch" aria-label="Vistas de batería">
                 <button type="button" aria-pressed={batteryView === 'daily'} onClick={() => setBatteryView('daily')}>Operación diaria</button>
