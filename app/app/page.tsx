@@ -327,21 +327,11 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
           <article className="headline-stat"><span>Precio medio previsto</span><strong>{formatEnergyPrice(comparisonPredicted)}</strong><span>{selectedModel || 'Sin modelo'} · {averages?.predictedHours ?? 0}/{averages?.expectedHours ?? 24} horas</span></article>
           <article className="headline-stat"><span>Precio medio real</span><strong>{formatEnergyPrice(comparisonActual)}</strong><span>{averages?.pairedHours ?? 0}/{averages?.expectedHours ?? 24} horas comparables</span></article>
           <article className={`headline-stat dark ${averages?.difference == null ? '' : averages.difference <= 0 ? 'clear' : ''}`}><span>Diferencia prevista − real</span><strong>{formatEnergyPrice(averages?.difference, { sign: true })}</strong><span>{isClosed ? 'Día cerrado' : 'Pendiente de cierre del mercado'}</span></article>
+          <article className="headline-stat"><span>Cobertura del día</span><strong>{averages ? `${averages.pairedHours}/${averages.expectedHours}` : '—'}</strong><span>Horas con predicción y precio real</span></article>
+        
         </section>
         <p className="market-summary-note">Tramos de 3 horas: mínimo {windows.cheapest?.label ?? '—'} · máximo {windows.priciest?.label ?? '—'}.</p>
 
-        <section className="day-comparison-summary" aria-label="Comparación entre días" aria-live="polite">
-          <div><span>Día analizado</span><strong>{selectedDayLabel}</strong><small>Precio real y previsión · {selectedModel || 'sin modelo'}</small></div>
-          <div><span>{comparisonDayLabel ? `Frente al ${comparisonDayLabel}` : 'Comparación'}</span><strong>{comparisonResult.difference == null ? '—' : formatEnergyPrice(comparisonResult.difference, { sign: true })}</strong><small>{comparisonResult.hours ? `${comparisonResult.hours} horas comparables` : comparisonState?.status === 'loading' ? 'Consultando…' : 'Sin comparación disponible'}</small></div>
-          <label>Comparar con
-            <NativeSelect value={comparisonChoice} onChange={event => setComparisonChoice(event.target.value)}>
-              <NativeSelectOption value="none">Sin comparación</NativeSelectOption>
-              <NativeSelectOption value="previous" disabled={!previousDay}>Día anterior disponible</NativeSelectOption>
-              <NativeSelectOption value="week" disabled={!weekDay}>Mismo día de la semana anterior</NativeSelectOption>
-              {sortedDates.filter(item => item !== day).slice(-14).reverse().map(item => <NativeSelectOption key={item} value={`date:${item}`}>{format(new Date(`${item}T12:00:00`), 'd MMM yyyy', { locale: es })}</NativeSelectOption>)}
-            </NativeSelect>
-          </label>
-        </section>
 
         <section className="forecast-workspace" aria-labelledby="forecast-title">
           <div className="forecast-main">
@@ -451,34 +441,23 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
               {comparisonState?.status === 'error' && <Button variant="outline" size="sm" onClick={() => setRetry(value => value + 1)}>Reintentar comparación</Button>}
             </aside>
             </div>
-            <div className="market-signals" aria-label="Señales calculadas de la curva">
-              <span><small>Valle previsto</small><strong>{minimum ? `${data[minimum.index]?.label} · ${formatEnergyPrice(minimum.value)}` : '—'}</strong></span>
-              <span><small>Mayor rampa prevista</small><strong>{ramp ? `${data[ramp.from]?.label}→${data[ramp.to]?.label} · ${formatEnergyPrice(ramp.increase, { sign: true })}` : '—'}</strong></span>
-              <span><small>Horas negativas</small><strong>Previstas {negatives.predicted} · reales {negatives.actual}</strong></span>
-            </div>
             <p className="chart-caption">Valle, rampa y horas bajo cero se calculan para este día y el modelo de referencia; describen la curva, no atribuyen su causa. La banda es dispersión central entre modelos, no un intervalo de confianza.</p>
           </div>
 
-          <aside className="forecast-rail" aria-label="Indicadores del día">
-            <div className="rail-heading"><p className="section-label">Lectura del día</p><h3>{selectedModel || 'Sin modelo'}</h3><span>{format(date, 'dd/MM/yyyy')}</span></div>
-            <div className="price-comparison" aria-label="Comparación entre precio medio previsto y real">
-              <div className="comparison-price predicted"><span>Precio medio previsto</span><strong>{formatEnergyPrice(comparisonPredicted)}</strong>
-                <small>{averages?.pairedHours ? `${averages.pairedHours} horas comunes` : averages?.predictedHours ? `${averages.predictedHours}/${averages.expectedHours} horas previstas` : 'Sin predicción'}</small></div>
-              <div className={`comparison-delta ${averages?.difference == null ? 'pending' : 'neutral'}`}>
-                <span>Δ previsto − real</span><strong>{formatEnergyPrice(averages?.difference, { sign: true })}</strong>
-                <small>{averages?.pairedHours ? `${averages.pairedHours}/${averages.expectedHours} comparables` : 'Pendiente de precio real'}</small>
-              </div>
-              <div className="comparison-price actual"><span>Precio medio real</span><strong>{formatEnergyPrice(comparisonActual)}</strong>
-                <small>{averages?.pairedHours ? `${averages.pairedHours} horas comunes` : 'Pendiente de cierre del mercado'}</small></div>
-            </div>
-            <div className="kpi-stack">
-              <MetricCard icon={Database} eyebrow="Cobertura del día"
-                value={averages ? `${averages.pairedHours}/${averages.expectedHours}` : '—'}
-                detail="Horas con predicción y precio real" />
-              <MetricCard icon={ArrowDownRight} eyebrow="Mínimo previsto"
-                value={formatEnergyPrice(minimum?.value)} detail={minimum ? data[minimum.index]?.label ?? 'Sin datos' : 'Sin datos'} tone="warm" />
-              <MetricCard icon={ArrowUpRight} eyebrow="Máximo previsto"
-                value={formatEnergyPrice(max)} detail={peak?.label ?? 'Sin datos'} tone="warm" />
+          <aside className="forecast-rail" aria-label="Comparación entre días y acierto del pico">
+            <div className="rail-heading"><p className="section-label">Día analizado</p><h3>{selectedDayLabel}</h3><span>{selectedModel || 'sin modelo'} · {format(date, 'dd/MM/yyyy')}</span></div>
+            <div className="rail-comparison">
+              <div><span>{comparisonDayLabel ? `Frente al ${comparisonDayLabel}` : 'Comparación'}</span>
+                <strong>{comparisonResult.difference == null ? '—' : formatEnergyPrice(comparisonResult.difference, { sign: true })}</strong>
+                <small>{comparisonResult.hours ? `${comparisonResult.hours} horas comparables` : comparisonState?.status === 'loading' ? 'Consultando…' : 'Sin comparación disponible'}</small></div>
+              <label>Comparar con
+                <NativeSelect size="sm" value={comparisonChoice} onChange={event => setComparisonChoice(event.target.value)}>
+                  <NativeSelectOption value="none">Sin comparación</NativeSelectOption>
+                  <NativeSelectOption value="previous" disabled={!previousDay}>Día anterior disponible</NativeSelectOption>
+                  <NativeSelectOption value="week" disabled={!weekDay}>Mismo día de la semana anterior</NativeSelectOption>
+                  {sortedDates.filter(item => item !== day).slice(-14).reverse().map(item => <NativeSelectOption key={item} value={`date:${item}`}>{format(new Date(`${item}T12:00:00`), 'd MMM yyyy', { locale: es })}</NativeSelectOption>)}
+                </NativeSelect>
+              </label>
             </div>
             <div className="peak-panel"><PeakAccuracy model={selectedModel} day={day} onSessionExpired={onSessionExpired} /></div>
           </aside>

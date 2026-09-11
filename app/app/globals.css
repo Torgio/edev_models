@@ -32,15 +32,6 @@
 .market-summary strong { display: block; margin: 8px 0; font-size: clamp(20px, 2.3vw, 28px); line-height: 1.3; letter-spacing: -.025em; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .market-summary p { margin: 0; font-size: 14px; line-height: 1.5; color: #52685e; }
 .market-summary-note { margin: 9px 0 20px; font-size: 12px; color: #52685e; line-height: 1.5; }
-.day-comparison-summary { display: grid; grid-template-columns: minmax(180px,.8fr) minmax(220px,1fr) minmax(240px,1fr); align-items: stretch; margin-bottom: 16px; border: 1px solid #d8e1dc; border-radius: 14px; background: #fff; overflow: hidden; }
-.day-comparison-summary > div, .day-comparison-summary > label { min-width: 0; padding: 15px 18px; }
-.day-comparison-summary > * + * { border-left: 1px solid #d8e1dc; }
-.day-comparison-summary span, .day-comparison-summary label { color: #52685e; font-size: 13px; }
-.day-comparison-summary strong, .day-comparison-summary small { display: block; }
-.day-comparison-summary strong { margin-top: 5px; color: #173f35; font-size: 17px; font-variant-numeric: tabular-nums; }
-.day-comparison-summary small { margin-top: 3px; font-size: 12px; }
-.day-comparison-summary label { display: grid; gap: 6px; }
-.day-comparison-summary [data-slot="native-select-wrapper"] { width: 100%; background: #f8faf8; }
 .chart-view-controls { display: flex; gap: 20px; flex-wrap: wrap; }
 .chart-view-controls label { display: flex; align-items: center; gap: 9px; min-height: 40px; font-size: 14px; cursor: pointer; }
 .chart-view-controls
@@ -73,8 +64,6 @@
 @media (max-width: 760px) {
   .market-summary { grid-template-columns: 1fr 1fr; }
   .date-shortcuts { justify-content: flex-start; }
-  .day-comparison-summary { grid-template-columns: 1fr 1fr; }
-  .day-comparison-summary > label { grid-column: 1 / -1; border-left: 0; border-top: 1px solid #d8e1dc; }
   .market-alert-layout { grid-template-columns: 1fr; }
   .market-alerts { grid-template-columns: 1fr 1fr; padding-top: 0; }
   .market-alerts-heading { grid-column: 1 / -1; }
@@ -84,9 +73,6 @@
   .market-summary article + article { border-left: 0; border-top: 1px solid #d8e1dc; }
   .market-summary article { padding: 16px 18px; }
   .date-shortcuts button { min-height: 44px; }
-  .day-comparison-summary { grid-template-columns: 1fr; }
-  .day-comparison-summary > * + * { border-left: 0; border-top: 1px solid #d8e1dc; }
-  .day-comparison-summary > label { grid-column: auto; }
   .market-alerts { grid-template-columns: 1fr; }
 }
 
@@ -396,38 +382,22 @@ footer svg { width: 13px; }
 .operation-callout span { display: grid; color: #5d736b; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
 .operation-callout strong { margin-top: 3px; color: #173f35; font-size: 13px; letter-spacing: 0; text-transform: none; }
 .chart-wrap { height: 430px; margin: 4px 0 0; }
-.market-signals { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; margin-top: 6px; }
-.market-signals > span { min-width: 0; padding: 9px 11px; border: 1px solid #e0e7e3; border-radius: 10px; background: #f8faf9; }
-.market-signals small, .market-signals strong { display: block; }
-.market-signals small { color: #52685e; font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
-.market-signals strong { margin-top: 3px; overflow: hidden; color: #24483e; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 .chart-caption { margin: 2px 6px 0; color: #52685e; font-size: 11px; line-height: 1.5; }
 .chart-empty { height: 370px; display: grid; place-items: center; color: #52685e; font-size: 13px; }
 .chart-empty + .chart-wrap { display: none; }
-
-.forecast-rail { order: 0; display: grid; grid-template-columns: 150px minmax(360px,1.1fr) minmax(285px,.7fr) 205px; align-items: stretch; padding: 0; overflow: hidden; border-radius: 17px; }
+.forecast-rail { order: 0; display: grid; grid-template-columns: 190px minmax(0, 1fr) 230px; align-items: stretch; padding: 0; overflow: hidden; border-radius: 17px; }
+.rail-comparison { display: grid; grid-template-columns: minmax(0, 1fr) minmax(200px, .9fr); align-items: center; gap: 18px; min-width: 0; padding: 15px 18px; border-right: 1px solid #e3e9e6; }
+.rail-comparison > div { min-width: 0; }
+.rail-comparison span, .rail-comparison label { color: #52685e; font-size: 12.5px; }
+.rail-comparison strong, .rail-comparison small { display: block; }
+.rail-comparison strong { margin-top: 5px; color: #173f35; font-size: 19px; font-variant-numeric: tabular-nums; }
+.rail-comparison small { margin-top: 3px; font-size: 11.5px; }
+.rail-comparison label { display: grid; gap: 6px; }
+.rail-comparison [data-slot="native-select-wrapper"] { width: 100%; background: #f8faf8; }
 .rail-heading { position: relative; display: grid; align-content: center; padding: 17px 19px; border-right: 1px solid #e3e9e6; }
 .rail-heading > span { position: absolute; right: 0; bottom: 17px; color: #52685e; font-size: 11px; }
 .rail-heading > span { position: static; margin-top: 7px; }
 .rail-heading h3 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.price-comparison { min-width: 0; display: grid; grid-template-columns: minmax(0,1fr) minmax(130px,.72fr) minmax(0,1fr); align-items: stretch; border-right: 1px solid #e3e9e6; }
-.comparison-price, .comparison-delta { min-width: 0; display: grid; align-content: center; padding: 16px 17px; }
-.comparison-price > span, .comparison-delta > span { color: #52685e; font-size: 11px; font-weight: 750; letter-spacing: .075em; text-transform: uppercase; }
-.comparison-price strong { margin: 8px 0 4px; font-size: clamp(17px,1.65vw,25px); line-height: 1; letter-spacing: -.045em; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.comparison-price small, .comparison-delta small { color: #52685e; font-size: 11px; line-height: 1.35; }
-.comparison-price.predicted { background: #edf8f4; }
-.comparison-price.predicted strong { color: #237a66; }
-.comparison-price.actual strong { color: #142e28; }
-.comparison-delta { justify-items: center; text-align: center; border-inline: 1px solid #e0e7e3; background: #f7f9f8; }
-.comparison-delta strong { margin: 8px 0 4px; padding: 6px 9px; border-radius: 99px; font-size: 13px; line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.comparison-delta.neutral strong { background: #edf1ef; color: #52685e; }
-.comparison-delta.pending strong { background: #edf1ef; color: #5b6662; }
-.kpi-stack { min-width: 0; display: grid; grid-template-columns: repeat(3,minmax(90px,1fr)); gap: 0; margin: 0; }
-.kpi-stack .metric-card { min-width: 0; min-height: 112px; display: grid; align-content: center; padding: 14px 13px; border-width: 0 1px 0 0; border-radius: 0; box-shadow: none; }
-.kpi-stack .metric-icon { display: none; }
-.kpi-stack .metric-card p { min-height: 23px; margin-bottom: 7px; font-size: 11px; line-height: 1.35; }
-.kpi-stack .metric-card strong { font-size: clamp(14px,1.3vw,17px); line-height: 1.12; white-space: nowrap; }
-.kpi-stack .metric-card span { font-size: 11px; line-height: 1.35; }
 .rail-signal { margin-top: 14px; padding: 15px; border-radius: 14px; background: #173f35; color: #eef8f4; }
 .rail-signal > strong { font-size: 12px; }
 .rail-signal dl { margin: 10px 0 8px; }
@@ -554,6 +524,10 @@ footer svg { width: 13px; }
 .battery-audit[open] > summary::after { content: '−'; }
 .battery-audit > p { margin: 12px 18px; color: #65766f; font-size: 11px; line-height: 1.5; }
 .battery-audit .table-scroll { max-height: 440px; margin: 0 18px 14px; }
+.assumption-dump { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 8px 20px; margin: 12px 20px 0; }
+.assumption-dump > div { min-width: 0; padding-bottom: 7px; border-bottom: 1px solid #eef2f0; }
+.assumption-dump dt { color: #7d9a91; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 10.5px; }
+.assumption-dump dd { margin: 2px 0 0; font-size: 12px; overflow-wrap: anywhere; }
 
 .evaluation-section { margin-top: 54px; scroll-margin-top: 96px; }
 .evaluation-view .evaluation-section { margin-top: 26px; }
@@ -655,10 +629,9 @@ footer svg { width: 13px; }
 
 @media (max-width: 1080px) {
   .forecast-workspace, .evaluation-grid { grid-template-columns: 1fr; }
-  .forecast-rail { grid-template-columns: 160px minmax(0,1fr); }
+  .forecast-rail { grid-template-columns: 170px minmax(0,1fr); }
   .rail-heading { border-right: 1px solid #e3e9e6; }
-  .price-comparison { border-right: 0; }
-  .kpi-stack { grid-template-columns: repeat(3,1fr); margin: 0; }
+  .rail-comparison { border-right: 0; }
   .peak-panel { grid-column: 1 / -1; border-top: 1px solid #e3e9e6; }
   .battery-grid { grid-template-columns: 1fr; }
   .battery-kpis { grid-template-columns: repeat(2,1fr); }
@@ -677,14 +650,9 @@ footer svg { width: 13px; }
   .chart-wrap { height: 340px; margin-left: -12px; }
   .chart-legend { align-self: stretch; flex-wrap: wrap; row-gap: 4px; }
   .comparison-day-legend, .forecast-day-legend, .actual-legend { padding-inline: 0 7px; }
-  .market-signals { grid-template-columns: 1fr; }
   .forecast-rail { display: block; }
   .rail-heading { border-right: 0; border-bottom: 1px solid #e3e9e6; }
-  .kpi-stack { grid-template-columns: 1fr 1fr; margin: 0; }
-  .price-comparison { grid-template-columns: 1fr; border-right: 0; }
-  .comparison-price, .comparison-delta { min-height: 96px; }
-  .comparison-delta { justify-items: start; text-align: left; border-block: 1px solid #e0e7e3; border-inline: 0; }
-  .kpi-stack .metric-card { min-height: 106px; border-bottom: 1px solid #e3e9e6; }
+  .rail-comparison { grid-template-columns: 1fr; border-right: 0; border-bottom: 1px solid #e3e9e6; }
   .view-datebar { align-items: stretch; flex-direction: column; }
   .evaluation-kpis { grid-template-columns: 1fr; }
   .history-header { align-items: stretch; flex-direction: column; }
@@ -722,9 +690,6 @@ footer svg { width: 13px; }
   .soc-chart { height: 190px; margin-left: -14px; }
 }
 
-@media (max-width: 440px) {
-  .kpi-stack .metric-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
-}
 
 @media print {
   @page { size: A4 portrait; margin: 13mm 14mm 16mm; }
