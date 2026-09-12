@@ -1,10 +1,9 @@
 'use client';
 
-import { useState } from 'react';
 import { Battery, Info, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { batteryIssues, batterySummary, DEFAULT_BATTERY, type BatteryDraft } from '@/lib/battery-draft';
+import { batteryIssues, batterySummary, type BatteryDraft } from '@/lib/battery-draft';
 
 const number = (value: number, digits = 2) => value.toLocaleString('es-ES', { maximumFractionDigits: digits });
 const money = (value: number) => value.toLocaleString('es-ES', { maximumFractionDigits: 0 });
@@ -13,10 +12,8 @@ function NumberField({ label, value, unit, min, max, step, onChange }: { label: 
   return <label className="study-number-field"><span>{label}</span><div><Input type="number" value={Number.isFinite(value) ? value : ''} min={min} max={max} step={step} onChange={event => onChange(event.target.value === '' ? Number.NaN : Number(event.target.value))} /><small>{unit}</small></div></label>;
 }
 
-export function BatterySetup({ onBack, onConfirm }: { onBack: () => void; onConfirm: (draft: BatteryDraft) => void }) {
-  const [draft, setDraft] = useState<BatteryDraft>(DEFAULT_BATTERY);
-  const [ready, setReady] = useState(false);
-  const set = <K extends keyof BatteryDraft>(key: K, value: BatteryDraft[K]) => { setReady(false); setDraft(current => ({ ...current, [key]: value })); };
+export function BatterySetup({ draft, onChange, onBack, onConfirm }: { draft: BatteryDraft; onChange: (draft: BatteryDraft) => void; onBack: () => void; onConfirm: (draft: BatteryDraft) => void }) {
+  const set = <K extends keyof BatteryDraft>(key: K, value: BatteryDraft[K]) => onChange({ ...draft, [key]: value });
   const summary = batterySummary(draft), issues = batteryIssues(draft);
   return <section className="study-view" aria-labelledby="battery-setup-heading">
     <div className="study-heading"><div><p className="kicker">Estudio de instalación · paso 2 de 3</p><h2 id="battery-setup-heading">Define la batería</h2><p>Introduce los datos de la ficha técnica. La potencia se expresa en kW y el precio por MWh instalado.</p></div><Button variant="outline" onClick={onBack}>← Volver a las curvas</Button></div>
@@ -44,9 +41,6 @@ export function BatterySetup({ onBack, onConfirm }: { onBack: () => void; onConf
       </div>{draft.minimumPowerPct > 0 && <p className="study-notice">Un mínimo técnico mayor que cero convierte el cálculo en un problema entero mixto y puede multiplicar el tiempo de ejecución.</p>}</details>
     </article>
     {issues.length > 0 && <div className="study-notice" role="alert"><strong>Revisa la ficha:</strong><ul>{issues.map(issue => <li key={issue}>{issue}</li>)}</ul></div>}
-    {ready && <div className="study-upload-success" role="status">Configuración lista: {number(draft.powerKw, 0)} kW / {draft.durationH} h, {number(summary.capacityMwh)} MWh y {money(summary.totalCostEur)} € de inversión inicial.</div>}
-    <div className="study-upload-actions"><Button variant="outline" onClick={onBack}>Atrás</Button>{ready
-      ? <Button onClick={() => onConfirm(draft)}>Continuar al período →</Button>
-      : <Button disabled={issues.length > 0} onClick={() => setReady(true)}>Confirmar batería</Button>}</div>
+    <div className="study-upload-actions"><Button variant="outline" onClick={onBack}>Atrás</Button><Button disabled={issues.length > 0} onClick={() => onConfirm(draft)}>Continuar al período →</Button></div>
   </section>;
 }

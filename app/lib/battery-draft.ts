@@ -32,8 +32,8 @@ export function batteryIssues(value: BatteryDraft) {
   if (!Number.isFinite(value.capexEurMwh) || value.capexEurMwh < 20000 || value.capexEurMwh > 2000000) issues.push('El precio debe estar entre 20.000 y 2.000.000 €/MWh.');
   if (!Number.isFinite(value.efficiencyPct) || value.efficiencyPct < 70 || value.efficiencyPct > 99) issues.push('El rendimiento debe estar entre 70 % y 99 %.');
   if (!Number.isInteger(value.cycles) || value.cycles < 1000 || value.cycles > 15000) issues.push('Los ciclos de vida deben estar entre 1.000 y 15.000.');
-  if (value.socMinPct < 0 || value.socMinPct > 30 || value.socMaxPct < 70 || value.socMaxPct > 100 || value.socMinPct >= value.socMaxPct) issues.push('La ventana de carga útil no es válida.');
-  if (value.chargeMaxPct < 10 || value.chargeMaxPct > 100 || value.dischargeMaxPct < 10 || value.dischargeMaxPct > 100) issues.push('Los límites de carga y descarga deben estar entre 10 % y 100 %.');
-  if (value.minimumPowerPct < 0 || value.minimumPowerPct > 50) issues.push('El mínimo técnico debe estar entre 0 % y 50 %.');
+  if (!Number.isFinite(value.socMinPct) || !Number.isFinite(value.socMaxPct) || value.socMinPct < 0 || value.socMinPct > 30 || value.socMaxPct < 70 || value.socMaxPct > 100 || value.socMinPct >= value.socMaxPct) issues.push('La ventana de carga útil no es válida.');
+  if (!Number.isFinite(value.chargeMaxPct) || !Number.isFinite(value.dischargeMaxPct) || value.chargeMaxPct < 10 || value.chargeMaxPct > 100 || value.dischargeMaxPct < 10 || value.dischargeMaxPct > 100) issues.push('Los límites de carga y descarga deben estar entre 10 % y 100 %.');
+  if (!Number.isFinite(value.minimumPowerPct) || value.minimumPowerPct < 0 || value.minimumPowerPct > 50) issues.push('El mínimo técnico debe estar entre 0 % y 50 %.');
   return issues;
 }

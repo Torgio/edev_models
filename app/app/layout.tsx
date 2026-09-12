@@ -6,21 +6,27 @@ const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
 const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://pulso-energia-tfm.maguicervinio.chatgpt.site'),
+  metadataBase: new URL('https://pulsoenergetico.site'),
+  applicationName: 'Pulso Energía',
   title: 'Pulso Energía · Previsión eléctrica',
   description: 'Dashboard operativo de predicción del precio eléctrico español y rendimiento BESS.',
+  alternates: { canonical: '/' },
+  icons: { icon: '/favicon.svg' },
+  robots: { index: false, follow: false },
   openGraph: {
     title: 'Pulso Energía · Previsión eléctrica',
     description: 'Previsión eléctrica, comparación de modelos y plan operativo BESS. Acceso del equipo.',
     type: 'website',
     locale: 'es_ES',
-    images: [{ url: 'https://pulso-energia-tfm.maguicervinio.chatgpt.site/og.png', alt: 'Pulso Energía · Previsión eléctrica · Modelos · BESS' }],
+    url: '/',
+    siteName: 'Pulso Energía',
+    images: [{ url: '/og.png', alt: 'Pulso Energía · Previsión eléctrica · Modelos · BESS' }],
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Pulso Energía · Previsión eléctrica',
     description: 'Previsión eléctrica, comparación de modelos y plan operativo BESS. Acceso del equipo.',
-    images: ['https://pulso-energia-tfm.maguicervinio.chatgpt.site/og.png'],
+    images: ['/og.png'],
   },
 };
 

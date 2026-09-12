@@ -173,13 +173,24 @@ def curva(desde: date, hasta: date):
 def instalaciones(email: str = EMAIL_DEMO):
     with cursor() as cur:
         uid = _uid(cur, email)
-        cur.execute("SELECT code, name, annual_mwh FROM app_consump_inst "
-                    "WHERE user_id = %s ORDER BY code", (uid,))
-        con = [{"code": a, "nombre": b, "anual_mwh": float(c)} for a, b, c in cur.fetchall()]
-        cur.execute("SELECT code, name, technology, capacity_mwp FROM app_gen_inst "
-                    "WHERE user_id = %s ORDER BY code", (uid,))
-        gen = [{"code": a, "nombre": b, "tecnologia": c, "mwp": float(d)}
-               for a, b, c, d in cur.fetchall()]
+        cur.execute("SELECT count(*) = 3 FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = 'app_consump_inst' "
+                    "AND column_name IN ('date_from', 'date_to', 'n_hours')")
+        has_metadata = cur.fetchone()[0]
+        cur.execute(("SELECT code, name, annual_mwh, date_from, date_to, n_hours FROM app_consump_inst "
+                     "WHERE user_id = %s ORDER BY code") if has_metadata else
+                    ("SELECT code, name, annual_mwh, NULL, NULL, NULL FROM app_consump_inst "
+                     "WHERE user_id = %s ORDER BY code"), (uid,))
+        con = [{"code": a, "nombre": b, "anual_mwh": float(c),
+                "desde": str(d) if d else None, "hasta": str(e) if e else None,
+                "horas": f} for a, b, c, d, e, f in cur.fetchall()]
+        cur.execute(("SELECT code, name, technology, capacity_mwp, date_from, date_to, n_hours FROM app_gen_inst "
+                     "WHERE user_id = %s ORDER BY code") if has_metadata else
+                    ("SELECT code, name, technology, capacity_mwp, NULL, NULL, NULL FROM app_gen_inst "
+                     "WHERE user_id = %s ORDER BY code"), (uid,))
+        gen = [{"code": a, "nombre": b, "tecnologia": c, "mwp": float(d),
+                "desde": str(e) if e else None, "hasta": str(f) if f else None,
+                "horas": g} for a, b, c, d, e, f, g in cur.fetchall()]
         cur.execute("SELECT code, name, power_mw, duration_h FROM app_battery_model "
                     "WHERE user_id = %s ORDER BY code", (uid,))
         bat = [{"code": a, "nombre": b, "kw": float(c) * 1000, "horas": float(d)}
@@ -188,7 +199,7 @@ def instalaciones(email: str = EMAIL_DEMO):
 
 
 @router.get("/ejecuciones")
-def ejecuciones_web():
+def ejecuciones_web(email: str = EMAIL_DEMO):
     """Ejecuciones creadas por la pantalla web para el usuario fijo del servicio.
 
     No acepta correo ni prefijo desde el cliente: ambos quedan fijados en el servidor.
@@ -196,7 +207,7 @@ def ejecuciones_web():
     ruta en un catálogo de estudios ajenos.
     """
     with cursor() as cur:
-        cur.execute("SELECT user_id FROM app_user WHERE email = %s", (EMAIL_DEMO,))
+        cur.execute("SELECT user_id FROM app_user WHERE email = %s", (email,))
         found = cur.fetchone()
         if found is None:
             return {"runs": []}
@@ -375,7 +386,7 @@ def lanzar(e: Estudio):
     TAREAS[tarea] = {"estado": "corriendo", "progreso": 0.0, "paso": "arrancando",
                      "escenario": 0, "escenarios": e.escenarios,
                      "arrancada": datetime.now().isoformat(timespec="seconds"),
-                     "code": e.code}
+                     "code": e.code, "email": e.email}
     threading.Thread(target=_correr, args=(tarea, e), daemon=True).start()
     return {"tarea": tarea, "estado": "corriendo"}
 
@@ -386,16 +397,20 @@ def mirar(tarea: str):
     if t is None:
         raise HTTPException(404, "Esa tarea no existe, o el servidor se ha reiniciado.")
     fuera = {k: v for k, v in t.items() if not k.startswith("_")}
+    fuera.pop("email", None)
     if t["estado"] == "hecho" and t.get("run_id"):
-        fuera["resultado"] = resultado(t["run_id"])
+        fuera["resultado"] = resultado(t["run_id"], t.get("email", EMAIL_DEMO))
     return fuera
 
 
 @router.get("/resultado/{run_id}")
-def resultado(run_id: int):
+def resultado(run_id: int, email: str = EMAIL_DEMO):
     """La tarjeta y la tabla por año. Es lo que pinta la pantalla 3."""
     with cursor() as cur:
-        cur.execute("SELECT * FROM app_case_run WHERE run_id = %s", (run_id,))
+        cur.execute("""SELECT r.* FROM app_case_run r
+                       JOIN app_study_case c ON c.case_id = r.case_id
+                       JOIN app_user u ON u.user_id = c.user_id
+                       WHERE r.run_id = %s AND u.email = %s""", (run_id, email))
         f = cur.fetchone()
         if f is None:
             raise HTTPException(404, f"No hay resultado {run_id}.")
@@ -422,7 +437,8 @@ def resultado(run_id: int):
 
 
 @router.get("/despacho/{run_id}")
-def despacho(run_id: int, desde: date, hasta: date, escenario: int | None = None):
+def despacho(run_id: int, desde: date, hasta: date, escenario: int | None = None,
+             email: str = EMAIL_DEMO):
     """El despacho hora a hora. SIEMPRE por tramo: son medio millon de filas por estudio.
 
     Sin `escenario` se coge el primero que haya guardado -- no es el 0, que solo existe
@@ -432,8 +448,11 @@ def despacho(run_id: int, desde: date, hasta: date, escenario: int | None = None
         raise HTTPException(400, "Como mucho 62 dias por peticion.")
     with cursor() as cur:
         if escenario is None:
-            cur.execute("SELECT min(scenario) FROM app_case_dispatch WHERE run_id = %s",
-                        (run_id,))
+            cur.execute("""SELECT min(d.scenario) FROM app_case_dispatch d
+                           JOIN app_case_run r ON r.run_id = d.run_id
+                           JOIN app_study_case c ON c.case_id = r.case_id
+                           JOIN app_user u ON u.user_id = c.user_id
+                           WHERE d.run_id = %s AND u.email = %s""", (run_id, email))
             f = cur.fetchone()
             escenario = f[0] if f and f[0] is not None else 0
         cur.execute("""
@@ -441,8 +460,12 @@ def despacho(run_id: int, desde: date, hasta: date, escenario: int | None = None
                    grid_import_mwh, grid_export_mwh, load_mwh, generation_mwh
             FROM app_case_dispatch
             WHERE run_id = %s AND scenario = %s
+              AND run_id IN (SELECT r.run_id FROM app_case_run r
+                             JOIN app_study_case c ON c.case_id = r.case_id
+                             JOIN app_user u ON u.user_id = c.user_id
+                             WHERE u.email = %s)
               AND datetime >= %s AND datetime < %s + interval '1 day'
-            ORDER BY datetime""", (run_id, escenario, desde, hasta))
+            ORDER BY datetime""", (run_id, escenario, email, desde, hasta))
         filas = cur.fetchall()
     if not filas:
         raise HTTPException(404, f"Sin despacho guardado para {desde} → {hasta}.")

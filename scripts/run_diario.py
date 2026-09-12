@@ -74,11 +74,9 @@ MATRIZ = ORO / "matriz_produccion"
 TZ = "Europe/Madrid"
 CIERRE = 12                      # hora de Madrid a la que casa OMIE
 
-from evaluar_modelos import POTENCIA_MW, CAPACIDAD_MWH, EFICIENCIA, HORAS  # noqa: E402
-
-SIMULADOR = {"potencia_mw": POTENCIA_MW, "capacidad_mwh": CAPACIDAD_MWH,
-             "eficiencia": EFICIENCIA, "ciclos_dia": 1, "horizonte": "D+1",
-             "regla": "carga en las HORAS mas baratas predichas, descarga en las mas caras"}
+from evaluar_modelos import POTENCIA_MW, CAPACIDAD_MWH, EFICIENCIA  # noqa: E402
+from bess_evaluation import SIMULADOR, optimizar, valorar
+from tiempo_mercado import dia_completo, periodos_dia, cierre_prediccion
 
 # Columnas que pueden venir vacias en la fila de manana sin que eso sea un fallo.
 # `target_price` es el precio de D+1: no existe todavia, es justo lo que se predice.
@@ -281,11 +279,15 @@ def campeon(con, objetivo: date | None = None) -> str | None:
                  WHERE model = %s AND source = 'production'
                    AND (datetime AT TIME ZONE 'Europe/Madrid')::date = %s""",
                         (cand, objetivo))
-            if cur.fetchone()[0] >= 23:
+            if cur.fetchone()[0] == len(periodos_dia(objetivo)):
                 if cand != "ensemble11":
                     _log("5 bateria", f"sin campeon declarado y sin `ensemble11`: se usa {cand}")
                 return cand
     return None
+
+
+def _ahora():
+    return pd.Timestamp.now(tz=TZ)
 
 
 def planificar(con, objetivo: date, modelo: str) -> int:
@@ -304,28 +306,26 @@ def planificar(con, objetivo: date, modelo: str) -> int:
                AND (datetime AT TIME ZONE 'Europe/Madrid')::date = %s
              ORDER BY datetime""", (modelo, objetivo))
         filas = cur.fetchall()
-    if len(filas) < 23:
-        _log("5 bateria", f"no hay prediccion completa de {modelo} para {objetivo} "
-                          f"({len(filas)} horas): no se planifica")
+    if not dia_completo([x[0] for x in filas]):
+        _log("5 bateria", f"{modelo}: cobertura incompleta o duplicada de {objetivo}; no se planifica")
+        return 0
+    # Un plan rehecho despues del corte no es una decision tomada antes del mercado.
+    if _ahora() >= cierre_prediccion(objetivo):
+        _log("5 bateria", "corte D-1 12:00 superado; no se sobrescribe el plan operativo")
         return 0
 
     p = np.array([float(x[1]) for x in filas])
-    orden = p.argsort()
-    carga, descarga = set(orden[:HORAS].tolist()), set(orden[-HORAS:].tolist())
+    dispatch = optimizar(p)
+    income = valorar(dispatch, p)
+    plan = [(ts, modelo, float(dispatch["carga"][i]), float(dispatch["descarga"][i]),
+             float(dispatch["soc"][i]), float(income[i]), json.dumps(SIMULADOR))
+            for i, (ts, _) in enumerate(filas)]
+    carga = np.flatnonzero(dispatch["carga"] > 1e-6)
+    descarga = np.flatnonzero(dispatch["descarga"] > 1e-6)
 
-    soc, plan = 0.0, []
-    for i, (ts, _) in enumerate(filas):
-        c = POTENCIA_MW if i in carga else 0.0
-        dsc = POTENCIA_MW if i in descarga else 0.0
-        soc += c - dsc
-        # El ingreso esperado paga la carga a precio predicho y cobra la descarga con la
-        # eficiencia aplicada, igual que `arbitraje()` en evaluar_modelos: un solo
-        # simulador para el backtest y para produccion, o las capturas no se comparan.
-        # float() no es decorativo: `p` es un np.array, asi que `p[i]` es np.float64 y
-        # psycopg2 no sabe adaptarlo -- lo interpola con su repr, que en NumPy 2 pasó a
-        # ser "np.float64(0.0)", y Postgres se pone a buscar un esquema llamado `np`.
-        plan.append((ts, modelo, float(c), float(dsc), float(soc),
-                     float(EFICIENCIA * dsc * p[i] - c * p[i]), json.dumps(SIMULADOR)))
+    if _ahora() >= cierre_prediccion(objetivo):
+        _log("5 bateria", "el optimizador termino despues del corte; no se guarda el plan")
+        return 0
 
     with con.cursor() as cur:
         cur.executemany("""
@@ -368,7 +368,7 @@ def main():
     ahora = pd.Timestamp.now(tz=TZ)
     print(f"\n  pasada del {hoy}  ->  se predice {objetivo}")
     print(f"  bateria {POTENCIA_MW:g} MW / {CAPACIDAD_MWH:g} MWh · "
-          f"rendimiento {EFICIENCIA:.0%} · 1 ciclo/dia\n")
+          f"rendimiento {EFICIENCIA:.0%} · hasta 1 ciclo equivalente/dia\n")
     if not a.dia and ahora.hour >= CIERRE:
         print(f"  AVISO: son las {ahora:%H:%M} y la casacion de {objetivo} cerro a las "
               f"{CIERRE}:00.")

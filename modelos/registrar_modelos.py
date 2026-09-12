@@ -9,8 +9,8 @@ De donde sale cada cosa:
 Usa `model` y `seed`, los mismos nombres que la tabla `predictions` del equipo,
 para que el JOIN sea directo. seed = -1 significa "sin semilla" (ensemble, baselines).
 
-Los supuestos del simulador de arbitraje se importan de evaluar_modelos.py y se
-guardan JUNTO a cada numero de captura. Es la leccion del 30 de agosto: la captura
+Los CSV nuevos contienen los supuestos del simulador que produjo las cifras.
+Los CSV sin metadatos conservan la definicion historica; nunca se etiquetan como v2. Es la leccion del 30 de agosto: la captura
 no es una metrica unica, asi que el numero viaja con su definicion.
 
 Idempotente: vuelve a ejecutarse sin duplicar (upsert por clave primaria).
@@ -133,7 +133,8 @@ def metricas() -> list[dict]:
                 eur_dia=r.get("eur_dia"), pico_1h_pct=r.get("pico_1h_%"),
                 skill_vs_naive=r.get("skill_%"),
                 cobertura_ic80=r.get("cobertura_IC80_%"),
-                simulador=json.dumps(SIMULADOR)))
+                simulador=json.dumps(json.loads(r["simulador"])
+                                     if pd.notna(r.get("simulador")) else SIMULADOR)))
     return filas
 
 

@@ -169,7 +169,7 @@ export function AsistenteWidget({ onSessionExpired }: { onSessionExpired?: () =>
       }
       if (!r.ok) {
         const detalle = await r.json().catch(() => null);
-        actualizarError(indice, detalle?.detail ?? `El asistente no pudo responder (error ${r.status}).`);
+        actualizarError(indice, detalle && typeof detalle === 'object' && 'detail' in detalle && typeof detalle.detail === 'string' ? detalle.detail : `El asistente no pudo responder (error ${r.status}).`);
         return;
       }
 
