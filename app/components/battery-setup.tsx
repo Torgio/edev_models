@@ -1,18 +1,15 @@
 'use client';
 
-import { useId } from 'react';
 import { Battery, Info, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { batteryIssues, batterySummary, type BatteryDraft } from '@/lib/battery-draft';
 
-const number = (value: number, digits = 2) => Number.isFinite(value) ? value.toLocaleString('es-ES', { maximumFractionDigits: digits }) : '—';
-const money = (value: number) => number(value, 0);
+const number = (value: number, digits = 2) => value.toLocaleString('es-ES', { maximumFractionDigits: digits });
+const money = (value: number) => value.toLocaleString('es-ES', { maximumFractionDigits: 0 });
 
 function NumberField({ label, value, unit, min, max, step, onChange }: { label: string; value: number; unit: string; min: number; max: number; step: number; onChange: (value: number) => void }) {
-  const id = useId();
-  const error = !Number.isFinite(value) ? 'Introduce un valor.' : value < min || value > max ? `Debe estar entre ${number(min)} y ${number(max)} ${unit}.` : unit === 'ciclos' && !Number.isInteger(value) ? 'Introduce un número entero de ciclos.' : '';
-  return <label className="study-number-field"><span>{label}</span><div><Input aria-invalid={!!error} aria-describedby={error ? id : undefined} type="number" value={Number.isFinite(value) ? value : ''} min={min} max={max} step={step} onChange={event => onChange(event.target.value === '' ? Number.NaN : Number(event.target.value))} /><small>{unit}</small></div>{error && <span id={id} className="study-field-error">{error}</span>}</label>;
+  return <label className="study-number-field"><span>{label}</span><div><Input type="number" value={Number.isFinite(value) ? value : ''} min={min} max={max} step={step} onChange={event => onChange(event.target.value === '' ? Number.NaN : Number(event.target.value))} /><small>{unit}</small></div></label>;
 }
 
 export function BatterySetup({ draft, onChange, onBack, onConfirm }: { draft: BatteryDraft; onChange: (draft: BatteryDraft) => void; onBack: () => void; onConfirm: (draft: BatteryDraft) => void }) {
@@ -23,13 +20,13 @@ export function BatterySetup({ draft, onChange, onBack, onConfirm }: { draft: Ba
     <article className="study-card study-battery-form">
       <div className="study-battery-basics">
         <NumberField label="Potencia" value={draft.powerKw} unit="kW" min={5} max={100000} step={5} onChange={value => set('powerKw', value)} />
-        <fieldset className="study-duration"><legend>Duración</legend><div>{[1, 2, 3, 4, 6, 8].map(hours => <Button type="button" key={hours} aria-pressed={draft.durationH === hours} variant={draft.durationH === hours ? 'default' : 'outline'} onClick={() => set('durationH', hours)}>{hours} h</Button>)}</div></fieldset>
+        <fieldset className="study-duration"><legend>Duración</legend><div>{[1, 2, 3, 4, 6, 8].map(hours => <Button type="button" key={hours} variant={draft.durationH === hours ? 'default' : 'outline'} onClick={() => set('durationH', hours)}>{hours} h</Button>)}</div></fieldset>
         <NumberField label="Precio de la batería" value={draft.capexEurMwh} unit="€/MWh" min={20000} max={2000000} step={10000} onChange={value => set('capexEurMwh', value)} />
       </div>
-      <div className="study-battery-summary" aria-live="polite"><div className="study-battery-summary-title"><Battery aria-hidden="true" /><span>Tu configuración</span></div><dl>
+      <div className="study-battery-summary"><div className="study-battery-summary-title"><Battery aria-hidden="true" /><span>Con estos datos</span></div><dl>
         <div><dt>Capacidad instalada</dt><dd>{number(summary.capacityMwh)} <small>MWh</small></dd></div>
         <div><dt>Energía útil</dt><dd>{number(summary.usableMwh)} <small>MWh</small></dd></div>
-        <div><dt>Inversión inicial</dt><dd>{money(summary.totalCostEur)} <small>€</small></dd></div>
+        <div><dt>Coste total</dt><dd>{money(summary.totalCostEur)} <small>€</small></dd></div>
         <div><dt>Coste teórico de ciclo</dt><dd>{summary.cycleCostEurMwh == null ? '—' : number(summary.cycleCostEurMwh, 1)} <small>€/MWh</small></dd></div>
       </dl></div>
       <p className="study-battery-note"><Info aria-hidden="true" /><span><strong>El precio no es el coste total.</strong> Se multiplica por la capacidad instalada: {number(summary.capacityMwh)} MWh × {money(draft.capexEurMwh)} €/MWh.</span></p>
@@ -41,9 +38,9 @@ export function BatterySetup({ draft, onChange, onBack, onConfirm }: { draft: Ba
         <NumberField label="Carga máxima" value={draft.chargeMaxPct} unit="% nominal" min={10} max={100} step={5} onChange={value => set('chargeMaxPct', value)} />
         <NumberField label="Descarga máxima" value={draft.dischargeMaxPct} unit="% nominal" min={10} max={100} step={5} onChange={value => set('dischargeMaxPct', value)} />
         <NumberField label="Mínimo técnico" value={draft.minimumPowerPct} unit="% nominal" min={0} max={50} step={5} onChange={value => set('minimumPowerPct', value)} />
-      </div>{draft.minimumPowerPct > 0 && <p className="study-notice">Un mínimo técnico mayor que cero puede aumentar el tiempo de cálculo.</p>}</details>
+      </div>{draft.minimumPowerPct > 0 && <p className="study-notice">Un mínimo técnico mayor que cero convierte el cálculo en un problema entero mixto y puede multiplicar el tiempo de ejecución.</p>}</details>
     </article>
-    {issues.length > 0 && <p className="study-field-error" role="status">Revisa los campos indicados antes de continuar.</p>}
-    <div className="study-upload-actions"><Button variant="outline" onClick={onBack}>Atrás</Button><Button disabled={issues.length > 0} onClick={() => onConfirm(draft)}>Continuar a revisión →</Button></div>
+    {issues.length > 0 && <div className="study-notice" role="alert"><strong>Revisa la ficha:</strong><ul>{issues.map(issue => <li key={issue}>{issue}</li>)}</ul></div>}
+    <div className="study-upload-actions"><Button variant="outline" onClick={onBack}>Atrás</Button><Button disabled={issues.length > 0} onClick={() => onConfirm(draft)}>Continuar al período →</Button></div>
   </section>;
 }

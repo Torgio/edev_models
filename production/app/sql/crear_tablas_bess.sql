@@ -134,6 +134,9 @@ CREATE TABLE IF NOT EXISTS app_consump_inst (
     code                TEXT NOT NULL,
     name                TEXT NOT NULL,
     annual_mwh          REAL NOT NULL,
+    date_from           DATE,
+    date_to             DATE,
+    n_hours             INTEGER,
     growth_pct          REAL NOT NULL DEFAULT 1.0,   -- crecimiento anual del consumo
     -- LA DIFERENCIA ENTRE ESTOS DOS ES EL NEGOCIO DEL AUTOCONSUMO. Con recargo 0 y
     -- compensacion al 100 %, importar y exportar cuestan lo mismo, la instalacion es neutra
@@ -157,12 +160,24 @@ CREATE TABLE IF NOT EXISTS app_gen_inst (
     technology          TEXT NOT NULL DEFAULT 'fv'
                         CHECK (technology IN ('fv', 'eolica', 'otra')),
     capacity_mwp        REAL NOT NULL,
+    date_from           DATE,
+    date_to             DATE,
+    n_hours             INTEGER,
     degradation_pct     REAL NOT NULL DEFAULT 0.5,   -- perdida anual de rendimiento
     export_limit_mw     REAL,                        -- tope de vertido a red, si lo hay
     source_file         TEXT,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT gen_code_unico UNIQUE (user_id, code)
 );
+
+-- Metadatos del fichero original. Las formas se normalizan a 576 filas, pero la pantalla
+-- necesita conservar el rango real para distinguir la forma de un año del horizonte del estudio.
+ALTER TABLE app_consump_inst ADD COLUMN IF NOT EXISTS date_from DATE;
+ALTER TABLE app_consump_inst ADD COLUMN IF NOT EXISTS date_to DATE;
+ALTER TABLE app_consump_inst ADD COLUMN IF NOT EXISTS n_hours INTEGER;
+ALTER TABLE app_gen_inst ADD COLUMN IF NOT EXISTS date_from DATE;
+ALTER TABLE app_gen_inst ADD COLUMN IF NOT EXISTS date_to DATE;
+ALTER TABLE app_gen_inst ADD COLUMN IF NOT EXISTS n_hours INTEGER;
 
 
 -- la FORMA de cada curva, normalizada a media 1 --------------------------------------

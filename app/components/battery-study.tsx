@@ -50,6 +50,9 @@ function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; prefe
   const [dispatch, setDispatch] = useState<StudyDispatch | null>(null);
   const [dispatchError, setDispatchError] = useState('');
   const [dispatchLoading, setDispatchLoading] = useState(false);
+  const inputs = result ? studyInputs(result) : null;
+  const periodFrom = inputs?.period.date_from ?? '';
+  const periodTo = inputs?.period.date_to ?? '';
 
   useEffect(() => {
     const controller = new AbortController();
@@ -86,26 +89,22 @@ function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; prefe
     if (!result || result.run.run_id !== runId || !start || !/^\d{4}-\d{2}-\d{2}$/.test(start)) return;
     const controller = new AbortController();
     setDispatch(null); setDispatchError(''); setDispatchLoading(true);
-    const query = new URLSearchParams({ desde: start, hasta: nominalDayOffset(start, span - 1) });
+    const requestedEnd = nominalDayOffset(start, span - 1);
+    const query = new URLSearchParams({ desde: start, hasta: periodTo && requestedEnd > periodTo ? periodTo : requestedEnd });
     read<StudyDispatch>(`despacho/${runId}?${query}`, controller.signal).then(data => {
       if (controller.signal.aborted) return;
       studyPoints(data); // Validate array alignment before allowing any graph to render.
       setDispatch(data); setDispatchLoading(false);
     }).catch(e => { if (!controller.signal.aborted) { setDispatchError(e.message); setDispatchLoading(false); } });
     return () => controller.abort();
-  }, [result, runId, start, span, reload]);
+  }, [periodTo, result, runId, start, span, reload]);
 
   const points = dispatch ? studyPoints(dispatch) : [];
   const run = result?.run;
-  const inputs = result ? studyInputs(result) : null;
-  const capacity = inputs?.battery.capacity_mwh;
-  const unitCost = inputs?.battery.capex_eur_mwh;
-  const investment = typeof capacity === 'number' && Number.isFinite(capacity) && capacity >= 0
-    && typeof unitCost === 'number' && Number.isFinite(unitCost) && unitCost >= 0 ? capacity * unitCost : null;
   const annual = [...result?.anual ?? []].sort((a, b) => a.ano - b.ano);
   return <section className="study-view" aria-labelledby="study-heading">
     <div className="study-heading">
-      <div><p className="kicker">Estudio de instalación · prueba local</p><h2 id="study-heading">Resultados del estudio</h2>
+      <div><p className="kicker">Estudio de instalación · prueba local</p><h2 id="study-heading">Una batería, a lo largo del tiempo</h2>
         <p>Consulta una ejecución guardada y explora su operación horaria.</p></div>
       <div className="study-controls">
         <Button onClick={onNew}>Nuevo estudio</Button>
@@ -116,25 +115,48 @@ function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; prefe
       </div>
     </div>
     {error ? <div className="study-notice" role="alert">{error}</div> : loading ? <div className="study-empty" role="status">Consultando el estudio guardado…</div> : run && <>
-      <article className="study-conclusion" aria-labelledby="study-conclusion-heading">
-        <div className="study-conclusion-meta"><span>Estudio {run.run_id} · {inputs?.case.name || `Caso ${run.case_id}`}</span><span>Ejecutado {dateText(run.run_at)}</span></div>
-        <h3 id="study-conclusion-heading">{run.days_simulated === 0 ? 'Validación histórica de la operación' : run.days_simulated == null ? 'Horizonte del estudio sin confirmar' : 'Resultado económico pendiente de revisión'}</h3>
-        <p>{run.days_simulated === 0
-          ? 'Este estudio permite revisar cómo operó la batería en el período histórico. El VAN y sus escenarios no aplican sin un horizonte simulado.'
-          : run.days_simulated == null
-            ? 'No se ha guardado la cobertura simulada. Los valores económicos se conservan como referencia y necesitan revisión antes de interpretarlos.'
-            : 'Los resultados económicos están guardados, pero el tratamiento del desgaste junto con la inversión inicial sigue pendiente de revisión.'}</p>
-        <div className="study-conclusion-period"><CalendarDays aria-hidden="true" /><span>{inputs ? `${nominalDateText(inputs.period.date_from)} — ${nominalDateText(inputs.period.date_to)}` : 'Fechas exactas no disponibles'} · {dayCount(run.days_historical)} días históricos · {dayCount(run.days_simulated)} días simulados</span></div>
-        {run.cycles_per_day === 0 && <p className="study-conclusion-operation"><strong>Uso diario registrado: 0 ciclos/día.</strong> Consulta el despacho horario para revisar la operación del período.</p>}
+      <article className="study-card study-context" aria-labelledby="study-context-heading">
+        <header className="study-context-header">
+          <div><h3 id="study-context-heading">{inputs?.case.name || 'Contexto del estudio'}</h3><p className="study-context-intro">{inputs?.case.code && `${inputs.case.code} · `}Ejecutado el {dateText(run.run_at)}</p></div>
+          <div className="study-context-ids"><span>Caso <strong>{run.case_id}</strong></span><span>Ejecución <strong>{run.run_id}</strong></span></div>
+        </header>
+        <div className="study-context-panels">
+          <section className="study-context-panel study-context-period" aria-labelledby="study-period-heading">
+            <div className="study-context-panel-title"><CalendarDays aria-hidden="true" /><h4 id="study-period-heading">Período evaluado</h4></div>
+            <dl className="study-context-counts">
+              <div><dd>{dayCount(run.days_historical)}</dd><dt>días históricos</dt></div>
+              <div><dd>{dayCount(run.days_simulated)}</dd><dt>días simulados</dt></div>
+            </dl>
+            <p className="study-context-years"><span>Años con resultados</span>{studyCoverage(annual)}</p>
+            <p className="study-context-note">{inputs ? `${nominalDateText(inputs.period.date_from)} — ${nominalDateText(inputs.period.date_to)} · período original` : 'Puede incluir años parciales. Fechas exactas no disponibles.'}</p>
+          </section>
+          <section className="study-context-panel" aria-labelledby="study-installation-heading">
+            <div className="study-context-panel-title"><Factory aria-hidden="true" /><h4 id="study-installation-heading">Instalación</h4></div>
+            <span className={inputs ? 'study-context-saved' : 'study-context-unavailable'}>{inputs ? 'Datos guardados al ejecutar' : 'Parámetros originales no disponibles'}</span>
+            {inputs && <p className="study-context-note">Consumo: {inputs.consumption?.name || (inputs.consumption === null ? 'No incluido' : 'Nombre no disponible')}<br />Generación: {inputs.generation?.name || (inputs.generation === null ? 'No incluida' : 'Nombre no disponible')}</p>}
+            <dl className="study-context-fields"><div><dt>Consumo anual</dt><dd>{inputs?.consumption === null ? 'No aplica' : <>{metric(inputs?.consumption?.annual_mwh)} <small>MWh/año</small></>}</dd></div><div><dt>{inputs?.generation && inputs.generation.technology !== 'fv' ? 'Potencia de generación' : 'Potencia solar'}</dt><dd>{inputs?.generation === null ? 'No aplica' : <>{metric(toKilo(inputs?.generation?.capacity_mwp))} <small>{inputs?.generation && inputs.generation.technology !== 'fv' ? 'kW' : 'kWp'}</small></>}</dd></div></dl>
+          </section>
+          <section className="study-context-panel" aria-labelledby="study-battery-heading">
+            <div className="study-context-panel-title"><Battery aria-hidden="true" /><h4 id="study-battery-heading">Batería</h4></div>
+            <span className={inputs ? 'study-context-saved' : 'study-context-unavailable'}>{inputs ? 'Datos guardados al ejecutar' : 'Parámetros originales no disponibles'}</span>
+            {inputs && <p className="study-context-note">{inputs.battery.name || inputs.battery.code} · {metric(inputs.battery.duration_h)} h</p>}
+            <dl className="study-context-fields"><div><dt>Potencia</dt><dd>{metric(toKilo(inputs?.battery.power_mw))} <small>kW</small></dd></div><div><dt>Capacidad</dt><dd>{metric(toKilo(inputs?.battery.capacity_mwh))} <small>kWh</small></dd></div></dl>
+          </section>
+        </div>
+        <p className="study-context-footnote"><Info aria-hidden="true" /><span>Solo se muestran datos de esta ejecución. Los parámetros ausentes no se sustituyen por la configuración actual ni se deducen de los gráficos.</span></p>
       </article>
+      {run.days_simulated === 0
+        ? <div className="study-notice"><strong>Validación operativa histórica; el VAN no aplica.</strong> Este estudio contiene {dayCount(run.days_historical)} días históricos y ningún día simulado. Sirve para comprobar el despacho, pero no para proyectar VAN, P10, P50 o P90.</div>
+        : <div className="study-notice"><strong>Resultado económico pendiente de revisión.</strong> El VAN se muestra tal como quedó guardado. Estamos revisando cómo se contabiliza el desgaste junto con la inversión inicial.</div>}
+      {run.cycles_per_day === 0 && <div className="study-zero-operation"><Info aria-hidden="true" /><span><strong>La solución óptima no utilizó la batería en este período.</strong> La carga y la descarga guardadas son cero; no es un dato pendiente ni una simulación del navegador.</span></div>}
       <div className="study-metrics">
-        <article><span>{run.days_simulated === 0 ? 'VAN no aplicable' : 'VAN mediano guardado'}</span><strong>{run.days_simulated === 0 ? 'No aplica' : metric(run.npv_p50, ' €')}</strong><small>{run.days_simulated === 0 ? 'Requiere un horizonte con días simulados.' : 'Valor actual neto · pendiente de revisión.'}</small></article>
-        <article><span>Inversión inicial de batería</span><strong>{metric(investment, ' €')}</strong><small>{investment !== null ? 'Calculada con la capacidad y el precio por MWh guardados.' : 'Capacidad o precio original no disponible.'}</small></article>
-        <article><span>Ahorro acumulado del período</span><strong>{metric(run.savings_vs_no_batt, ' €')}</strong><small>{run.savings_vs_no_batt == null ? 'Comparación sin batería no disponible.' : 'Comparación guardada frente a no tener batería; no es el VAN.'}</small></article>
+        <article><span>{run.days_simulated === 0 ? 'VAN no aplicable' : 'VAN mediano guardado'}</span><strong>{metric(run.npv_p50, ' €')}</strong><small>{run.days_simulated === 0 ? 'Requiere un horizonte con días simulados.' : <>P10 {metric(run.npv_p10, ' €')} · P90 {metric(run.npv_p90, ' €')}</>}</small></article>
+        <article><span>Escenarios con VAN positivo</span><strong>{metric(run.npv_positive_pct, ' %')}</strong><small>{run.days_simulated === 0 ? 'No aplica sin horizonte simulado.' : <>De {run.n_scenarios} escenarios evaluados; no es una garantía.</>}</small></article>
+        <article><span>Ahorro acumulado del período</span><strong>{metric(run.savings_vs_no_batt, ' €')}</strong><small>{run.savings_vs_no_batt == null ? 'Sin ahorro frente a una instalación sin batería guardado.' : 'Comparación guardada frente a no tener batería.'}</small></article>
         <article><span>Uso diario</span><strong>{metric(run.cycles_per_day)} <em>ciclos/día</em></strong><small>Vida estimada guardada: {metric(run.life_years, ' años')}</small></article>
       </div>
       <article className="study-card">
-        <div className="study-chart-heading"><div><h3>Valor económico por año · €</h3><p>Promedio guardado de los escenarios. Los años parciales conservan su cobertura.</p></div></div>
+        <div className="study-chart-heading"><div><h3>Valor económico por año</h3><p>Promedio guardado de los escenarios. Los años parciales conservan su cobertura.</p></div></div>
         {annual.length ? <div className="study-annual-chart"><ResponsiveContainer width="100%" height="100%" minWidth={0}>
           <BarChart data={annual} margin={{ top: 12, right: 16, left: 16, bottom: 8 }}>
             <CartesianGrid vertical={false} stroke="#e1e8e4" /><XAxis dataKey="ano" tickLine={false} />
@@ -147,7 +169,7 @@ function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; prefe
       </article>
       <article className="study-card">
         <div className="study-chart-heading"><div><h3>Consumo, generación y batería</h3><p>Potencia media horaria en kW. La carga y la descarga se muestran como valores positivos.</p></div>
-          <div className="study-controls"><label>Desde<Input type="date" value={start} onChange={e => setStart(e.target.value)} /></label>
+          <div className="study-controls"><label>Desde<Input type="date" min={periodFrom || undefined} max={periodTo || undefined} value={start} onChange={e => setStart(e.target.value)} /></label>
             <label>Tramo<NativeSelect value={span} onChange={e => setSpan(Number(e.target.value))}>
               <NativeSelectOption value={1}>Un día</NativeSelectOption><NativeSelectOption value={7}>Una semana</NativeSelectOption>
               <NativeSelectOption value={30}>30 días</NativeSelectOption>
@@ -180,40 +202,6 @@ function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; prefe
           <p className="study-series-note">h1–h24 son horas del calendario nominal del estudio. El precio pertenece a esta ejecución; no se sustituye por la curva publicada hoy.</p>
         </> : <div className="study-empty">No hay despacho guardado para este tramo.</div>}
       </article>
-      <details className="study-card study-context study-details"><summary>Parámetros de la instalación y de la batería</summary>
-        <header className="study-context-header">
-          <div><h3 id="study-context-heading">{inputs?.case.name || 'Contexto del estudio'}</h3><p className="study-context-intro">{inputs?.case.code && `${inputs.case.code} · `}Ejecutado el {dateText(run.run_at)}</p></div>
-          <div className="study-context-ids"><span>Caso <strong>{run.case_id}</strong></span><span>Ejecución <strong>{run.run_id}</strong></span></div>
-        </header>
-        <div className="study-context-panels">
-          <section className="study-context-panel study-context-period" aria-labelledby="study-period-heading">
-            <div className="study-context-panel-title"><CalendarDays aria-hidden="true" /><h4 id="study-period-heading">Período evaluado</h4></div>
-            <dl className="study-context-counts">
-              <div><dd>{dayCount(run.days_historical)}</dd><dt>días históricos</dt></div>
-              <div><dd>{dayCount(run.days_simulated)}</dd><dt>días simulados</dt></div>
-            </dl>
-            <p className="study-context-years"><span>Años con resultados</span>{studyCoverage(annual)}</p>
-            <p className="study-context-note">{inputs ? `${nominalDateText(inputs.period.date_from)} — ${nominalDateText(inputs.period.date_to)} · período original` : 'Puede incluir años parciales. Fechas exactas no disponibles.'}</p>
-          </section>
-          <section className="study-context-panel" aria-labelledby="study-installation-heading">
-            <div className="study-context-panel-title"><Factory aria-hidden="true" /><h4 id="study-installation-heading">Instalación</h4></div>
-            <span className={inputs ? 'study-context-saved' : 'study-context-unavailable'}>{inputs ? 'Datos guardados al ejecutar' : 'Parámetros originales no disponibles'}</span>
-            {inputs && <p className="study-context-note">Consumo: {inputs.consumption?.name || (inputs.consumption === null ? 'No incluido' : 'Nombre no disponible')}<br />Generación: {inputs.generation?.name || (inputs.generation === null ? 'No incluida' : 'Nombre no disponible')}</p>}
-            <dl className="study-context-fields"><div><dt>Consumo anual</dt><dd>{inputs?.consumption === null ? 'No aplica' : <>{metric(inputs?.consumption?.annual_mwh)} <small>MWh/año</small></>}</dd></div><div><dt>{inputs?.generation && inputs.generation.technology !== 'fv' ? 'Potencia de generación' : 'Potencia solar'}</dt><dd>{inputs?.generation === null ? 'No aplica' : <>{metric(toKilo(inputs?.generation?.capacity_mwp))} <small>{inputs?.generation && inputs.generation.technology !== 'fv' ? 'kW' : 'kWp'}</small></>}</dd></div></dl>
-          </section>
-          <section className="study-context-panel" aria-labelledby="study-battery-heading">
-            <div className="study-context-panel-title"><Battery aria-hidden="true" /><h4 id="study-battery-heading">Batería</h4></div>
-            <span className={inputs ? 'study-context-saved' : 'study-context-unavailable'}>{inputs ? 'Datos guardados al ejecutar' : 'Parámetros originales no disponibles'}</span>
-            {inputs && <p className="study-context-note">{inputs.battery.name || inputs.battery.code} · {metric(inputs.battery.duration_h)} h</p>}
-            <dl className="study-context-fields"><div><dt>Potencia</dt><dd>{metric(toKilo(inputs?.battery.power_mw))} <small>kW</small></dd></div><div><dt>Capacidad</dt><dd>{metric(toKilo(inputs?.battery.capacity_mwh))} <small>kWh</small></dd></div></dl>
-          </section>
-        </div>
-        <p className="study-context-footnote"><Info aria-hidden="true" /><span>Solo se muestran datos de esta ejecución. Los parámetros ausentes no se sustituyen por la configuración actual ni se deducen de los gráficos.</span></p>
-      </details>
-      <details className="study-card study-details"><summary>Escenarios y distribución económica</summary>
-        <p>{scenarioCount(run.n_scenarios)}. Los percentiles describen los escenarios guardados; no garantizan el resultado de la instalación.</p>
-        {run.days_simulated === 0 ? <p>Los indicadores de VAN no aplican a esta validación histórica.</p> : <><p><strong>P10:</strong> {metric(run.npv_p10, ' €')} · <strong>P50:</strong> {metric(run.npv_p50, ' €')} · <strong>P90:</strong> {metric(run.npv_p90, ' €')}</p><p><strong>Escenarios con VAN positivo:</strong> {metric(run.npv_positive_pct, ' %')}. Resultado económico pendiente de revisión.</p></>}
-      </details>
       <details className="study-card study-details"><summary>Procedencia y valores guardados</summary>
         <p>Estudio {run.run_id} · caso {run.case_id} · ejecutado {dateText(run.run_at)}.</p>
         <p>{run.curve_generated_at
@@ -223,7 +211,7 @@ function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; prefe
             : <>Curva futura: fecha no guardada · {scenarioCount(run.n_scenarios)}.</>}</p>
         {run.curve_matrix_hash && <p>Huella de matriz: <code>{run.curve_matrix_hash}</code></p>}
         {run.notes && <p>Notas guardadas: {run.notes}</p>}
-        <p>Los indicadores y el despacho se leen del estudio. En pantalla se convierten unidades, se formatean valores y se calcula la inversión de batería como capacidad × precio por MWh guardados. {inputs ? `Parámetros conservados el ${dateText(inputs.captured_at)} (versión ${inputs.schema_version}).` : 'Los parámetros originales de la instalación no están incluidos en esta respuesta.'}</p>
+        <p>Los indicadores y el despacho se leen del estudio. En pantalla solo se convierten unidades y se formatean valores. {inputs ? `Parámetros conservados el ${dateText(inputs.captured_at)} (versión ${inputs.schema_version}).` : 'Los parámetros originales de la instalación no están incluidos en esta respuesta.'}</p>
         <div className="table-scroll"><table><caption>Resultados anuales de la ejecución</caption><thead><tr>{['Año', 'Origen', 'Días', 'Valor medio €', 'P10 €', 'P50 €', 'P90 €'].map(h => <th scope="col" key={h}>{h}</th>)}</tr></thead>
           <tbody>{annual.map(row => <tr key={row.ano}><td>{row.ano}</td><td>{originText(row.origen)}</td><td>{row.dias}</td><td>{metric(row.margen)}</td><td>{metric(row.p10)}</td><td>{metric(row.p50)}</td><td>{metric(row.p90)}</td></tr>)}</tbody>
         </table></div>

@@ -112,23 +112,44 @@ def cargar_una(cur, uid, ruta: Path, es_consumo: bool, code: str, nombre: str,
 
     f = a_forma(s)
     if es_consumo:
-        cur.execute(
-            "INSERT INTO app_consump_inst (user_id, code, name, annual_mwh, source_file) "
-            "VALUES (%s,%s,%s,%s,%s) "
-            "ON CONFLICT (user_id, code) DO UPDATE SET annual_mwh = EXCLUDED.annual_mwh, "
-            "name = EXCLUDED.name, source_file = EXCLUDED.source_file "
-            "RETURNING consump_id",
-            (uid, code, nombre, r["anual_mwh"], str(ruta)))
+        cur.execute("SELECT count(*) = 3 FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = 'app_consump_inst' "
+                    "AND column_name IN ('date_from', 'date_to', 'n_hours')")
+        if cur.fetchone()[0]:
+            cur.execute(
+                "INSERT INTO app_consump_inst (user_id, code, name, annual_mwh, date_from, date_to, n_hours, source_file) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT (user_id, code) DO UPDATE SET annual_mwh = EXCLUDED.annual_mwh, "
+                "date_from = EXCLUDED.date_from, date_to = EXCLUDED.date_to, n_hours = EXCLUDED.n_hours, "
+                "name = EXCLUDED.name, source_file = EXCLUDED.source_file RETURNING consump_id",
+                (uid, code, nombre, r["anual_mwh"], r["desde"].date(), r["hasta"].date(), r["horas"], str(ruta)))
+        else:
+            cur.execute(
+                "INSERT INTO app_consump_inst (user_id, code, name, annual_mwh, source_file) "
+                "VALUES (%s,%s,%s,%s,%s) ON CONFLICT (user_id, code) DO UPDATE SET "
+                "annual_mwh = EXCLUDED.annual_mwh, name = EXCLUDED.name, source_file = EXCLUDED.source_file "
+                "RETURNING consump_id", (uid, code, nombre, r["anual_mwh"], str(ruta)))
         i = cur.fetchone()[0]
         n = guardar_forma(cur, "app_consump_shape", "consump_id", i, f)
     else:
         mwp = r["anual_mwh"] / RENDIMIENTO_FV
-        cur.execute(
-            "INSERT INTO app_gen_inst (user_id, code, name, technology, capacity_mwp, "
-            "source_file) VALUES (%s,%s,%s,%s,%s,%s) "
-            "ON CONFLICT (user_id, code) DO UPDATE SET capacity_mwp = EXCLUDED.capacity_mwp, "
-            "name = EXCLUDED.name, source_file = EXCLUDED.source_file RETURNING gen_id",
-            (uid, code, nombre, tecnologia, mwp, str(ruta)))
+        cur.execute("SELECT count(*) = 3 FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = 'app_gen_inst' "
+                    "AND column_name IN ('date_from', 'date_to', 'n_hours')")
+        if cur.fetchone()[0]:
+            cur.execute(
+                "INSERT INTO app_gen_inst (user_id, code, name, technology, capacity_mwp, "
+                "source_file, date_from, date_to, n_hours) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT (user_id, code) DO UPDATE SET capacity_mwp = EXCLUDED.capacity_mwp, "
+                "date_from = EXCLUDED.date_from, date_to = EXCLUDED.date_to, n_hours = EXCLUDED.n_hours, "
+                "name = EXCLUDED.name, source_file = EXCLUDED.source_file RETURNING gen_id",
+                (uid, code, nombre, tecnologia, mwp, str(ruta), r["desde"].date(), r["hasta"].date(), r["horas"]))
+        else:
+            cur.execute(
+                "INSERT INTO app_gen_inst (user_id, code, name, technology, capacity_mwp, source_file) "
+                "VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (user_id, code) DO UPDATE SET "
+                "capacity_mwp = EXCLUDED.capacity_mwp, name = EXCLUDED.name, source_file = EXCLUDED.source_file "
+                "RETURNING gen_id", (uid, code, nombre, tecnologia, mwp, str(ruta)))
         i = cur.fetchone()[0]
         n = guardar_forma(cur, "app_gen_shape", "gen_id", i, f)
         r["mwp"] = mwp

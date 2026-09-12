@@ -30,6 +30,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -155,6 +157,12 @@ def registrar(meta: dict, sims, idx, salida: Path = SALIDA, verbose=True) -> str
             print("  (sin psycopg2: la curva queda solo en disco)")
         return None
     _, db = load_config()
+    test_db = os.environ.get("TFM_TEST_DB_NAME")
+    if test_db:
+        if not re.fullmatch(r"[a-z][a-z0-9_]{0,47}_test", test_db):
+            raise ValueError("TFM_TEST_DB_NAME solo admite nombres terminados en _test.")
+        db = dict(db)
+        db["dbname"] = test_db
     con = psycopg2.connect(**db)
     try:
         with con.cursor() as cur:
@@ -227,7 +235,14 @@ def main():
     ap.add_argument("--info", action="store_true", help="solo leer lo publicado")
     ap.add_argument("--registrar", action="store_true",
                     help="ademas de escribir el .npy, deja constancia en app_curve")
+    ap.add_argument("--solo-registrar", action="store_true",
+                    help="registra el artefacto existente sin regenerar escenarios")
     a = ap.parse_args()
+
+    if a.solo_registrar:
+        sims, idx, meta = leer(Path(a.salida))
+        registrar(meta, sims, idx, Path(a.salida))
+        return
 
     if a.info:
         sims, idx, meta = leer(Path(a.salida))

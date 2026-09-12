@@ -11,7 +11,14 @@ const hour = new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', hour:
 const timestamp = new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 const planDate = new Intl.DateTimeFormat('es-ES', { timeZone: 'Europe/Madrid', weekday: 'long', day: 'numeric', month: 'long' });
 const signed = (value: number | null) => value == null ? '—' : `${value > 0 ? '+' : ''}${metric(value, ' €')}`;
-const label = (key: string) => ({ potencia_mw: 'Potencia', capacidad_mwh: 'Capacidad', eficiencia: 'Eficiencia', ciclos_dia: 'Ciclos/día', horizonte: 'Horizonte' }[key] ?? key.replaceAll('_', ' '));
+const label = (key: string) => ({ potencia_mw: 'Potencia', capacidad_mwh: 'Capacidad', eficiencia: 'Eficiencia', ciclos_dia: 'Ciclos/día', ciclos_max: 'Ciclos máx.', horizonte: 'Horizonte', version: 'Versión', paso_h: 'Paso' }[key] ?? key.replaceAll('_', ' '));
+
+/**
+ * Los supuestos que identifican la configuración para quien lee la tarjeta. El
+ * resto —hashes de muestra, marcas UTC, cohortes enteras— es trazabilidad, no
+ * descripción: va al desplegable de detalle, en bruto y sin interpretar.
+ */
+const CHIP_FIELDS = ['potencia_mw', 'capacidad_mwh', 'eficiencia', 'ciclos_dia', 'ciclos_max', 'horizonte', 'paso_h', 'version'] as const;
 const assumptionValue = (key: string, value: unknown) => {
   if (key === 'eficiencia' && numeric(value)) return `${metric(value * 100)} %`;
   if (key === 'potencia_mw' && numeric(value)) return `${metric(value)} MW`;
@@ -134,13 +141,16 @@ export function StoredBattery({ day, data, status }: { day: string; data: Batter
       </aside>
     </div>
 
-    {assumptions && <div className="assumption-chips" aria-label="Supuestos registrados">{Object.entries(assumptions).filter(([key]) => key !== 'regla').map(([key, value]) =>
-      <span key={key}><small>{label(key)}</small><strong>{assumptionValue(key, value)}</strong></span>)}</div>}
+    {assumptions && <div className="assumption-chips" aria-label="Supuestos registrados">{CHIP_FIELDS
+      .filter(key => assumptions[key] !== undefined && assumptions[key] !== null)
+      .map(key => <span key={key}><small>{label(key)}</small><strong>{assumptionValue(key, assumptions[key])}</strong></span>)}</div>}
 
     <p className="battery-scope-note"><strong>Alcance económico:</strong> arbitraje bruto en mercado diario. No incluye degradación, peajes, O&amp;M, mercado intradiario, servicios de balance ni mecanismos de capacidad.</p>
 
     <details className="battery-audit"><summary>Ver detalle horario y definición guardada</summary>
       {assumptions && <p><strong>Regla:</strong> {String(assumptions.regla ?? 'Sin registrar')}</p>}
+      {assumptions && <dl className="assumption-dump">{Object.entries(assumptions).filter(([key]) => key !== 'regla').map(([key, value]) =>
+        <div key={key}><dt>{key}</dt><dd>{typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)}</dd></div>)}</dl>}
       {plan.length > 0 && <div className="table-scroll"><Table>
         <TableHeader><TableRow>{['Hora', 'Carga MW', 'Descarga MW', 'SOC MWh', 'Ingreso €'].map(value => <TableHead key={value}>{value}</TableHead>)}</TableRow></TableHeader>
         <TableBody>{plan.map(row => <TableRow key={row.datetime}><TableCell>{hour.format(new Date(row.datetime))}</TableCell><TableCell>{metric(row.carga_mw)}</TableCell><TableCell>{metric(row.descarga_mw)}</TableCell><TableCell>{metric(row.soc_mwh)}</TableCell><TableCell>{signed(row.ingreso_eur)}</TableCell></TableRow>)}</TableBody>
