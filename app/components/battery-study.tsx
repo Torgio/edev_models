@@ -50,6 +50,9 @@ function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; prefe
   const [dispatch, setDispatch] = useState<StudyDispatch | null>(null);
   const [dispatchError, setDispatchError] = useState('');
   const [dispatchLoading, setDispatchLoading] = useState(false);
+  const inputs = result ? studyInputs(result) : null;
+  const periodFrom = inputs?.period.date_from ?? '';
+  const periodTo = inputs?.period.date_to ?? '';
 
   useEffect(() => {
     const controller = new AbortController();
@@ -86,18 +89,18 @@ function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; prefe
     if (!result || result.run.run_id !== runId || !start || !/^\d{4}-\d{2}-\d{2}$/.test(start)) return;
     const controller = new AbortController();
     setDispatch(null); setDispatchError(''); setDispatchLoading(true);
-    const query = new URLSearchParams({ desde: start, hasta: nominalDayOffset(start, span - 1) });
+    const requestedEnd = nominalDayOffset(start, span - 1);
+    const query = new URLSearchParams({ desde: start, hasta: periodTo && requestedEnd > periodTo ? periodTo : requestedEnd });
     read<StudyDispatch>(`despacho/${runId}?${query}`, controller.signal).then(data => {
       if (controller.signal.aborted) return;
       studyPoints(data); // Validate array alignment before allowing any graph to render.
       setDispatch(data); setDispatchLoading(false);
     }).catch(e => { if (!controller.signal.aborted) { setDispatchError(e.message); setDispatchLoading(false); } });
     return () => controller.abort();
-  }, [result, runId, start, span, reload]);
+  }, [periodTo, result, runId, start, span, reload]);
 
   const points = dispatch ? studyPoints(dispatch) : [];
   const run = result?.run;
-  const inputs = result ? studyInputs(result) : null;
   const annual = [...result?.anual ?? []].sort((a, b) => a.ano - b.ano);
   return <section className="study-view" aria-labelledby="study-heading">
     <div className="study-heading">
@@ -166,7 +169,7 @@ function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; prefe
       </article>
       <article className="study-card">
         <div className="study-chart-heading"><div><h3>Consumo, generación y batería</h3><p>Potencia media horaria en kW. La carga y la descarga se muestran como valores positivos.</p></div>
-          <div className="study-controls"><label>Desde<Input type="date" value={start} onChange={e => setStart(e.target.value)} /></label>
+          <div className="study-controls"><label>Desde<Input type="date" min={periodFrom || undefined} max={periodTo || undefined} value={start} onChange={e => setStart(e.target.value)} /></label>
             <label>Tramo<NativeSelect value={span} onChange={e => setSpan(Number(e.target.value))}>
               <NativeSelectOption value={1}>Un día</NativeSelectOption><NativeSelectOption value={7}>Una semana</NativeSelectOption>
               <NativeSelectOption value={30}>30 días</NativeSelectOption>

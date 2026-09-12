@@ -19,6 +19,7 @@ const orderLabels: Record<Order, string> = {
   mae: 'Error (€/MWh)',
   skill_vs_naive: 'Mejora (%)',
 };
+      
 const seed = (value: number) => value === -1 ? 'No aplica' : String(value);
 const bestBy = (rows: Evaluation[], key: 'captura_pct' | 'skill_vs_naive') =>
   rows.filter(row => numeric(row[key])).sort((a, b) => b[key]! - a[key]!)[0];
@@ -63,6 +64,7 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
   const selected = groups.some(([key]) => key === group) ? group : groups[0]?.[0] ?? '';
   const ranked = rankedEvaluations(rows, selected, order);
   const comparable = maxCoverageEvaluations(ranked);
+  const hidden = ranked.length - comparable.length;
   const rankingRows = maximumOnly ? comparable : ranked;
   const identity = (row: Evaluation) => `${row.model}:${row.seed}`;
   const slotRows = slots.map(key => ranked.find(row => identity(row) === key) ?? null);
@@ -114,7 +116,11 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
       </div>
 
       <p className="evaluation-coverage-note">Los destacados usan la mayor cobertura registrada del grupo ({comparable[0]?.n_obs?.toLocaleString('es-ES') ?? '—'} horas). Igual número de horas no confirma que sean las mismas fechas. {comparable.length < 2 ? 'No hay al menos dos evaluaciones con esa cobertura para establecer una comparación.' : 'En caso de empate se muestra una de las evaluaciones.'} {!context?.simulador && 'No hay supuestos registrados: la comparabilidad económica no está verificada.'}</p>
-      <label className="evaluation-coverage-toggle"><Checkbox checked={maximumOnly} onCheckedChange={setMaximumOnly} />Mostrar solo cobertura máxima en el gráfico y la clasificación</label>
+      <label className="evaluation-coverage-toggle">
+        <Checkbox checked={maximumOnly} onCheckedChange={setMaximumOnly} />
+          Comparar solo evaluaciones con la misma cobertura ({comparable[0]?.n_obs?.toLocaleString('es-ES') ?? '—'} horas)
+          {hidden > 0 && <small>{maximumOnly ? `Se ocultan ${hidden} ${hidden === 1 ? 'evaluación' : 'evaluaciones'} con menos horas. Siguen en la tabla inferior.` : `Se incluyen ${hidden} ${hidden === 1 ? 'evaluación' : 'evaluaciones'} con menos horas: las métricas no son directamente comparables.`}</small>}
+      </label>
       <div className="evaluation-grid">
         <article className="scatter-card">
           <div className="visual-heading"><div><p className="section-label">Una marca por modelo y semilla</p><h3>MAE frente a captura económica</h3></div><span>{scatter.length} evaluaciones con ambas métricas</span></div>

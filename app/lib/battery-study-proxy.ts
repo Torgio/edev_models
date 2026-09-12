@@ -34,12 +34,23 @@ async function boundedBody(request: Request) {
 
 /** Local, read-only bridge for explicitly selected team studies, pending per-user ownership. */
 export async function proxyBatteryStudy(request: Request, path: string, options: {
-  upstream: string; studyUpstream?: string; development: boolean; allowedRuns: string; fetcher?: typeof fetch;
+  upstream: string; studyUpstream?: string; development: boolean; enabled?: boolean; allowedRuns: string; fetcher?: typeof fetch;
 }) {
   const url = new URL(request.url);
-  if (!options.development || !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
+  const local = options.development && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if (!local && !options.enabled) {
     return reply('La consulta de estudios está disponible solo en la prueba local.', 404);
   }
+  let studyBase: URL;
+  try {
+    studyBase = new URL(options.studyUpstream || (local ? options.upstream : ''));
+    const localApi = local && ['localhost', '127.0.0.1', '[::1]'].includes(studyBase.hostname);
+    if (studyBase.username || studyBase.password || studyBase.search || studyBase.hash
+        || !(studyBase.protocol === 'https:' || (localApi && studyBase.protocol === 'http:'))
+        || (!local && studyBase.pathname.replace(/\/$/, '') !== '/api/bat-test')) throw new Error();
+    if (studyBase.pathname === '/') studyBase.pathname = '/api/bat/';
+    else studyBase.pathname = studyBase.pathname.replace(/\/$/, '') + '/';
+  } catch { return reply('La conexión con el entorno de pruebas no está configurada correctamente.', 503); }
   const upload = request.method === 'POST' && path === 'curvas';
   const launch = request.method === 'POST' && path === 'estudio';
   if (request.method !== 'GET' && !upload && !launch) return reply('Operación no permitida.', 405);
@@ -49,7 +60,7 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
   const match = /^(resultado|despacho)\/([1-9]\d*)$/.exec(path);
   const taskMatch = /^estudio\/([a-f0-9]{12})$/.exec(path);
   const allowedTask = taskMatch && launchedTasks.has(taskMatch[1]);
-  if (!upload && !launch && path !== 'opciones'
+  if (!upload && !launch && path !== 'opciones' && path !== 'instalaciones' && path !== 'estado'
       && (!match || !availableIds.includes(Number(match[2]))) && !allowedTask) {
     return reply('Este estudio no está habilitado para la prueba local.', 404);
   }
@@ -66,14 +77,18 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
       return reply('Elige un tramo de entre 1 y 31 días.', 400);
     }
   }
-  // Reuse Pulso's session verification and upstream validation. No client-supplied identity.
+  // La API BESS aislada también requiere la sesión del dashboard, incluso en
+  // desarrollo. Así la instancia local reproduce el mismo control de acceso
+  // que producción y no permite probar accidentalmente sin autenticación.
   const sessionUrl = new URL('/api/dashboard/session', url.origin);
   const sessionResponse = await proxyDashboardRequest(new Request(sessionUrl, {
     headers: request.headers,
-  }), 'session', { upstream: options.upstream, development: true, fetcher: options.fetcher });
+  }), 'session', { upstream: options.upstream, development: local, fetcher: options.fetcher });
   if (!sessionResponse.ok) return sessionResponse;
-  const session = await sessionResponse.json() as { authenticated?: boolean } | null;
+  const session = await sessionResponse.json() as { authenticated?: boolean; username?: string | null } | null;
   if (session?.authenticated !== true) return reply('Inicia sesión para consultar el estudio.', 401);
+  const sessionUser = typeof session.username === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(session.username)
+    ? session.username : null;
   let upstreamBody: BodyInit | undefined;
   if (upload) {
     if (request.headers.get('origin') !== url.origin) return reply('Origen no permitido.', 403);
@@ -93,6 +108,7 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
       if (generation && typeof generation !== 'string') uploadForm.set('generacion', generation, generation.name);
       uploadForm.set('code_consumo', 'WEB-CONSUMO');
       uploadForm.set('code_generacion', 'WEB-GENERACION');
+      if (sessionUser) uploadForm.set('email', sessionUser);
       uploadForm.set('unidad', 'auto'); uploadForm.set('tecnologia', 'fv'); uploadForm.set('forzar', 'false');
       upstreamBody = uploadForm;
     } catch (error) {
@@ -107,10 +123,14 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
       const raw: unknown = JSON.parse(new TextDecoder().decode(bytes));
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return reply('La configuración no es válida.', 400);
       const input = raw as Record<string, unknown>;
-      const allowed = ['powerKw', 'durationH', 'capexEurMwh', 'efficiencyPct', 'cycles', 'socMinPct', 'socMaxPct', 'chargeMaxPct', 'dischargeMaxPct', 'minimumPowerPct', 'generationIncluded', 'dateFrom', 'dateTo', 'scenarios', 'policy'];
+      const allowed = ['powerKw', 'durationH', 'capexEurMwh', 'efficiencyPct', 'cycles', 'socMinPct', 'socMaxPct', 'chargeMaxPct', 'dischargeMaxPct', 'minimumPowerPct', 'consumptionCode', 'generationCode', 'generationIncluded', 'dateFrom', 'dateTo', 'scenarios', 'policy'];
       if (Object.keys(input).some(key => !allowed.includes(key))) return reply('La configuración contiene campos no permitidos.', 400);
       const numberIn = (key: string, min: number, max: number) => typeof input[key] === 'number' && Number.isFinite(input[key]) && input[key] >= min && input[key] <= max;
       const duration = input.durationH;
+      const consumptionCode = typeof input.consumptionCode === 'string' && input.consumptionCode
+        ? input.consumptionCode : 'WEB-CONSUMO';
+      const generationCode = typeof input.generationCode === 'string' && input.generationCode
+        ? input.generationCode : 'WEB-GENERACION';
       const dateFrom = typeof input.dateFrom === 'string' ? input.dateFrom : '';
       const dateTo = typeof input.dateTo === 'string' ? input.dateTo : '';
       const days = (Date.parse(dateTo) - Date.parse(dateFrom)) / 86400000 + 1;
@@ -120,13 +140,16 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
         && numberIn('socMinPct', 0, 30) && numberIn('socMaxPct', 70, 100) && Number(input.socMinPct) < Number(input.socMaxPct)
         && numberIn('chargeMaxPct', 10, 100) && numberIn('dischargeMaxPct', 10, 100) && numberIn('minimumPowerPct', 0, 50)
         && validDate(dateFrom) && validDate(dateTo) && Number.isInteger(days) && days >= 2 && days <= 31
+        && /^[A-Za-z0-9_-]{1,64}$/.test(consumptionCode)
+        && (!input.generationIncluded || /^[A-Za-z0-9_-]{1,64}$/.test(generationCode))
         && typeof input.generationIncluded === 'boolean'
         && typeof input.scenarios === 'number' && [1, 3, 5].includes(input.scenarios)
         && typeof input.policy === 'string' && ['libre', 'prefiere_excedente', 'solo_excedente'].includes(input.policy);
       if (!valid) return reply('Revisa la batería, el período y los escenarios.', 400);
       const code = `WEB-${Date.now().toString(36).toUpperCase()}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
       upstreamBody = JSON.stringify({
-        code, consumo: 'WEB-CONSUMO', generacion: input.generationIncluded ? 'WEB-GENERACION' : null,
+        ...(sessionUser ? { email: sessionUser } : {}),
+        code, consumo: consumptionCode, generacion: input.generationIncluded ? generationCode : null,
         potencia_kw: input.powerKw, duracion_h: input.durationH, capex_eur_mwh: input.capexEurMwh,
         eficiencia: Number(input.efficiencyPct) / 100, soc_min: Number(input.socMinPct) / 100,
         soc_max: Number(input.socMaxPct) / 100, ciclos: input.cycles,
@@ -143,8 +166,14 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
   const cookie = request.headers.get('cookie')?.split(';').map(c => c.trim())
     .find(c => /^pulso_session=[A-Za-z0-9_.-]{1,1024}$/.test(c));
   if (cookie) headers.set('Cookie', cookie);
-  const destination = new URL(`/api/bat/${path === 'opciones' ? 'ejecuciones' : path}`, options.studyUpstream || options.upstream);
-  destination.search = url.search;
+  const destination = new URL(path === 'opciones' ? 'ejecuciones' : path, studyBase);
+  if (sessionUser && (path === 'opciones' || path === 'instalaciones' || match)) {
+    const internalQuery = new URLSearchParams(url.search);
+    internalQuery.set('email', sessionUser);
+    destination.search = `?${internalQuery.toString()}`;
+  } else {
+    destination.search = url.search;
+  }
   try {
     const response = await (options.fetcher ?? fetch)(destination, {
       method: upload || launch ? 'POST' : 'GET', headers, body: upstreamBody,
@@ -154,6 +183,7 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
       return reply('La sesión no permite consultar el estudio en el servidor.', 401);
     }
     if (response.status === 404) return reply('No hay datos guardados para este estudio o tramo.', 404);
+    if (response.status === 413) return reply('El servidor rechazó el tamaño de los ficheros. Reduce la carga o revisa el límite de subida del servidor.', 413);
     if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
       return reply('No se pudo consultar el estudio guardado.', 502);
     }

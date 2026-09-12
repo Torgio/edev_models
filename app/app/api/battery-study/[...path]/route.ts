@@ -8,6 +8,7 @@ async function handle(request: Request, context: { params: Promise<{ path: strin
     upstream: process.env.DASHBOARD_API_URL ?? '',
     studyUpstream: process.env.BESS_STUDY_API_URL,
     development: process.env.NODE_ENV === 'development',
+    enabled: process.env.BESS_STUDY_ENABLED === '1',
     allowedRuns: process.env.BESS_STUDY_RUN_IDS ?? '',
   });
 }
