@@ -643,8 +643,14 @@ def _cargar_modelo_embedding():
     global _MODELO_EMBEDDING
     if _MODELO_EMBEDDING is None:
         from fastembed import TextEmbedding
+        # cache_dir explicito: sin esto, fastembed intenta escribir en ~/.cache/fastembed, y en
+        # el servidor el servicio corre con `ProtectHome=read-only` (systemd) -- ahi ese directorio
+        # no existe y no se puede crear, y falla con "Read-only file system" (encontrado en una
+        # revision externa de la app en produccion). data/ SI es escribible (esta en
+        # ReadWritePaths del .service), tanto en el servidor como en local.
         _MODELO_EMBEDDING = TextEmbedding(
-            model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+            model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            cache_dir=str(REPO / "data" / "_fastembed_cache"))
     return _MODELO_EMBEDDING
 
 
