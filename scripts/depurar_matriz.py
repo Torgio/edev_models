@@ -109,18 +109,19 @@ CERO_ANTES_DEL_PRIMER_DATO = (
 )
 
 # --- 4. huecos: como se reconstruye -------------------------------------------
-FFILL = ("capinst_", "gas_", "co2_")
-LIMITE_INTERPOLACION = 3        # horas; por encima no se interpola
+FFILL = ("capinst_", "gas_")
+LIMITE_INTERPOLACION = 3        # horas; por encima, ni eso
 
-# Recurso para los huecos que la interpolacion no alcanza: la misma hora de hace 7 dias.
-# Quedan dos, y los dos son bloques largos de una sola columna -- 12 horas del enlace con
-# Portugal el 8 de mayo y una hora del frances el 14 de diciembre --, o sea fallos de
-# publicacion en una serie que el resto del ano esta completa.
+# La interpolacion NO es el caso por defecto: se reserva al UNICO caso que la justifica, que
+# es el reanalisis meteorologico. ERA5 se publica cada 3 horas, asi que al llevarlo a rejilla
+# horaria faltan dos de cada tres por construccion, no por fallo de publicacion. Y la
+# temperatura o la presion si tienen trayectoria fisica continua entre dos observaciones: el
+# valor del hueco queda acotado por los que lo rodean.
 #
-# Interpolar 12 horas seguidas trazaria una recta entre las 11:00 y las 21:00 e inventaria
-# un perfil plano donde el intercambio tiene forma de dia. El analogo de hace una semana
-# conserva esa forma, y es el mismo criterio ya usado en `apagon.py`: cuando el hueco es
-# largo, se copia un dia comparable en lugar de dibujar una linea.
+# En todo lo demas un hueco significa que el dato NO SE PUBLICO, y ahi no hay nada que
+# reconstruir: un precio es el resultado de una casacion y un programa una declaracion del
+# operador. O existe, o no existe. Esos huecos caen al analogo de 7 dias.
+INTERPOLABLE = ("_met_",)       # reanalisis meteorologico, fuente trihoraria
 ANALOGO_DIAS = 7
 
 # Testigos de publicacion en la hora que el reloj se salto. `pbf_publicado_D` pregunta
@@ -246,11 +247,18 @@ def depurar(datos: pd.DataFrame, verbose: bool = True):
     # son huecos.
     fo = pd.to_datetime(d["fecha_objetivo"])
     arranque = fo < fo.min() + pd.Timedelta(days=ARRANQUE_DIAS)
-    local = (fo + pd.to_timedelta(d["hora"], unit="h")).dt.tz_localize(
-        TZ, ambiguous=True, nonexistent="NaT")
-    inexistente = local.isna()
-    d = d.loc[~(arranque | inexistente)].reset_index(drop=True)
 
+    # Las 2:00 del ultimo domingo de marzo no existen: el reloj salta de 1:59 a 3:00. La
+    # matriz genera la fila igual porque indexa por (fecha, hora) y sale entera a NaN.
+    # Imputarla seria fabricar una hora que nunca ocurrio, asi que se descarta.
+    #
+    # La marca se construye sobre la FECHA OBJETIVO y su hora, que es el instante que la
+    # fila describe. Sumar el timedelta a `fo` no vale: la columna `hora` se refiere al dia
+    # de prediccion, y el desfase de un dia desplaza la deteccion.
+    marcas = pd.to_datetime(fo.dt.strftime("%Y-%m-%d") + " " +
+                            d["hora"].astype(str).str.zfill(2) + ":00:00")
+    inexistente = marcas.dt.tz_localize(TZ, ambiguous=True, nonexistent="NaT").isna()
+    d = d.loc[~(arranque | inexistente)].reset_index(drop=True)
     orden = _orden_temporal(d)
     cols = [c for c in d.select_dtypes("number").columns if not _casa(c, NO_TOCAR)]
     filas = []
@@ -269,7 +277,7 @@ def depurar(datos: pd.DataFrame, verbose: bool = True):
         if antes == 0:
             continue
         via = {"cero_convencion": 0, "cero_sin_serie": 0, "cero_no_existia": 0,
-               "ffill": 0, "interpolado": 0, "analogo_7d": 0}
+               "ffill": 0, "interpolado": 0, "analogo_7d": 0, "hora_saltada_lag": 0}
 
         if _casa(c, CERO_POR_CONVENCION):
             # El cero de convencion solo vale desde que la serie existe. Marruecos arranca
@@ -282,6 +290,7 @@ def depurar(datos: pd.DataFrame, verbose: bool = True):
                 via["cero_sin_serie"] = int((s.isna() & previo).sum())
             via["cero_convencion"] = int(s.isna().sum()) - via["cero_sin_serie"]
             s = s.fillna(0.0)
+        
         else:
             if _casa(c, CERO_ANTES_DEL_PRIMER_DATO) and s.notna().any():
                 previo = np.arange(len(s)) < int(np.argmax(s.notna().to_numpy()))
@@ -293,15 +302,17 @@ def depurar(datos: pd.DataFrame, verbose: bool = True):
                 n = int(s.isna().sum())
                 s = s.ffill()
                 via["ffill"] = n - int(s.isna().sum())
-            else:
+            elif _casa(c, INTERPOLABLE):
                 n = int(s.isna().sum())
                 s = s.interpolate(method="linear", limit=LIMITE_INTERPOLACION,
                                   limit_area="inside")
                 via["interpolado"] = n - int(s.isna().sum())
+            # Lo demas no se interpola: si el dato no se publico, no hay trayectoria que
+            # reconstruir. Cae al analogo de 7 dias y, si tampoco llega, se declara.
 
         d[c] = s.reindex(d.index)
 
-        # Ultimo recurso: lo que la interpolacion no alcanza, del analogo de hace 7 dias.
+                # Ultimo recurso: lo que la interpolacion no alcanza, del analogo de hace 7 dias.
         if d[c].isna().any():
             origen = d[c].to_numpy()[analogo]
             aplicable = d[c].isna().to_numpy() & hay_analogo & ~np.isnan(origen)
@@ -309,8 +320,19 @@ def depurar(datos: pd.DataFrame, verbose: bool = True):
                 d.loc[aplicable, c] = origen[aplicable]
                 via["analogo_7d"] = int(aplicable.sum())
 
+        # Los lags de 6 dias caen sobre la hora que el reloj se salto al entrar el horario
+        # de verano: el ultimo domingo de marzo no tiene 2:00, asi que el dato de hace 6
+        # dias no existe. La fila SI es valida -- describe un instante real --, lo que no
+        # existe es su origen. Se toma la hora anterior del mismo dia, que es el instante
+        # inmediatamente previo al salto del reloj.
+        if d[c].isna().any() and c.endswith("_Dm6"):
+            n = int(d[c].isna().sum())
+            d[c] = d[c].ffill()
+            via["hora_saltada_lag"] = n - int(d[c].isna().sum())
+
         filas.append({"variable": c, "nulos_antes": antes, **via,
                       "sin_reconstruir": int(d[c].isna().sum())})
+        
 
     # Testigos: la hora que no existio no tuvo programa.
     for c in [c for c in d.columns if c.startswith(TESTIGOS_A_CERO)]:
@@ -320,6 +342,7 @@ def depurar(datos: pd.DataFrame, verbose: bool = True):
             filas.append({"variable": c, "nulos_antes": n, "cero_hora_inexistente": n,
                           "sin_reconstruir": 0})
 
+    
     inf = pd.DataFrame(filas).fillna(0)
     if len(inf):
         inf = inf.sort_values("nulos_antes", ascending=False).reset_index(drop=True)
@@ -344,7 +367,8 @@ def depurar(datos: pd.DataFrame, verbose: bool = True):
                           ("cero_hora_inexistente", "NULL=0 (hora que el reloj se salto)"),
                           ("ffill", "ffill (escalon / cotizacion vigente)"),
                           ("interpolado", "interpolacion temporal"),
-                          ("analogo_7d", "analogo de hace 7 dias (hueco largo)")):
+                          ("analogo_7d", "analogo de hace 7 dias (hueco largo)"),
+                          ("hora_saltada_lag", "lag sobre la hora que el reloj se salto")):
                 if k not in inf.columns:
                     continue
                 sub = inf[inf[k] > 0]

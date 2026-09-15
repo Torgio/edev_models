@@ -1104,12 +1104,11 @@ def _features_diferencia_previsiones(conn) -> pd.DataFrame:
     return feats
 
 
-# 23-ago-2026: reducido a las 3 ACTIVAS de la matriz FINAL. gas_ttf, co2_ets y carbon_api2
-# estan marcadas DESCARTADAS en el Excel del equipo (carbon_api2 ademas quedo vacia al
-# deslistarse MTF=F, y co2_ets fue sustituida por co2_eua_dec). El script y la matriz decian
-# cosas distintas; manda la matriz.
-COLS_COMMODITIES = ["gas_mibgas", "co2_eua_dec", "gas_ttf_m1"]
-
+# Solo el gas del mercado iberico. Es la referencia de coste de la tecnologia que fija el
+# precio marginal en el sistema español, y la unica columna del bloque que no procede de
+# `trayport_daily_ohlc`: `co2_eua_dec` y `gas_ttf_m1` eran vistas sobre esa tabla, que se
+# retira del proyecto. gas_ttf, co2_ets y carbon_api2 ya estaban descartadas.
+COLS_COMMODITIES = ["gas_mibgas"]
 
 def _features_dia_d(conn) -> pd.DataFrame:
     """Commodities -- CIERRE DE D-1 colocado en la fila D (corregido 23-ago-2026).

@@ -21,13 +21,21 @@ from pathlib import Path
 import pandas as pd
 
 REPO = Path(__file__).resolve().parent.parent
-ORIGEN = REPO / "data" / "gold" / "finales_nucleo"
+ORIGEN = REPO / "data" / "gold" / "finales_v2_nucleo"
 DESTINO = REPO / "production" / "models"
 SEMILLA = 42
 
 
+# Las ocho familias que componen el ensemble servido. El `por_semilla.csv` del
+# entrenamiento incluye ademas los arboles planos y los modelos estadisticos, que se
+# evaluan en la comparativa pero no forman parte del conjunto desplegado.
+FAMILIAS = ("gru", "conv1d_lstm", "seq2seq", "simplernn", "lstm", "denso",
+            "boosting", "seq2seq_absoluto")
+
+
 def plan():
     d = pd.read_csv(ORIGEN / "por_semilla.csv")
+    d = d[d.familia.isin(FAMILIAS)]
     rep = d.loc[d.groupby("familia").MAE_val.idxmin()].sort_values("MAE_test")
     piezas = []
     for r in rep.itertuples():

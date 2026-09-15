@@ -1,10 +1,159 @@
 {
   "matriz": "nucleo",
-  "hash": "4a8f328e",
+  "hash": "35bf390e",
   "semillas": 3,
-  "naive_val_MAE": 19.946,
-  "naive_test_MAE": 16.714,
+  "prueba": false,
+  "naive_val_MAE": 19.948,
+  "naive_test_MAE": 16.721,
   "dias_train": 1812,
   "dias_val": 365,
-  "dias_test": 212
+  "dias_test": 212,
+  "canales_encoder": 50,
+  "columnas_decoder": 21,
+  "estaticos": 21,
+  "trayport": {
+    "vetadas": [
+      "co2_eua_dec",
+      "gas_ttf_m1",
+      "commodities_co2_eua_dec",
+      "commodities_gas_ttf_m1"
+    ],
+    "presentes_en_matriz": []
+  },
+  "vetos_frontera": {
+    "met_lags": [
+      "t2m_mean_met_Dm1",
+      "d2m_mean_met_Dm1",
+      "msl_mean_met_Dm1",
+      "wind10_mean_met_Dm1",
+      "tcc_mean_met_Dm1",
+      "ssrd_mean_met_Dm1",
+      "tp_acum_30d_met_Dm1",
+      "d2m_mean_met_Dm2",
+      "msl_mean_met_Dm2",
+      "wind100_mean_met_Dm2",
+      "tcc_mean_met_Dm2",
+      "tp_acum_7d_met_Dm2"
+    ]
+  },
+  "frontera": {
+    "decoder": {
+      "D+1 prevision REE": 3,
+      "D casado ayer": 9,
+      "D+1 prevision meteo": 6,
+      "sin dia (estructural o estatica)": 1,
+      "D+1 calendario": 2
+    },
+    "plana": {
+      "D casado ayer": 41,
+      "D-1": 20,
+      "D-6": 21,
+      "D+1 calendario": 14,
+      "sin dia (estructural o estatica)": 8,
+      "D+1 prevision REE": 3,
+      "D+1 declaracion previa": 5,
+      "D+1 prevision meteo": 6
+    }
+  },
+  "frontera_ree_prev": [
+    "ree_demanda_prev",
+    "ree_gwind_prev",
+    "ree_gsolar_prev"
+  ],
+  "ancla": {
+    "tipo": "D",
+    "MAE_val": 19.948,
+    "MAE_test": 16.721,
+    "pesos_Dm6": null
+  },
+  "forma_real_vs_D_test": 0.858,
+  "familias": [
+    "boosting",
+    "conv1d_lstm",
+    "denso",
+    "elasticnet",
+    "gru",
+    "lgbm_nucleo",
+    "lstm",
+    "ridge",
+    "sarima",
+    "sarimax",
+    "seq2seq",
+    "seq2seq_absoluto",
+    "simplernn"
+  ],
+  "ensembles": {
+    "ensemble": [
+      "boosting__s0",
+      "conv1d_lstm__s1",
+      "denso__s2",
+      "gru__s2",
+      "lstm__s1",
+      "seq2seq__s1",
+      "seq2seq_absoluto__s2",
+      "simplernn__s1"
+    ],
+    "ensemble_todos": [
+      "boosting__s0",
+      "conv1d_lstm__s1",
+      "denso__s2",
+      "elasticnet__s0",
+      "gru__s2",
+      "lgbm_nucleo__s1",
+      "lstm__s1",
+      "ridge__s0",
+      "sarimax__s0",
+      "seq2seq__s1",
+      "seq2seq_absoluto__s2",
+      "simplernn__s1"
+    ],
+    "ensemble_seleccion": {
+      "lgbm_nucleo__s1": 0.3667,
+      "denso__s2": 0.3333,
+      "lstm__s1": 0.1,
+      "seq2seq_absoluto__s2": 0.1,
+      "gru__s2": 0.0667,
+      "seq2seq__s1": 0.0333
+    }
+  },
+  "lgbm_willy": {
+    "n_estimators": 1900,
+    "num_leaves": 27,
+    "max_depth": 10,
+    "learning_rate": 0.017265119138779546,
+    "subsample": 0.597032055679207,
+    "colsample_bytree": 0.7696132252880693,
+    "reg_alpha": 0.0010694942634823176,
+    "reg_lambda": 0.0228121782480138,
+    "min_child_samples": 8
+  },
+  "ordenes_sarima": {
+    "sarima": [
+      [
+        3,
+        1,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        24
+      ]
+    ],
+    "sarimax": [
+      [
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        24
+      ]
+    ]
+  },
+  "generado": "2026-09-14 23:36"
 }

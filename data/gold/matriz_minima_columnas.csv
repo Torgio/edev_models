@@ -1,46 +1,47 @@
-variable,tabla_origen,bloque
-fecha_pred,CLAVE,control
-fecha_objetivo,CLAVE,control
-ts,CLAVE,control
-split,CLAVE,control
-target_price,spot_price (TARGET),objetivo
-es_esios_D,spot_price (lag),precio
-es_esios_Dm1,spot_price (lag),precio
-es_esios_Dm6,spot_price (lag),precio
-hora,CLAVE,control
-d1_dow,CALENDARIO (calculado),calendario
-d1_month,CALENDARIO (calculado),calendario
-d1_is_weekend,CALENDARIO (calculado),calendario
-d1_is_festivo,CALENDARIO (calculado),calendario
-d1_es_puente,CALENDARIO (calculado),calendario
-d1_regimen_tope_gas,CALENDARIO (calculado),calendario
-meteo_es_forecast,DERIVADA (depuracion),otros
-imputado_apagon,DERIVADA (depuracion),otros
-ventana_pisa_apagon,DERIVADA (depuracion),otros
-pbf_publicado_D,DERIVADA (testigo de publicacion),otros
-pbf_completo_D,DERIVADA (testigo de publicacion),otros
-pt_entsoe_D,"spot_price (Europa, dia D)",precio
-capinst_coal_mw,esios_capacity_installed,capacidad
-capdisp_coal_antracita_mw,esios_capacity_available,capacidad
-fr_entsoe_D,"spot_price (Europa, dia D)",precio
-gas_mibgas,commodities,combustibles
-it_nord_entsoe_D,"spot_price (Europa, dia D)",precio
-gas_ttf_m1,commodities,combustibles
-de_lu_entsoe_D,"spot_price (Europa, dia D)",precio
-pdbc_coal_mw_D,esios_pdbc_gen,casacion PDBC
-capinst_total_autoconsume_mw,esios_capacity_installed,capacidad
-capinst_wind_mw,esios_capacity_installed,capacidad
-capinst_waste_nonrenewable_mw,esios_capacity_installed,capacidad
-pl_entsoe_D,"spot_price (Europa, dia D)",precio
-co2_eua_dec,commodities,combustibles
-pdbc_pumping_cons_mw_D,esios_pbf_gen,casacion PDBC
-ree_gotherthermal_mw_Dm6,generation (real D-1/D-6),real desfasado
-pdbc_ccgt_mw_D,esios_pdbc_gen,casacion PDBC
-ree_gotherthermal_mw_Dm1,generation (real D-1/D-6),real desfasado
-bil_direct_consumer_mw_D,esios_pbf_bilateral,programa PBF
-ree_gcoal_mw_Dm1,generation (real D-1/D-6),real desfasado
-pdbc_other_renew_mw_D,esios_pdbc_gen,casacion PDBC
-ree_gcoal_mw_Dm6,generation (real D-1/D-6),real desfasado
-oil_mw_Dm6,generation (real D-1/D-6),real desfasado
-hydro_run_river_mw_Dm1,generation (real D-1/D-6),real desfasado
-oil_mw_Dm1,generation (real D-1/D-6),real desfasado
+variable,es_entrada
+fecha_pred,False
+fecha_objetivo,False
+ts,False
+split,False
+target_price,False
+es_esios_D,False
+es_esios_Dm1,False
+es_esios_Dm6,False
+hora,False
+d1_dow,False
+d1_month,False
+d1_is_weekend,False
+d1_is_festivo,False
+d1_es_puente,False
+d1_vispera_festivo,False
+d1_regimen_tope_gas,False
+meteo_es_forecast,False
+imputado_apagon,False
+ventana_pisa_apagon,False
+pbf_publicado_D,False
+pbf_completo_D,False
+pt_entsoe_D,True
+capinst_coal_mw,True
+capdisp_coal_antracita_mw,True
+fr_entsoe_D,True
+gas_mibgas,True
+it_nord_entsoe_D,True
+de_lu_entsoe_D,True
+pdbc_coal_mw_D,True
+capinst_total_autoconsume_mw,True
+capinst_wind_mw,True
+capinst_waste_nonrenewable_mw,True
+pl_entsoe_D,True
+pdbc_pumping_cons_mw_D,True
+ree_gotherthermal_mw_Dm6,True
+pdbc_ccgt_mw_D,True
+ree_gotherthermal_mw_Dm1,True
+bil_direct_consumer_mw_D,True
+ree_gcoal_mw_Dm1,True
+pdbc_other_renew_mw_D,True
+ree_gcoal_mw_Dm6,True
+oil_mw_Dm6,True
+hydro_run_river_mw_Dm1,True
+oil_mw_Dm1,True
+ree_gccgas_mw_Dm1,True
+bil_generic_sales_mw_D,True

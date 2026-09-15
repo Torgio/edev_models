@@ -57,7 +57,7 @@ MODELOS = REPO / "production" / "models"
 def _carpeta(matriz):
     if MODELOS.is_dir() and (MODELOS / "por_semilla.csv").exists():
         return MODELOS
-    return REPO / "data" / "gold" / f"finales_{matriz}"
+    return REPO / "data" / "gold" / f"finales_v2_{matriz}"
 
 
 class ContratoRoto(RuntimeError):
@@ -162,7 +162,12 @@ class Predictor:
     def tensores(self):
         if self._T is None:
             from preparar_tensores import preparar
-            self._T = preparar(self.matriz, verbose=False)
+            # El entrenamiento veta por frontera las columnas de reanalisis con desfase,
+            # que a las 11:00 del dia D no estan publicadas. Los tensores de produccion
+            # se construyen con el mismo veto, o el contrato de entrada no casa.
+            from entrenar_finales_v2 import columnas_vetadas, VETOS_DEFECTO
+            self._T = preparar(self.matriz, verbose=False,
+                               excluir=columnas_vetadas(self.matriz, VETOS_DEFECTO))
         return self._T
 
     def predecir(self, desde=None, hasta=None, tramo="te", detalle=False):
@@ -195,9 +200,17 @@ class Predictor:
                f"{', '.join(str(m) for m in self.miembros)}>"
 
 
+# Las ocho familias que componen el ensemble servido. El `por_semilla.csv` del
+# entrenamiento incluye ademas los arboles planos y los modelos estadisticos, que no
+# forman parte de este conjunto y no se cargan como `.keras`.
+FAMILIAS = ("gru", "conv1d_lstm", "seq2seq", "simplernn", "lstm", "denso",
+            "boosting", "seq2seq_absoluto")
+
+
 def _representantes(carpeta):
     """El mejor de cada familia SEGUN VALIDACION -- la misma regla que el notebook."""
     d = pd.read_csv(carpeta / "por_semilla.csv")
+    d = d[d.familia.isin(FAMILIAS)]
     return d.loc[d.groupby("familia").MAE_val.idxmin()].sort_values("MAE_val")
 
 
