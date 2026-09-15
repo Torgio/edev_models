@@ -244,9 +244,9 @@ def predecir(con, objetivo: date):
             "  Tu `guardar_predicciones.produccion` no acepta `equipo`.\n"
             "  Es la version de antes del 1-sep. Trae los commits de Torgio primero:\n"
             "      git fetch origin && git merge origin/main --no-edit")
-    _log("4 predecir", f"11 modelos + ensemble11 sobre {objetivo}")
+    _log("4 predecir", f"8 modelos + ensemble sobre {objetivo}")
     gp.produccion(con, desde=objetivo.isoformat(), hasta=objetivo.isoformat(),
-                  matriz="produccion", verbose=True, equipo=True)
+                  matriz="produccion", verbose=True, equipo=False)
 
 
 # ------------------------------------------------------------------ 5  la bateria
@@ -256,14 +256,12 @@ def campeon(con, objetivo: date | None = None) -> str | None:
     Sale de `models.estado`, no de una constante aqui: el campeon cambia cuando cambian las
     metricas, y si estuviera escrito en el codigo habria dos verdades.
 
-    EL RESPALDO NO PUEDE SER UN NOMBRE FIJO, Y ESO SE APRENDIO ROMPIENDOLO. Aqui ponia
-    "ensemble" a secas. Cuando la cadena del servidor paso a correr con `--equipo`, la media
-    empezo a guardarse como `ensemble11` -- `ensemble` es la de ocho y sigue grabada, por eso
-    no se pisa -- y el respaldo quedo apuntando a un modelo que ya nadie escribia. El plan
-    dejo de generarse en silencio: `bess_plan` con 24 filas de un solo dia, sin un error.
+    La produccion oficial usa `ensemble`, formado por las ocho familias finales.
+    `ensemble11` se conserva como serie historica y como respaldo si el `ensemble` oficial
+    no tiene completo el dia objetivo.
 
-    Asi que el respaldo se MIDE contra la tabla: de los candidatos, el primero que de verdad
-    tenga el dia completo. Y si ninguno lo tiene, devuelve None en vez de un nombre inventado.
+    La seleccion se comprueba contra `predictions`: se usa el primer candidato que tenga
+    el dia completo. Si ninguno lo tiene, devuelve None en vez de inventar un modelo.
     """
     with con.cursor() as cur:
         cur.execute("SELECT model FROM models WHERE estado = 'campeon' ORDER BY model LIMIT 1")
@@ -271,8 +269,8 @@ def campeon(con, objetivo: date | None = None) -> str | None:
     if r:
         return r[0]
     if objetivo is None:
-        return "ensemble11"
-    for cand in ("ensemble11", "ensemble", "gru"):
+        return "ensemble"
+    for cand in ("ensemble", "ensemble11", "gru"):
         with con.cursor() as cur:
             cur.execute("""
                 SELECT count(*) FROM predictions
@@ -280,8 +278,7 @@ def campeon(con, objetivo: date | None = None) -> str | None:
                    AND (datetime AT TIME ZONE 'Europe/Madrid')::date = %s""",
                         (cand, objetivo))
             if cur.fetchone()[0] == len(periodos_dia(objetivo)):
-                if cand != "ensemble11":
-                    _log("5 bateria", f"sin campeon declarado y sin `ensemble11`: se usa {cand}")
+                _log("5 bateria", f"sin campeon declarado: se usa {cand}")
                 return cand
     return None
 
