@@ -1,0 +1,11 @@
+grupo,proporcion_abs_shap_train,proporcion_shap2_train,proporcion_abs_shap_2020,proporcion_abs_shap_2021,proporcion_abs_shap_2022,proporcion_abs_shap_2023,proporcion_abs_shap_2024,proporcion_ganancia_3s
+Precios europeos D y diferenciales,0.24133,0.49967,0.28396,0.268,0.26481,0.1712,0.20393,0.51782
+"Precio español (D, D-1, D-6)",0.2321,0.24535,0.2993,0.23392,0.24127,0.17567,0.20601,0.34074
+"Previsiones REE (demanda, eólica, solar)",0.19435,0.19521,0.13978,0.17266,0.16571,0.26936,0.24067,0.04336
+Programas PDBC/PBF de D,0.11109,0.02173,0.08451,0.10449,0.10649,0.13948,0.12343,0.02756
+"Generación, demanda y flujos reales D-1/D-6",0.08153,0.00493,0.06567,0.07468,0.07739,0.09726,0.0952,0.02675
+Calendario y hora,0.04055,0.00777,0.03182,0.0373,0.03757,0.0521,0.04582,0.01338
+Meteorología prevista,0.03368,0.0045,0.02743,0.03382,0.02953,0.04299,0.03677,0.01132
+Gas MIBGAS,0.03982,0.01874,0.04816,0.04696,0.04988,0.0259,0.02267,0.0112
+Capacidades (disponible e instalada),0.02555,0.0021,0.01937,0.02818,0.02736,0.02604,0.02551,0.00789
+"(total |SHAP| por fila, EUR/MWh)",,,95.72961,106.57442,144.25046,93.33795,98.55528,

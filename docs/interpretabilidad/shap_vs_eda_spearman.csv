@@ -1,0 +1,112 @@
+variable,grupo,shap_abs_medio_test,rango_test,rho,abs_rho,frontera,rango_eda_en_modelo,rango_eda_global
+pt_entsoe_D,Precios europeos D y diferenciales,19.104089,1,0.883326,0.883326,SIMULTANEA (casa a las 12:00),1,1
+ree_gwind_prev,"Previsiones REE (demanda, eólica, solar)",14.576767,2,-0.193821,0.193821,OK (pre-11:00),42,45
+es_esios_D,"Precio español (D, D-1, D-6)",12.129361,3,0.883296,0.883296,TARGET disfrazado,2,2
+ree_gsolar_prev,"Previsiones REE (demanda, eólica, solar)",10.183453,4,-0.190564,0.190564,OK (pre-11:00),43,46
+es_esios_Dm6,"Precio español (D, D-1, D-6)",7.302526,5,0.800191,0.800191,OK (pre-11:00),4,4
+ree_demanda_prev,"Previsiones REE (demanda, eólica, solar)",5.872059,6,0.225815,0.225815,OK (pre-11:00),34,37
+gas_mibgas,Gas MIBGAS,4.498606,7,0.685226,0.685226,OK (pre-11:00),7,7
+pdbc_wind_mw_D,Programas PDBC/PBF de D,4.389438,8,-0.166535,0.166535,POSTERIOR (no usable),49,53
+es_esios_Dm1,"Precio español (D, D-1, D-6)",3.440965,9,0.813348,0.813348,OK (pre-11:00),3,3
+d1_dow,Calendario y hora,2.674139,10,-0.112137,0.112137,OK (pre-11:00),62,68
+wind100_meteo,Meteorología prevista,2.095955,11,-0.233867,0.233867,OK (pre-11:00),33,36
+ree_gcoal_mw_Dm6,"Generación, demanda y flujos reales D-1/D-6",1.362436,12,0.388459,0.388459,OK (pre-11:00),17,19
+pdbc_waste_mw_D,Programas PDBC/PBF de D,1.341965,13,0.252043,0.252043,POSTERIOR (no usable),32,35
+wind_mw_Dm6,"Generación, demanda y flujos reales D-1/D-6",1.178072,14,0.061841,0.061841,OK (pre-11:00),78,89
+pbfli_demand_aux_mw_D,Programas PDBC/PBF de D,1.124045,15,-0.090004,0.090004,POSTERIOR (no usable),68,77
+solar_fv_mw_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.996627,16,-0.165698,0.165698,OK (pre-11:00),50,54
+capdisp_nuclear_mw,Capacidades (disponible e instalada),0.978463,17,0.031643,0.031643,OK (pre-11:00),94,109
+pdbc_hydro_ugh_mw_D,Programas PDBC/PBF de D,0.967016,18,-0.200293,0.200293,POSTERIOR (no usable),38,41
+fr_entsoe_D,Precios europeos D y diferenciales,0.923364,19,0.76105,0.76105,SIMULTANEA (casa a las 12:00),5,5
+tcc_meteo,Meteorología prevista,0.89181,20,-0.046458,0.046458,OK (pre-11:00),88,101
+pdbc_pumping_gen_mw_D,Programas PDBC/PBF de D,0.817364,21,0.170567,0.170567,POSTERIOR (no usable),48,51
+it_nord_entsoe_D,Precios europeos D y diferenciales,0.730244,22,0.717035,0.717035,SIMULTANEA (casa a las 12:00),6,6
+ree_gcoal_mw_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.718508,23,0.386135,0.386135,OK (pre-11:00),18,20
+capdisp_coal_antracita_mw,Capacidades (disponible e instalada),0.704619,24,-0.147657,0.147657,OK (pre-11:00),52,56
+bil_generic_buy_mw_D,Programas PDBC/PBF de D,0.565286,25,-0.1983,0.1983,POSTERIOR (no usable),40,43
+pbfli_total_demand_mw_D,Programas PDBC/PBF de D,0.554871,26,0.102918,0.102918,POSTERIOR (no usable),65,72
+hora_cos,Calendario y hora,0.511223,27,0.146164,0.146164,OK (pre-11:00),53,58
+hydro_run_river_mw_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.509515,28,-0.370052,0.370052,OK (pre-11:00),20,22
+spread_es_fr_D,Precios europeos D y diferenciales,0.507531,29,0.002112,0.002112,SIMULTANEA (casa a las 12:00),111,128
+ree_netflow_ma_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.506573,30,0.076538,0.076538,OK (pre-11:00),75,84
+pdbc_pumping_cons_mw_D,Programas PDBC/PBF de D,0.496466,31,0.372764,0.372764,POSTERIOR (no usable),19,21
+pdbc_cogen_mw_D,Programas PDBC/PBF de D,0.491945,32,0.082337,0.082337,POSTERIOR (no usable),71,80
+pdbc_ccgt_mw_D,Programas PDBC/PBF de D,0.485257,33,0.49938,0.49938,POSTERIOR (no usable),10,11
+pbfli_net_flow_fr_mw_D,Programas PDBC/PBF de D,0.474805,34,0.032961,0.032961,POSTERIOR (no usable),93,107
+oil_mw_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.47119,35,0.113747,0.113747,OK (pre-11:00),61,67
+pdbc_biogas_mw_D,Programas PDBC/PBF de D,0.464135,36,0.298154,0.298154,POSTERIOR (no usable),28,31
+ssrd_meteo,Meteorología prevista,0.452195,37,-0.174444,0.174444,OK (pre-11:00),47,50
+capdisp_hydro_mw,Capacidades (disponible e instalada),0.445556,38,-0.19592,0.19592,OK (pre-11:00),41,44
+oil_mw_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.434787,39,0.095149,0.095149,OK (pre-11:00),66,75
+waste_mw_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.4216,40,0.255982,0.255982,OK (pre-11:00),31,34
+hydro_run_river_mw_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.418514,41,-0.348864,0.348864,OK (pre-11:00),21,23
+pdbc_nuclear_mw_D,Programas PDBC/PBF de D,0.413679,42,-0.322097,0.322097,POSTERIOR (no usable),25,28
+ree_gotherthermal_mw_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.407553,43,0.054076,0.054076,OK (pre-11:00),83,96
+ree_netflow_fr_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.393295,44,-0.012302,0.012302,OK (pre-11:00),104,120
+pbfli_net_flow_pt_mw_D,Programas PDBC/PBF de D,0.368844,45,0.059511,0.059511,POSTERIOR (no usable),81,93
+ree_gnuclear_mw_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.367103,46,0.087591,0.087591,OK (pre-11:00),70,79
+capdisp_ccgt_mw,Capacidades (disponible e instalada),0.357417,47,0.118322,0.118322,OK (pre-11:00),60,66
+pdbc_hydro_no_ugh_mw_D,Programas PDBC/PBF de D,0.353025,48,-0.313178,0.313178,POSTERIOR (no usable),26,29
+capinst_total_autoconsume_mw,Capacidades (disponible e instalada),0.350015,49,0.03066,0.03066,OK (pre-11:00),95,110
+t2m_meteo,Meteorología prevista,0.342285,50,-0.009414,0.009414,OK (pre-11:00),105,121
+msl_meteo,Meteorología prevista,0.342149,51,0.149991,0.149991,OK (pre-11:00),51,55
+waste_mw_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.328642,52,0.273745,0.273745,OK (pre-11:00),30,33
+d1_dow_cos,Calendario y hora,0.324655,53,-0.008276,0.008276,OK (pre-11:00),108,124
+ree_gnuclear_mw_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.310307,54,0.070395,0.070395,OK (pre-11:00),77,87
+wind_mw_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.306426,55,-0.017932,0.017932,OK (pre-11:00),102,118
+ree_gotherthermal_mw_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.305095,56,0.052061,0.052061,OK (pre-11:00),84,97
+d1_is_weekend,Calendario y hora,0.299677,57,-0.134289,0.134289,OK (pre-11:00),58,64
+hydro_dispatch_mw_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.287016,58,-0.05737,0.05737,OK (pre-11:00),82,95
+d1_dow_sin,Calendario y hora,0.279258,59,0.109459,0.109459,OK (pre-11:00),63,69
+d1_doy_sin,Calendario y hora,0.27097,60,-0.211056,0.211056,OK (pre-11:00),36,39
+hydro_dispatch_mw_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.256986,61,-0.081085,0.081085,OK (pre-11:00),73,82
+d2m_meteo,Meteorología prevista,0.249524,62,0.060978,0.060978,OK (pre-11:00),79,91
+d1_is_festivo,Calendario y hora,0.242766,63,-0.035466,0.035466,OK (pre-11:00),92,106
+other_renewable_mw_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.234281,64,0.204505,0.204505,OK (pre-11:00),37,40
+bil_direct_consumer_mw_D,Programas PDBC/PBF de D,0.231394,65,0.080548,0.080548,POSTERIOR (no usable),74,83
+pbfli_demand_direct_mw_D,Programas PDBC/PBF de D,0.224162,66,-0.044233,0.044233,POSTERIOR (no usable),90,104
+other_renewable_mw_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.217136,67,0.176707,0.176707,OK (pre-11:00),45,48
+ree_netflow_ma_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.215651,68,0.044101,0.044101,OK (pre-11:00),91,105
+pumping_cons_mw_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.214732,69,-0.341169,0.341169,OK (pre-11:00),23,25
+spread_es_de_D,Precios europeos D y diferenciales,0.204315,70,0.17603,0.17603,SIMULTANEA (casa a las 12:00),46,49
+pumping_cons_mw_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.193103,71,-0.308831,0.308831,OK (pre-11:00),27,30
+pdbc_unavailable_power_mw_D,Programas PDBC/PBF de D,0.191744,72,0.05162,0.05162,POSTERIOR (no usable),85,98
+capdisp_pump_mw,Capacidades (disponible e instalada),0.185573,73,-0.007929,0.007929,OK (pre-11:00),110,126
+pbfli_total_net_flow_mw_D,Programas PDBC/PBF de D,0.182565,74,0.060864,0.060864,POSTERIOR (no usable),80,92
+entsoe_load_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.181827,75,0.19984,0.19984,OK (pre-11:00),39,42
+pdbc_other_renew_mw_D,Programas PDBC/PBF de D,0.176471,76,0.389359,0.389359,POSTERIOR (no usable),16,18
+pdbc_biomass_mw_D,Programas PDBC/PBF de D,0.171819,77,0.277398,0.277398,POSTERIOR (no usable),29,32
+pdbc_solar_thermal_mw_D,Programas PDBC/PBF de D,0.162624,78,-0.144041,0.144041,POSTERIOR (no usable),54,60
+ree_gccgas_mw_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.157712,79,0.441267,0.441267,OK (pre-11:00),13,15
+total_net_flow_mw_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.156549,80,-0.020291,0.020291,OK (pre-11:00),99,114
+bil_retail_free_sales_mw_D,Programas PDBC/PBF de D,0.155104,81,0.08891,0.08891,POSTERIOR (no usable),69,78
+spread_es_pt_D,Precios europeos D y diferenciales,0.150266,82,0.137731,0.137731,SIMULTANEA (casa a las 12:00),57,63
+bil_retail_free_buy_mw_D,Programas PDBC/PBF de D,0.127041,83,0.392389,0.392389,POSTERIOR (no usable),15,17
+pl_entsoe_D,Precios europeos D y diferenciales,0.122159,84,0.570635,0.570635,SIMULTANEA (casa a las 12:00),9,10
+gen_peninsular_mw_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.115807,85,0.179289,0.179289,OK (pre-11:00),44,47
+biomass_mw_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.113913,86,0.342024,0.342024,OK (pre-11:00),22,24
+d1_regimen_tope_gas,Calendario y hora,0.108247,87,0.221354,0.221354,OK (pre-11:00),35,38
+bil_generic_sales_mw_D,Programas PDBC/PBF de D,0.097924,88,0.400932,0.400932,POSTERIOR (no usable),14,16
+capinst_wind_mw,Capacidades (disponible e instalada),0.096971,89,0.030044,0.030044,OK (pre-11:00),96,111
+de_lu_entsoe_D,Precios europeos D y diferenciales,0.096571,90,0.659138,0.659138,SIMULTANEA (casa a las 12:00),8,9
+ree_gsolter_mw_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.082744,91,-0.072544,0.072544,OK (pre-11:00),76,85
+total_net_flow_mw_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.082288,92,-0.01865,0.01865,OK (pre-11:00),101,117
+ree_gsolter_mw_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.0768,93,-0.082255,0.082255,OK (pre-11:00),72,81
+biomass_mw_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.073371,94,0.330225,0.330225,OK (pre-11:00),24,27
+pdbc_coal_mw_D,Programas PDBC/PBF de D,0.06877,95,0.459588,0.459588,POSTERIOR (no usable),12,14
+pdbc_total_gen_mw_D,Programas PDBC/PBF de D,0.067555,96,-0.019997,0.019997,POSTERIOR (no usable),100,115
+pbfli_net_flow_ad_mw_D,Programas PDBC/PBF de D,0.067121,97,-0.127501,0.127501,POSTERIOR (no usable),59,65
+capinst_waste_nonrenewable_mw,Capacidades (disponible e instalada),0.06599,98,0.049223,0.049223,OK (pre-11:00),87,100
+pbfli_demand_reference_mw_D,Programas PDBC/PBF de D,0.062711,99,0.044537,0.044537,POSTERIOR (no usable),89,103
+ree_netflow_pt_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.059677,100,-0.021819,0.021819,OK (pre-11:00),98,113
+d1_es_puente,Calendario y hora,0.056717,101,0.050385,0.050385,OK (pre-11:00),86,99
+ree_gccgas_mw_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.055597,102,0.46203,0.46203,OK (pre-11:00),11,12
+entsoe_load_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.054444,103,0.103514,0.103514,OK (pre-11:00),64,71
+ree_netflow_fr_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.053476,104,-0.008325,0.008325,OK (pre-11:00),107,123
+ree_netflow_pt_Dm6,"Generación, demanda y flujos reales D-1/D-6",0.051499,105,-0.008222,0.008222,OK (pre-11:00),109,125
+gen_peninsular_mw_Dm1,"Generación, demanda y flujos reales D-1/D-6",0.046774,106,0.094019,0.094019,OK (pre-11:00),67,76
+hora_sin,Calendario y hora,0.040523,107,-0.015805,0.015805,OK (pre-11:00),103,119
+bil_retail_last_resort_mw_D,Programas PDBC/PBF de D,0.040221,108,-0.141526,0.141526,POSTERIOR (no usable),56,62
+d1_month_cos,Calendario y hora,0.040036,109,-0.009005,0.009005,OK (pre-11:00),106,122
+d1_month,Calendario y hora,0.020358,110,0.143154,0.143154,OK (pre-11:00),55,61
+capinst_coal_mw,Capacidades (disponible e instalada),0.0,112,-0.023621,0.023621,OK (pre-11:00),97,112

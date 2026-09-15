@@ -134,7 +134,7 @@ def _clasificar(df, multicanal=True):
         [c for c in cand if nun[c] > 1.5]
 
 
-def preparar(matriz="nucleo", ventana=VENTANA_DIAS, multicanal=True, verbose=True):
+def preparar(matriz="nucleo", ventana=VENTANA_DIAS, multicanal=True, verbose=True, excluir=()):
     ruta = REPO / "data" / "gold" / f"matriz_{matriz}.parquet"
     try:
         df = pd.read_parquet(ruta)
@@ -149,8 +149,13 @@ def preparar(matriz="nucleo", ventana=VENTANA_DIAS, multicanal=True, verbose=Tru
             print(f"  (el parquet no se puede leer aqui: {type(e).__name__}; se usa el CSV)")
         df = pd.read_csv(csv, parse_dates=["fecha_pred", "fecha_objetivo", "ts"])
     df = df.sort_values(["fecha_objetivo", "hora"]).reset_index(drop=True)
+    # Columnas vetadas por quien llama (entrenar_finales_v2 quita asi las de Trayport). Fuera
+    # ANTES de clasificar, para que no puedan caer en ningun bloque del tensor.
+    excluidas = [c for c in excluir if c in df.columns]
+    df = df.drop(columns=excluidas)
     import json
     meta = json.loads((ruta.with_suffix(".meta.json")).read_text(encoding="utf-8"))
+    meta["excluidas"] = excluidas
 
     cols_dec, cols_prog, cols_dm1, cols_est, cols_est_media = _clasificar(df, multicanal)
     dias = np.array(sorted(df.fecha_objetivo.unique()))

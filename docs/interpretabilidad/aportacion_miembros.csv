@@ -1,0 +1,9 @@
+quitado,peso,peso_de_30,MAE_val,MAE_test,delta_val,delta_test,MAE_val_miembro_solo,MAE_test_miembro_solo
+(ninguno: seleccion completa),1.0,30/30,11.732,11.724,0.0,0.0,,
+lgbm_nucleo__s1,0.3667,11/30,12.27,12.704,0.538,0.98,13.008,14.164
+denso__s2,0.3333,10/30,11.984,12.179,0.252,0.455,12.843,13.466
+lstm__s1,0.1,3/30,11.75,11.684,0.018,-0.04,13.296,15.778
+seq2seq_absoluto__s2,0.1,3/30,11.787,11.712,0.055,-0.011,15.401,15.276
+gru__s2,0.0667,2/30,11.744,11.805,0.012,0.082,14.052,12.886
+seq2seq__s1,0.0333,1/30,11.733,11.748,0.001,0.024,13.966,13.277
+(referencia: los 6 miembros con pesos iguales),,5/30 cada uno,12.03,11.922,0.298,0.199,,

@@ -1,0 +1,10 @@
+grupo,abs_rho_max,abs_rho_media,variable_rho_max,proporcion_test,rango_grupo_eda,rango_grupo_shap
+Precios europeos D y diferenciales,0.8833,0.4884,pt_entsoe_D,0.1819,1,3
+"Precio español (D, D-1, D-6)",0.8833,0.8323,es_esios_D,0.1906,2,2
+Gas MIBGAS,0.6852,0.6852,gas_mibgas,0.0375,3,7
+Programas PDBC/PBF de D,0.4994,0.1961,pdbc_ccgt_mw_D,0.1278,4,4
+"Generación, demanda y flujos reales D-1/D-6",0.462,0.1648,ree_gccgas_mw_Dm1,0.1035,5,5
+Meteorología prevista,0.2339,0.1125,wind100_meteo,0.0364,6,8
+"Previsiones REE (demanda, eólica, solar)",0.2258,0.2034,ree_demanda_prev,0.2552,7,1
+Calendario y hora,0.2214,0.0997,d1_regimen_tope_gas,0.0406,8,6
+Capacidades (disponible e instalada),0.1959,0.0706,capdisp_hydro_mw,0.0265,9,9

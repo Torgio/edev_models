@@ -1,0 +1,189 @@
+variable,bloque,tabla_origen,estado,entra_en,proposito,sale_en,motivo,evidencia,en_completa,en_nucleo,en_minima,en_moderna
+capdisp_fuel_mw,capacidad disponible,esios_capacity_available,descartada,matriz de partida,potencia declarada disponible por tecnología,Paso 2 · resolución de valores ausentes,"sustituida por el canal meteorológico empalmado, que cubre toda la serie",retirada durante la resolución de ausentes,,,,
+capinst_autoconsume_battery_mw,capacidad instalada,esios_capacity_installed,descartada,matriz de partida,"parque disponible, de evolución estructural",Paso 2 · resolución de valores ausentes,"sustituida por el canal meteorológico empalmado, que cubre toda la serie",retirada durante la resolución de ausentes,,,,
+capinst_ccgt_mw,capacidad instalada,esios_capacity_installed,descartada,matriz de partida,"parque disponible, de evolución estructural",Paso 2 · resolución de valores ausentes,"sustituida por el canal meteorológico empalmado, que cubre toda la serie",retirada durante la resolución de ausentes,,,,
+capinst_fuel_mw,capacidad instalada,esios_capacity_installed,descartada,matriz de partida,"parque disponible, de evolución estructural",Paso 2 · resolución de valores ausentes,"sustituida por el canal meteorológico empalmado, que cubre toda la serie",retirada durante la resolución de ausentes,,,,
+capinst_nuclear_mw,capacidad instalada,esios_capacity_installed,descartada,matriz de partida,"parque disponible, de evolución estructural",Paso 2 · resolución de valores ausentes,"sustituida por el canal meteorológico empalmado, que cubre toda la serie",retirada durante la resolución de ausentes,,,,
+capinst_pump_mw,capacidad instalada,esios_capacity_installed,descartada,matriz de partida,"parque disponible, de evolución estructural",Paso 2 · resolución de valores ausentes,"sustituida por el canal meteorológico empalmado, que cubre toda la serie",retirada durante la resolución de ausentes,,,,
+d2m_fc,meteorología: previsión cruda,ecmwf_forecast_agg (prevision D+1),descartada,matriz de partida,"previsión original, sustituida por el canal empalmado",Paso 2 · resolución de valores ausentes,"sustituida por el canal meteorológico empalmado, que cubre toda la serie",la sustituye d2m_meteo,,,,
+msl_fc,meteorología: previsión cruda,ecmwf_forecast_agg (prevision D+1),descartada,matriz de partida,"previsión original, sustituida por el canal empalmado",Paso 2 · resolución de valores ausentes,"sustituida por el canal meteorológico empalmado, que cubre toda la serie",la sustituye msl_meteo,,,,
+ssrd_fc,meteorología: previsión cruda,ecmwf_forecast_agg (prevision D+1),descartada,matriz de partida,"previsión original, sustituida por el canal empalmado",Paso 2 · resolución de valores ausentes,"sustituida por el canal meteorológico empalmado, que cubre toda la serie",la sustituye ssrd_meteo,,,,
+t2m_fc,meteorología: previsión cruda,ecmwf_forecast_agg (prevision D+1),descartada,matriz de partida,"previsión original, sustituida por el canal empalmado",Paso 2 · resolución de valores ausentes,"sustituida por el canal meteorológico empalmado, que cubre toda la serie",la sustituye t2m_meteo,,,,
+tcc_fc,meteorología: previsión cruda,ecmwf_forecast_agg (prevision D+1),descartada,matriz de partida,"previsión original, sustituida por el canal empalmado",Paso 2 · resolución de valores ausentes,"sustituida por el canal meteorológico empalmado, que cubre toda la serie",la sustituye tcc_meteo,,,,
+tp_fc,meteorología: previsión cruda,ecmwf_forecast_agg (prevision D+1),descartada,matriz de partida,"previsión original, sustituida por el canal empalmado",Paso 2 · resolución de valores ausentes,"sustituida por el canal meteorológico empalmado, que cubre toda la serie",la sustituye tp_meteo,,,,
+wind100_fc,meteorología: previsión cruda,ecmwf_forecast_agg (prevision D+1),descartada,matriz de partida,"previsión original, sustituida por el canal empalmado",Paso 2 · resolución de valores ausentes,"sustituida por el canal meteorológico empalmado, que cubre toda la serie",la sustituye wind100_meteo,,,,
+wind10_fc,meteorología: previsión cruda,ecmwf_forecast_agg (prevision D+1),descartada,matriz de partida,"previsión original, sustituida por el canal empalmado",Paso 2 · resolución de valores ausentes,"sustituida por el canal meteorológico empalmado, que cubre toda la serie",la sustituye wind10_meteo,,,,
+imputado_apagon,,DERIVADA (depuracion),descartada,Paso 1 · reparación del cero de suministro,bandera de trazabilidad de la reparación,Paso 3 · tipado,"bandera de trazabilidad: metadato de la fila, no una característica",,,,,
+pbf_completo_D,trazabilidad,DERIVADA (testigo de publicacion),descartada,matriz de partida,marca de fila reparada — NO es un predictor,Paso 3 · tipado,"bandera de trazabilidad: metadato de la fila, no una característica",,,,,
+pbf_publicado_D,trazabilidad,DERIVADA (testigo de publicacion),descartada,matriz de partida,marca de fila reparada — NO es un predictor,Paso 3 · tipado,"bandera de trazabilidad: metadato de la fila, no una característica",,,,,
+ventana_pisa_apagon,,DERIVADA (depuracion),descartada,Paso 1 · reparación del cero de suministro,bandera de trazabilidad de la reparación,Paso 3 · tipado,"bandera de trazabilidad: metadato de la fila, no una característica",,,,,
+capinst_waste_renewable_mw,capacidad instalada,esios_capacity_installed,descartada,matriz de partida,"parque disponible, de evolución estructural",Paso 4 · columnas sin varianza,cuasi-constante en entrenamiento,"dos valores: [np.float64(118.84), np.float64(131.63)]",,,,
+pdbc_fuel_gas_mw_D,programas de casación,esios_pdbc_gen,descartada,matriz de partida,"programa del día de predicción, publicado antes del cierre",Paso 4 · columnas sin varianza,constante en entrenamiento,un único valor en entrenamiento: [0.],,,,
+ree_grenov_prev,previsión para el día objetivo,forecast,descartada,matriz de partida,la única información referida al día que se predice,Paso 5 · colinealidad exacta,identidad exacta con otras columnas de la matriz,= ree_gwind_prev + ree_gsolar_prev · diferencia máxima 3.6e-12,,,,
+wind_gust10_mean_met_Dm1,meteorología: reanálisis desfasado,era5_weather_agg,descartada,matriz de partida,observación meteorológica de días anteriores,Paso 6 · sin equivalente en producción,no está archivada en la fuente de previsión que alimenta producción,R² ≈ 0.94 frente al viento medio agregado,,,,
+wind_gust10_mean_met_Dm2,meteorología: reanálisis desfasado,era5_weather_agg,descartada,matriz de partida,observación meteorológica de días anteriores,Paso 6 · sin equivalente en producción,no está archivada en la fuente de previsión que alimenta producción,R² ≈ 0.43 frente al viento medio agregado,,,,
+capinst_battery_hybrid_mw,capacidad instalada,esios_capacity_installed,descartada,matriz de partida,"parque disponible, de evolución estructural",Paso 7 · series que arrancan tarde,cero fabricado: el valor cero funcionaría como indicador del año,la serie arranca el 2024-01-01 · 60.8% de la ventana sin dato,,,,
+capinst_solar_pv_hybrid_mw,capacidad instalada,esios_capacity_installed,descartada,matriz de partida,"parque disponible, de evolución estructural",Paso 7 · series que arrancan tarde,cero fabricado: el valor cero funcionaría como indicador del año,la serie arranca el 2023-06-01 · 51.9% de la ventana sin dato,,,,
+capinst_wind_hybrid_mw,capacidad instalada,esios_capacity_installed,descartada,matriz de partida,"parque disponible, de evolución estructural",Paso 7 · series que arrancan tarde,cero fabricado: el valor cero funcionaría como indicador del año,la serie arranca el 2023-03-01 · 48.0% de la ventana sin dato,,,,
+ree_cbattery_mw_Dm1,estado real de días anteriores,generation (real D-1/D-6),descartada,matriz de partida,"el sistema tal y como se observó, ya publicado",Paso 7 · series que arrancan tarde,cero fabricado: el valor cero funcionaría como indicador del año,la serie arranca el 2024-11-20 · 74.3% de la ventana sin dato,,,,
+ree_cbattery_mw_Dm6,estado real de días anteriores,generation (real D-1/D-6),descartada,matriz de partida,"el sistema tal y como se observó, ya publicado",Paso 7 · series que arrancan tarde,cero fabricado: el valor cero funcionaría como indicador del año,la serie arranca el 2024-11-25 · 74.5% de la ventana sin dato,,,,
+ree_gbattery_mw_Dm1,estado real de días anteriores,generation (real D-1/D-6),descartada,matriz de partida,"el sistema tal y como se observó, ya publicado",Paso 7 · series que arrancan tarde,cero fabricado: el valor cero funcionaría como indicador del año,la serie arranca el 2024-11-20 · 74.3% de la ventana sin dato,,,,
+ree_gbattery_mw_Dm6,estado real de días anteriores,generation (real D-1/D-6),descartada,matriz de partida,"el sistema tal y como se observó, ya publicado",Paso 7 · series que arrancan tarde,cero fabricado: el valor cero funcionaría como indicador del año,la serie arranca el 2024-11-25 · 74.5% de la ventana sin dato,,,,
+at_entsoe_D,precio: mercados vecinos,"spot_price (Europa, dia D)",en la matriz,matriz de partida,precio de los mercados acoplados,,,,si,,,
+be_entsoe_D,precio: mercados vecinos,"spot_price (Europa, dia D)",en la matriz,matriz de partida,precio de los mercados acoplados,,,,si,,,
+bil_direct_consumer_mw_D,programas de casación,esios_pbf_bilateral,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,si,si
+bil_generic_buy_mw_D,programas de casación,esios_pbf_bilateral,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+bil_generic_sales_mw_D,programas de casación,esios_pbf_bilateral,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,si,si
+bil_retail_free_buy_mw_D,programas de casación,esios_pbf_bilateral,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+bil_retail_free_sales_mw_D,programas de casación,esios_pbf_bilateral,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+bil_retail_last_resort_mw_D,programas de casación,esios_pbf_bilateral,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+bil_total_purchases_mw_D,programas de casación,esios_pbf_bilateral,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,,,
+bil_total_sales_mw_D,programas de casación,esios_pbf_bilateral,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,,,
+biomass_mw_Dm1,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+biomass_mw_Dm6,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+capdisp_ccgt_mw,capacidad disponible,esios_capacity_available,en la matriz,matriz de partida,potencia declarada disponible por tecnología,,,,si,si,,si
+capdisp_coal_antracita_mw,capacidad disponible,esios_capacity_available,en la matriz,matriz de partida,potencia declarada disponible por tecnología,,,,si,si,si,si
+capdisp_hydro_mw,capacidad disponible,esios_capacity_available,en la matriz,matriz de partida,potencia declarada disponible por tecnología,,,,si,si,,si
+capdisp_nuclear_mw,capacidad disponible,esios_capacity_available,en la matriz,matriz de partida,potencia declarada disponible por tecnología,,,,si,si,,si
+capdisp_pump_mw,capacidad disponible,esios_capacity_available,en la matriz,matriz de partida,potencia declarada disponible por tecnología,,,,si,si,,si
+capinst_autoconsume_solar_pv_mw,capacidad instalada,esios_capacity_installed,en la matriz,matriz de partida,"parque disponible, de evolución estructural",,,,si,,,
+capinst_coal_mw,capacidad instalada,esios_capacity_installed,en la matriz,matriz de partida,"parque disponible, de evolución estructural",,,,si,si,si,si
+capinst_cogeneration_mw,capacidad instalada,esios_capacity_installed,en la matriz,matriz de partida,"parque disponible, de evolución estructural",,,,si,,,
+capinst_hydro_mw,capacidad instalada,esios_capacity_installed,en la matriz,matriz de partida,"parque disponible, de evolución estructural",,,,si,,,
+capinst_other_renewable_mw,capacidad instalada,esios_capacity_installed,en la matriz,matriz de partida,"parque disponible, de evolución estructural",,,,si,,,
+capinst_solar_pv_mw,capacidad instalada,esios_capacity_installed,en la matriz,matriz de partida,"parque disponible, de evolución estructural",,,,si,,,
+capinst_solar_thermal_mw,capacidad instalada,esios_capacity_installed,en la matriz,matriz de partida,"parque disponible, de evolución estructural",,,,si,,,
+capinst_total_autoconsume_mw,capacidad instalada,esios_capacity_installed,en la matriz,matriz de partida,"parque disponible, de evolución estructural",,,,si,si,si,si
+capinst_total_hybrid_mw,capacidad instalada,esios_capacity_installed,en la matriz,matriz de partida,"parque disponible, de evolución estructural",,,,si,,,
+capinst_total_mw,capacidad instalada,esios_capacity_installed,en la matriz,matriz de partida,"parque disponible, de evolución estructural",,,,si,,,
+capinst_total_nonrenewable_mw,capacidad instalada,esios_capacity_installed,en la matriz,matriz de partida,"parque disponible, de evolución estructural",,,,si,,,
+capinst_total_renewable_mw,capacidad instalada,esios_capacity_installed,en la matriz,matriz de partida,"parque disponible, de evolución estructural",,,,si,,,
+capinst_waste_nonrenewable_mw,capacidad instalada,esios_capacity_installed,en la matriz,matriz de partida,"parque disponible, de evolución estructural",,,,si,si,si,si
+capinst_wind_mw,capacidad instalada,esios_capacity_installed,en la matriz,matriz de partida,"parque disponible, de evolución estructural",,,,si,si,si,si
+ch_entsoe_D,precio: mercados vecinos,"spot_price (Europa, dia D)",en la matriz,matriz de partida,precio de los mercados acoplados,,,,si,,,
+cz_entsoe_D,precio: mercados vecinos,"spot_price (Europa, dia D)",en la matriz,matriz de partida,precio de los mercados acoplados,,,,si,,,
+d1_dow,calendario,CALENDARIO (calculado),en la matriz,matriz de partida,estructura semanal y anual de la demanda,,,,,,,
+d1_dow_cos,calendario: codificación cíclica,CALENDARIO (calculado),en la matriz,matriz de partida,hace contiguos el salto de diciembre a enero y el de las 23:00 a las 00:00,,,,si,si,,si
+d1_dow_sin,calendario: codificación cíclica,CALENDARIO (calculado),en la matriz,matriz de partida,hace contiguos el salto de diciembre a enero y el de las 23:00 a las 00:00,,,,si,si,,si
+d1_doy_cos,calendario: codificación cíclica,CALENDARIO (calculado),en la matriz,matriz de partida,hace contiguos el salto de diciembre a enero y el de las 23:00 a las 00:00,,,,si,,,
+d1_doy_sin,calendario: codificación cíclica,CALENDARIO (calculado),en la matriz,matriz de partida,hace contiguos el salto de diciembre a enero y el de las 23:00 a las 00:00,,,,si,si,,si
+d1_es_puente,calendario,CALENDARIO (calculado),en la matriz,matriz de partida,estructura semanal y anual de la demanda,,,,,,,
+d1_is_festivo,calendario,CALENDARIO (calculado),en la matriz,matriz de partida,estructura semanal y anual de la demanda,,,,,,,
+d1_is_weekend,calendario,CALENDARIO (calculado),en la matriz,matriz de partida,estructura semanal y anual de la demanda,,,,,,,
+d1_month,calendario,CALENDARIO (calculado),en la matriz,matriz de partida,estructura semanal y anual de la demanda,,,,,,,
+d1_month_cos,calendario: codificación cíclica,CALENDARIO (calculado),en la matriz,matriz de partida,hace contiguos el salto de diciembre a enero y el de las 23:00 a las 00:00,,,,si,si,,si
+d1_month_sin,calendario: codificación cíclica,CALENDARIO (calculado),en la matriz,matriz de partida,hace contiguos el salto de diciembre a enero y el de las 23:00 a las 00:00,,,,si,,,
+d1_regimen_tope_gas,régimen regulatorio,CALENDARIO (calculado),en la matriz,matriz de partida,distinguir un cambio de reglas de un cambio del sistema,,,,,,,
+d1_vispera_festivo,calendario,CALENDARIO (calculado),en la matriz,matriz de partida,estructura semanal y anual de la demanda,,,,,,,
+d2m_mean_met_Dm1,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,si,,si
+d2m_mean_met_Dm2,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,si,,si
+d2m_meteo,meteorología: canal empalmado,era5_weather_agg,en la matriz,matriz de partida,misma variable con la fuente disponible en cada fecha,,,,si,si,,si
+de_lu_entsoe_D,precio: mercados vecinos,"spot_price (Europa, dia D)",en la matriz,matriz de partida,precio de los mercados acoplados,,,,si,si,si,si
+entsoe_load_Dm1,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+entsoe_load_Dm6,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+es_esios_D,precio: referencia de persistencia,spot_price (lag),en la matriz,matriz de partida,el precio ya publicado al predecir; es la referencia contra la que se mide todo,,,,,,,
+es_esios_Dm1,precio: referencia de persistencia,spot_price (lag),en la matriz,matriz de partida,el precio ya publicado al predecir; es la referencia contra la que se mide todo,,,,,,,
+es_esios_Dm6,precio: referencia de persistencia,spot_price (lag),en la matriz,matriz de partida,el precio ya publicado al predecir; es la referencia contra la que se mide todo,,,,,,,
+fr_entsoe_D,precio: mercados vecinos,"spot_price (Europa, dia D)",en la matriz,matriz de partida,precio de los mercados acoplados,,,,si,si,si,si
+gas_mibgas,materias primas,commodities,en la matriz,matriz de partida,coste del combustible que fija el precio marginal,,,,si,si,si,si
+gen_peninsular_mw_Dm1,demanda e intercambios: agregado,generation (real D-1/D-6),en la matriz,matriz de partida,suma calculada por la base de datos,,,,si,si,,si
+gen_peninsular_mw_Dm6,demanda e intercambios: agregado,generation (real D-1/D-6),en la matriz,matriz de partida,suma calculada por la base de datos,,,,si,si,,si
+hora,calendario,CLAVE,en la matriz,matriz de partida,estructura semanal y anual de la demanda,,,,,,,
+hora_cos,calendario: codificación cíclica,CALENDARIO (calculado),en la matriz,matriz de partida,hace contiguos el salto de diciembre a enero y el de las 23:00 a las 00:00,,,,si,si,,si
+hora_sin,calendario: codificación cíclica,CALENDARIO (calculado),en la matriz,matriz de partida,hace contiguos el salto de diciembre a enero y el de las 23:00 a las 00:00,,,,si,si,,si
+hydro_dispatch_mw_Dm1,generación: reconstruida entre fuentes,generation (real D-1/D-6),en la matriz,matriz de partida,magnitud que ninguna fuente publica y se obtiene combinando dos,,,,si,si,,si
+hydro_dispatch_mw_Dm6,generación: reconstruida entre fuentes,generation (real D-1/D-6),en la matriz,matriz de partida,magnitud que ninguna fuente publica y se obtiene combinando dos,,,,si,si,,si
+hydro_run_river_mw_Dm1,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,si,si
+hydro_run_river_mw_Dm6,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+it_nord_entsoe_D,precio: mercados vecinos,"spot_price (Europa, dia D)",en la matriz,matriz de partida,precio de los mercados acoplados,,,,si,si,si,si
+meteo_es_forecast,meteorología: procedencia del canal,DERIVADA (depuracion),en la matriz,matriz de partida,indica si la fila usa previsión o reconstrucción,,,,,,,
+msl_mean_met_Dm1,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,si,,si
+msl_mean_met_Dm2,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,si,,si
+msl_meteo,meteorología: canal empalmado,era5_weather_agg,en la matriz,matriz de partida,misma variable con la fuente disponible en cada fecha,,,,si,si,,si
+nl_entsoe_D,precio: mercados vecinos,"spot_price (Europa, dia D)",en la matriz,matriz de partida,precio de los mercados acoplados,,,,si,,,
+oil_mw_Dm1,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,si,si
+oil_mw_Dm6,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,si,si
+other_renewable_mw_Dm1,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+other_renewable_mw_Dm6,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+pbfli_demand_aux_mw_D,programas de casación,esios_pbf_load_inter,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pbfli_demand_direct_mw_D,programas de casación,esios_pbf_load_inter,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pbfli_demand_free_market_mw_D,programas de casación,esios_pbf_load_inter,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,,,
+pbfli_demand_reference_mw_D,programas de casación,esios_pbf_load_inter,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pbfli_net_flow_ad_mw_D,programas de casación,esios_pbf_load_inter,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pbfli_net_flow_fr_mw_D,programas de casación,esios_pbf_load_inter,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pbfli_net_flow_ma_mw_D,programas de casación,esios_pbf_load_inter,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,,,
+pbfli_net_flow_pt_mw_D,programas de casación,esios_pbf_load_inter,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pbfli_total_demand_mw_D,programas de casación,esios_pbf_load_inter,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pbfli_total_net_flow_mw_D,programas de casación,esios_pbf_load_inter,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pdbc_biogas_mw_D,programas de casación,esios_pdbc_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pdbc_biomass_mw_D,programas de casación,esios_pdbc_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pdbc_ccgt_mw_D,programas de casación,esios_pdbc_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,si,si
+pdbc_coal_mw_D,programas de casación,esios_pdbc_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,si,si
+pdbc_cogen_mw_D,programas de casación,esios_pdbc_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pdbc_hybrid_mw_D,programas de casación,esios_pdbc_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,,,
+pdbc_hydro_no_ugh_mw_D,programas de casación,esios_pdbc_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pdbc_hydro_ugh_mw_D,programas de casación,esios_pdbc_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pdbc_nuclear_mw_D,programas de casación,esios_pdbc_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pdbc_other_renew_mw_D,programas de casación,esios_pdbc_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,si,si
+pdbc_pumping_cons_mw_D,programas de casación,esios_pbf_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,si,si
+pdbc_pumping_gen_mw_D,programas de casación,esios_pbf_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pdbc_solar_pv_mw_D,programas de casación,esios_pdbc_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,,,
+pdbc_solar_thermal_mw_D,programas de casación,esios_pdbc_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pdbc_total_gen_mw_D,programas de casación,esios_pbf_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pdbc_unavailable_power_mw_D,programas de casación,esios_pbf_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pdbc_waste_mw_D,programas de casación,esios_pdbc_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pdbc_wind_mw_D,programas de casación,esios_pdbc_gen,en la matriz,matriz de partida,"programa del día de predicción, publicado antes del cierre",,,,si,si,,si
+pl_entsoe_D,precio: mercados vecinos,"spot_price (Europa, dia D)",en la matriz,matriz de partida,precio de los mercados acoplados,,,,si,si,si,si
+pt_entsoe_D,precio: mercados vecinos,"spot_price (Europa, dia D)",en la matriz,matriz de partida,precio de los mercados acoplados,,,,si,si,si,si
+pumping_cons_mw_Dm1,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+pumping_cons_mw_Dm6,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+ree_demanda_prev,previsión para el día objetivo,forecast,en la matriz,matriz de partida,la única información referida al día que se predice,,,,si,si,,si
+ree_gccgas_mw_Dm1,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,si,si
+ree_gccgas_mw_Dm6,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+ree_gcoal_mw_Dm1,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,si,si
+ree_gcoal_mw_Dm6,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,si,si
+ree_gnuclear_mw_Dm1,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+ree_gnuclear_mw_Dm6,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+ree_gotherthermal_mw_Dm1,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,si,si
+ree_gotherthermal_mw_Dm6,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,si,si
+ree_gsolar_prev,previsión para el día objetivo,forecast,en la matriz,matriz de partida,la única información referida al día que se predice,,,,si,si,,si
+ree_gsolter_mw_Dm1,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+ree_gsolter_mw_Dm6,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+ree_gwind_prev,previsión para el día objetivo,forecast,en la matriz,matriz de partida,la única información referida al día que se predice,,,,si,si,,si
+ree_netflow_fr_Dm1,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+ree_netflow_fr_Dm6,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+ree_netflow_ma_Dm1,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+ree_netflow_ma_Dm6,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+ree_netflow_pt_Dm1,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+ree_netflow_pt_Dm6,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+solar_fv_mw_Dm1,generación: reconstruida entre fuentes,generation (real D-1/D-6),en la matriz,matriz de partida,magnitud que ninguna fuente publica y se obtiene combinando dos,,,,si,,,
+solar_fv_mw_Dm6,generación: reconstruida entre fuentes,generation (real D-1/D-6),en la matriz,matriz de partida,magnitud que ninguna fuente publica y se obtiene combinando dos,,,,si,si,,si
+spread_es_de_D,precio: diferencial entre zonas,spot_price (lag),en la matriz,matriz de partida,resume el acoplamiento entre mercados vecinos,,,,si,si,,si
+spread_es_fr_D,precio: diferencial entre zonas,spot_price (lag),en la matriz,matriz de partida,resume el acoplamiento entre mercados vecinos,,,,si,si,,si
+spread_es_pt_D,precio: diferencial entre zonas,spot_price (lag),en la matriz,matriz de partida,resume el acoplamiento entre mercados vecinos,,,,si,si,,si
+ssrd_mean_met_Dm1,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,si,,si
+ssrd_mean_met_Dm2,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,,,
+ssrd_meteo,meteorología: canal empalmado,era5_weather_agg,en la matriz,matriz de partida,misma variable con la fuente disponible en cada fecha,,,,si,si,,si
+t2m_mean_met_Dm1,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,si,,si
+t2m_mean_met_Dm2,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,,,
+t2m_meteo,meteorología: canal empalmado,era5_weather_agg,en la matriz,matriz de partida,misma variable con la fuente disponible en cada fecha,,,,si,si,,si
+target_price,objetivo,spot_price (TARGET),en la matriz,matriz de partida,precio horario del mercado diario del día siguiente,,,,,,,
+tcc_mean_met_Dm1,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,si,,si
+tcc_mean_met_Dm2,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,si,,si
+tcc_meteo,meteorología: canal empalmado,era5_weather_agg,en la matriz,matriz de partida,misma variable con la fuente disponible en cada fecha,,,,si,si,,si
+total_net_flow_mw_Dm1,demanda e intercambios: agregado,generation (real D-1/D-6),en la matriz,matriz de partida,suma calculada por la base de datos,,,,si,si,,si
+total_net_flow_mw_Dm6,demanda e intercambios: agregado,generation (real D-1/D-6),en la matriz,matriz de partida,suma calculada por la base de datos,,,,si,si,,si
+tp_acum_30d_met_Dm1,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,si,,si
+tp_acum_30d_met_Dm2,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,,,
+tp_acum_7d_met_Dm1,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,,,
+tp_acum_7d_met_Dm2,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,si,,si
+waste_mw_Dm1,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+waste_mw_Dm6,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+wind100_mean_met_Dm1,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,,,
+wind100_mean_met_Dm2,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,si,,si
+wind100_meteo,meteorología: canal empalmado,era5_weather_agg,en la matriz,matriz de partida,misma variable con la fuente disponible en cada fecha,,,,si,si,,si
+wind10_mean_met_Dm1,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,si,,si
+wind10_mean_met_Dm2,meteorología: reanálisis desfasado,era5_weather_agg,en la matriz,matriz de partida,observación meteorológica de días anteriores,,,,si,,,
+wind10_meteo,meteorología: canal empalmado,era5_weather_agg,en la matriz,matriz de partida,misma variable con la fuente disponible en cada fecha,,,,si,,,
+wind_mw_Dm1,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si
+wind_mw_Dm6,estado real de días anteriores,generation (real D-1/D-6),en la matriz,matriz de partida,"el sistema tal y como se observó, ya publicado",,,,si,si,,si

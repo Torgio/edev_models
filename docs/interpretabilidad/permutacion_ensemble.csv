@@ -1,0 +1,11 @@
+grupo,etiqueta,variante,n_cols_lgbm,n_canales_encoder,n_cols_decoder,n_cols_estaticos,MAE_base,MAE_permutado_media,aumento_MAE_media,aumento_MAE_min,aumento_MAE_max,aumento_MAE_s0,aumento_MAE_s1,aumento_MAE_s2,aumento_%_media
+prev_ree,Previsiones REE (D+1),principal,3,0,3,0,11.7237,21.8275,10.1038,9.4304,10.7462,10.7462,9.4304,10.1348,86.1827
+precio_es,"Precio espanol (D, D-1, D-6)",principal,3,1,1,0,11.7237,13.4179,1.6942,1.5871,1.7857,1.7096,1.5871,1.7857,14.4507
+precios_europeos,Precios europeos y spreads (D),principal,8,0,8,0,11.7237,12.9774,1.2537,1.1305,1.4311,1.1993,1.1305,1.4311,10.6933
+programas_D,"Programas de D (PDBC, PBF, bilaterales)",principal,30,30,0,0,11.7237,12.8344,1.1107,0.9305,1.2077,1.2077,0.9305,1.194,9.4743
+real_Dm1_Dm6,"Generacion y flujos reales (D-1, D-6)",principal,39,19,0,0,11.7237,12.6595,0.9358,0.8574,1.0392,0.8574,0.9108,1.0392,7.9821
+meteo_prevista,Meteorologia prevista (D+1),principal,6,0,7,0,11.7237,12.5719,0.8482,0.723,0.941,0.941,0.8805,0.723,7.2346
+calendario,Calendario (D+1),principal,13,0,2,11,11.7237,12.5663,0.8426,0.7829,0.8785,0.8664,0.8785,0.7829,7.1869
+gas,Gas (MIBGAS),principal,1,0,0,1,11.7237,11.8495,0.1257,0.0824,0.1517,0.0824,0.143,0.1517,1.0725
+capacidades,Capacidades (instalada y disponible),principal,9,0,0,9,11.7237,11.7207,-0.003,-0.0567,0.0389,0.0087,0.0389,-0.0567,-0.0255
+precio_es__ancla_permutada,"Precio espanol (D, D-1, D-6) + ancla permutada",referencia,3,1,1,0,11.7237,32.0793,20.3556,19.5549,20.7777,20.7342,19.5549,20.7777,173.6276

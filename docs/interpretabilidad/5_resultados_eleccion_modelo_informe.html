@@ -1,0 +1,154 @@
+<title>5_resultados_eleccion_modelo_informe</title>
+<style>
+:root {
+  --paper: #FFFFFF;
+  --ink: #1B1B1B;
+  --ink-2: #4A4A4A;
+  --rule: #C9C9C9;
+  --nuevo: #FCE5B8;
+  --corr: #D6E6FA;
+  color-scheme: light;
+}
+@page {
+  size: A4;
+  margin: 25mm 25mm 22mm;
+  @bottom-right { content: counter(page); font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #4A4A4A; }
+}
+* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+html, body { background: var(--paper); }
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  font-size: 11pt;
+  line-height: 1.4;
+}
+.informe { max-width: 160mm; margin-inline: auto; padding-inline: 16px; padding-block: 16mm; }
+.aviso {
+  display: grid;
+  gap: 1.6mm;
+  margin-bottom: 8mm;
+  padding: 3mm 4mm;
+  border: 1px solid var(--rule);
+  font-size: 9pt;
+  line-height: 1.35;
+  color: var(--ink-2);
+}
+.aviso strong { color: var(--ink); }
+.claves { display: flex; flex-wrap: wrap; gap: 1.5mm 6mm; }
+.muestra { display: inline-block; width: 9mm; height: 3.4mm; margin-right: 1.8mm; vertical-align: -0.5mm; border: 1px solid rgba(0, 0, 0, 0.08); }
+.muestra.m-nuevo { background: var(--nuevo); }
+.muestra.m-corr { background: var(--corr); }
+h1 { margin: 0 0 5mm; font-size: 16pt; line-height: 1.2; font-weight: 700; }
+h2 { margin: 7mm 0 2.5mm; font-size: 12pt; line-height: 1.25; font-weight: 700; break-after: avoid; }
+p { margin: 0 0 3.2mm; text-align: justify; hyphens: manual; orphans: 3; widows: 3; }
+.nuevo, .corr { -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.nuevo { background: var(--nuevo); }
+.corr { background: var(--corr); }
+body.limpio .nuevo, body.limpio .corr { background: none; }
+body.limpio .aviso { display: none; }
+@media print {
+  .informe { max-width: none; padding: 0; }
+}
+
+h2 { margin: 5mm 0 2mm; }
+h3 { margin: 3.5mm 0 1.5mm; font-size: 11pt; font-weight: 700; break-after: avoid; }
+table { width: 100%; border-collapse: collapse; margin: 2mm 0 2mm; font-size: 8.8pt; line-height: 1.25; break-inside: avoid; }
+th, td { padding: 1mm 1.4mm; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+th { border-bottom: 1.5px solid var(--ink); font-weight: 700; }
+td:nth-child(n+2), th:nth-child(n+2) { text-align: right; font-variant-numeric: tabular-nums; }
+ul { margin: 0 0 3mm; padding-left: 5mm; }
+li { margin-bottom: 1mm; }
+figure, p > img { break-inside: avoid; }
+img { display: block; width: 100%; max-width: 160mm; margin: 2mm auto 1mm; }
+.pie { font-size: 9pt; line-height: 1.3; color: var(--ink-2); margin: 0 0 4mm; text-align: justify; }
+</style>
+<main class="informe">
+<h2>Resultados y elección del modelo final</h2>
+<p><strong>Tabla X.</strong> Candidatos a modelo final.</p>
+<table>
+<thead>
+<tr>
+<th>Modelo</th>
+<th>MAE val</th>
+<th>MAE test</th>
+<th>Captura (%)</th>
+<th>Pico ±1 h (%)</th>
+<th>Mejora frente a persistencia (%)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Ensemble seleccionado (modelo final)</strong></td>
+<td><strong>11,73</strong></td>
+<td><strong>11,72</strong></td>
+<td><strong>92,6</strong></td>
+<td><strong>76,4</strong></td>
+<td><strong>29,9</strong></td>
+</tr>
+<tr>
+<td>Ensemble seleccionado con ancla semanal (descartado)</td>
+<td>11,83</td>
+<td>12,17</td>
+<td>92,2</td>
+<td>78,3</td>
+<td>27,2</td>
+</tr>
+<tr>
+<td>Media simple de 8 familias</td>
+<td>12,52</td>
+<td>12,03</td>
+<td>90,5</td>
+<td>77,4</td>
+<td>28,0</td>
+</tr>
+<tr>
+<td>Media simple de 12 familias (regla anterior)</td>
+<td>12,63</td>
+<td>11,88</td>
+<td>92,9</td>
+<td>78,3</td>
+<td>28,9</td>
+</tr>
+<tr>
+<td>Red densa</td>
+<td>12,94</td>
+<td>13,29</td>
+<td>88,5</td>
+<td>74,7</td>
+<td>20,5</td>
+</tr>
+<tr>
+<td>LightGBM global</td>
+<td>13,06</td>
+<td>14,25</td>
+<td>90,5</td>
+<td>75,0</td>
+<td>14,8</td>
+</tr>
+<tr>
+<td>GRU</td>
+<td>14,13</td>
+<td>13,19</td>
+<td>89,6</td>
+<td>77,0</td>
+<td>21,1</td>
+</tr>
+<tr>
+<td>Persistencia (precio de D)</td>
+<td>19,95</td>
+<td>16,72</td>
+<td>86,1</td>
+<td>67,5</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p><em>Nota:</em> MAE en €/MWh; validación 2025 (365&nbsp;días), test enero-julio de 2026 (212&nbsp;días). Captura del spread, pico y mejora (reducción relativa del MAE), en test. Modelos individuales: media de 3&nbsp;semillas; medias simples: mejor semilla de cada familia.</p>
+<p><strong>Elección.</strong> Miembros y pesos se fijaron solo con validación, mediante selección voraz hacia delante con reemplazo en 30 pasos: LightGBM global (11/30), red densa (10/30), LSTM (3/30), seq2seq de precio absoluto (3/30), GRU (2/30) y seq2seq residual (1/30). Por eso el MAE de validación de los ensembles seleccionados es optimista y la medida honesta es el test.</p>
+<p><strong>Test.</strong> Confirma el primer puesto. El contraste diario (bloques móviles de siete días, 5000 réplicas; IC al 95&nbsp;% de la diferencia rival menos ensemble) le da ventaja clara sobre la persistencia (+5,00 [3,93; 6,34]), LightGBM global (+2,44 [1,49; 3,46]) y GRU (+1,16 [0,66; 1,82]), con la semilla miembro (14,16 y 12,89), y la variante con ancla semanal (+0,44 [0,14; 0,78]). Frente a las medias simples no es significativa: +0,16 [−0,28; 0,76] con 12 familias y +0,31 [−0,05; 0,77] con 8.</p>
+<p><strong>Aportación.</strong> Se concentra en LightGBM global y la red densa: sin cada uno, el MAE de test sube a 12,70 y 12,18; los otros cuatro apenas cambian el test.</p>
+<p><strong>Limitaciones.</strong> La selección se prefiere por el criterio de validación, pero el método no se eligió a ciegas respecto al test: la regla anterior, media de las familias que batían a la persistencia en validación, incluía Ridge y SARIMAX, que no la baten en test (19,18 y 21,45 frente a 16,72), y se sustituyó tras verlo. El test no es del todo independiente para comparar selección y media simple.</p>
+<p>Un menor MAE no garantiza mejor orden horario: la media de 12 familias acierta más el pico (78,3&nbsp;% frente a 76,4&nbsp;%), y el seq2seq de precio absoluto y Ridge llegan al 81,4&nbsp;% y 81,6&nbsp;%, sin contraste de incertidumbre.</p>
+<p>Las previsiones de REE para D+1 se cargaron ya revisadas en validación y test, por lo que el MAE de test y la mejora del 29,9&nbsp;% pueden ser optimistas frente a producción, que solo dispone de la previsión de las 11:00 de D. Queda pendiente medirlo reentrenando sin esas variables.</p>
+</main>
