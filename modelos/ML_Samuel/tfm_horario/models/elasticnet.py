@@ -59,9 +59,7 @@ def tunear(X_train, y_train, X_val, y_val, alphas: list | None = None,
     for alpha, l1_ratio in itertools.product(alphas, l1_ratios):
         modelo = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, max_iter=config.EN_MAX_ITER)
 
-        # Se captura el ConvergenceWarning de cada ajuste en vez de dejar que
-        # inunde la consola: interesa SABER que combinaciones no convergieron, no
-        # ver el mismo aviso 30 veces sin saber a cual corresponde.
+        # Se captura el ConvergenceWarning de cada ajuste 
         with warnings.catch_warnings(record=True) as avisos:
             warnings.simplefilter("always", ConvergenceWarning)
             modelo.fit(X_train, y_train)
@@ -98,13 +96,11 @@ def entrenar_y_predecir(X_train, y_train, X_val, y_val, alphas: list | None = No
     """Tunea (alpha, l1_ratio) sobre validation, reentrena con la mejor y predice.
 
     Devuelve (modelo_final, predicciones, tabla_de_tuning). Los hiperparametros se
-    eligen mirando el MAE de validation, asi que esa metrica queda algo optimista:
-    es el mismo split que los escogio. Con el test sellado se corrige solo.
+    eligen mirando el MAE de validation..
 
     El tuneo va sobre X escaladas (una vez, reaprovechadas en las 60 combinaciones
     de la rejilla); el modelo final se reajusta sobre X crudas dentro de un
-    pipeline con el StandardScaler dentro, para que el artefacto sea servible. Ver
-    `data.pipeline_escalado`.
+    pipeline con el StandardScaler dentro.
     """
     tabla = tunear(X_train, y_train, X_val, y_val, alphas, l1_ratios)
 
@@ -135,7 +131,6 @@ def entrenar_y_predecir(X_train, y_train, X_val, y_val, alphas: list | None = No
 
     final = data.pipeline_escalado(estimador)
     # El ajuste final tambien puede no converger, y aqui ya no hay rejilla que
-    # mirar: si pasa, el artefacto que se sube no es el modelo que dice ser.
     with warnings.catch_warnings(record=True) as avisos:
         warnings.simplefilter("always", ConvergenceWarning)
         final.fit(X_train_crudo, y_train)
@@ -167,7 +162,7 @@ def ejecutar(forzar: bool = False, modo: str | None = None) -> pd.Series:
         X_train_crudo=datos["X_train"], X_val_crudo=datos["X_val"],
     )
 
-    # El tuning se guarda en salidas/ (uso interno), NO en entregables/
+    # El tuning se guarda en salidas (uso interno)
     config.preparar_entorno()
     tabla.to_csv(config.OUTPUT_DIR / f"tuning_elasticnet_{datos['modo']}.csv", index=False)
     # `modelo` es ahora un Pipeline: el estimador esta en el ultimo paso.

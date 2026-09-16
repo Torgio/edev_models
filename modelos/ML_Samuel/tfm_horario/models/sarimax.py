@@ -1,14 +1,11 @@
-"""SARIMAX: SARIMA + variables exogenas (celdas 33-39 del notebook).
+"""SARIMAX: SARIMA + variables exogenas.
 
 Las exogenas son las features que sobrevivieron a Spearman + SFS y al tratamiento
 de huecos, ya alineadas hora a hora con el target.
 
 El motor (auto_arima, ajuste y las tres estrategias de prediccion) se reutiliza de
-`sarima.py`: es literalmente el mismo `SARIMAX` de statsmodels, solo cambia que
-aqui `exog` es obligatorio. Lo que aporta este modulo es una API que no deja
-llamarlo sin exogenas por descuido -- en el notebook la diferencia entre el
-modelo con y sin exogenas era solo acordarse de pasar `X=` o `exog=`, y las dos
-versiones escribian sobre variables de nombre parecido.
+`sarima.py`. Lo que aporta este modulo es una API que no deja
+llamarlo sin exogenas por descuido.
 
 Se puede ejecutar solo. Llama por su cuenta a la preparacion de datos:
 
@@ -63,14 +60,13 @@ def _validar_exog(y: pd.Series, X: pd.DataFrame, etiqueta: str) -> None:
 
 def buscar_orden(y_train: pd.Series, X_train: pd.DataFrame, ventana: int = config.VENTANA_ORDEN, **kwargs):
     """Busca (p,d,q)(P,D,Q,m) CON las exogenas incluidas, sobre la ventana reciente
-    de train. El orden optimo no tiene por que coincidir con el del SARIMA sin
-    exogenas: parte de la estructura temporal la explican ya las features."""
+    de train."""
     _validar_exog(y_train, X_train, "train")
     return _buscar_orden(y_train, X_train, ventana, **kwargs)
 
 
 def ajustar(y_train: pd.Series, order, seasonal_order, exog: pd.DataFrame):
-    """Ajusta sobre TODO train con el orden ya encontrado."""
+    """Ajusta sobre train con el orden ya encontrado."""
     _validar_exog(y_train, exog, "train")
     return _ajustar(y_train, order, seasonal_order, exog=exog)
 
@@ -95,7 +91,7 @@ def entrenar_y_predecir(
     seasonal_order=None,
     estrategia: str | None = None,
 ) -> pd.Series:
-    """Atajo de una llamada: busca orden (si no se le da), ajusta y predice."""
+    """Atajo de una llamada: busca orden, ajusta y predice."""
     if order is None or seasonal_order is None:
         order, seasonal_order = buscar_orden(y_train, X_train)
     fit = ajustar(y_train, order, seasonal_order, exog=X_train)
@@ -109,7 +105,7 @@ def ejecutar(forzar: bool = False, estrategia: str | None = None,
     datos = preparacion.preparar_datos(modo, forzar)
     estrategia = estrategia or config.ESTRATEGIA_SARIMAX
 
-    # Orden propio: con exogenas no tiene por que coincidir con el del SARIMA
+   
     order, seasonal_order = artifacts.cachear(
         f"orden_sarimax_{datos['modo']}",
         lambda: buscar_orden(datos["y_train"], datos["X_train"]),

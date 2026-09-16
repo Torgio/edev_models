@@ -1,4 +1,4 @@
-"""Ridge: regresion lineal con penalizacion L2 (celdas 42-45 del notebook).
+"""Ridge: regresion lineal con penalizacion L2.
 
 Se puede ejecutar solo. Llama por su cuenta a la preparacion de datos (carga,
 split, Spearman + SFS, tratamiento y escalado):
@@ -66,21 +66,15 @@ def entrenar_y_predecir(X_train, y_train, X_val, y_val, alphas: list | None = No
     """Tunea alpha sobre validation, reentrena con el mejor y predice.
 
     Devuelve (modelo_final, predicciones, tabla_de_tuning). El alpha se elige
-    mirando el MAE de validation, asi que esa metrica queda algo optimista: es el
-    mismo split que lo escogio. Con el test sellado se corrige solo.
+    mirando el MAE de validation.
 
-    El TUNEO usa las X ya escaladas (se escalan una vez y se reaprovechan en los
-    diez ajustes de la rejilla). El MODELO FINAL se reajusta sobre las X CRUDAS
-    dentro de un pipeline que lleva el StandardScaler dentro, para que el
-    `modelo.joblib` acepte la matriz tal y como llega en produccion. Es el mismo
-    modelo -- el scaler se ajusta sobre el mismo train --, solo que servible.
+ 
     """
     tabla = tunear(X_train, y_train, X_val, y_val, alphas)
     best_alpha = tabla.iloc[0]["alpha"]
 
     if X_train_crudo is None:
-        # Sin las crudas se devuelve el estimador pelado: vale para experimentar
-        # desde un notebook, pero ese objeto NO debe acabar en un entregable.
+   
         log.warning("modelo final SIN escalador dentro: no es servible en produccion")
         final = Ridge(alpha=best_alpha)
         final.fit(X_train, y_train)
@@ -94,8 +88,7 @@ def entrenar_y_predecir(X_train, y_train, X_val, y_val, alphas: list | None = No
 
 def coeficientes(modelo, columnas) -> pd.Series:
     """Coeficientes ordenados por magnitud. Sobre features escaladas son
-    comparables entre si, asi que sirven para la memoria como lectura de que pesa
-    en el precio."""
+    comparables entre si"""
     return pd.Series(modelo.coef_, index=columnas).sort_values(key=abs, ascending=False)
 
 
@@ -109,7 +102,7 @@ def ejecutar(forzar: bool = False, modo: str | None = None) -> pd.Series:
         X_train_crudo=datos["X_train"], X_val_crudo=datos["X_val"],
     )
 
-    # El tuning se guarda en salidas/ (uso interno), NO en entregables/
+    # El tuning se guarda en salidas/ (uso interno)
     config.preparar_entorno()
     tabla.to_csv(config.OUTPUT_DIR / f"tuning_ridge_{datos['modo']}.csv", index=False)
     # `modelo` es ahora un Pipeline: el estimador esta en el ultimo paso.

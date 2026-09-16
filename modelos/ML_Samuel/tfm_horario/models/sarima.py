@@ -1,14 +1,10 @@
-"""SARIMA sin exogenas (celdas 26-31 del notebook).
+"""SARIMA sin exogenas 
 
 Este modulo contiene ademas el motor que comparte con SARIMAX: la busqueda de
 orden, el ajuste y las tres estrategias de prediccion admiten `exog` opcional.
 `sarimax.py` los reutiliza en vez de duplicarlos -- son el mismo SARIMAX de
-statsmodels, y mantener dos copias del bucle walk-forward garantizaba que tarde o
-temprano divergieran.
+statsmodels.
 
-Del notebook: habia tres celdas alternativas que calculaban `predictions` de formas
-distintas (28, 29 y 30) y se pisaban entre si segun el orden de ejecucion. Aqui son
-estrategias explicitas elegidas por parametro.
 
 Se puede ejecutar solo. Llama por su cuenta a la preparacion de datos:
 
@@ -61,9 +57,7 @@ def buscar_orden(
 ):
     """Busca (p,d,q)(P,D,Q,m) con auto_arima.
 
-    CAMBIO CLAVE respecto al dataset diario: m=24, no m=7. En horario el ciclo
-    dominante es el del dia; el semanal (m=168) es inviable en SARIMA -- si se
-    quiere capturar, se deja en manos de `dow` / `is_weekend` y los lags 168h.
+ 
 
     auto_arima con m=24 sobre decenas de miles de horas es MUY lento (cada fit
     estima una matriz de estado de tamaño ~m), asi que el orden se busca sobre la
@@ -85,6 +79,7 @@ def buscar_orden(
 
 def recortar_historia(y_train: pd.Series, exog: pd.DataFrame | None = None):
     """Deja solo las ultimas `SARIMA_MAX_HORAS_TRAIN` horas, si esta configurado."""
+
     tope = config.SARIMA_MAX_HORAS_TRAIN
     if not tope or len(y_train) <= tope:
         return y_train, exog
@@ -100,9 +95,7 @@ def ajustar(
 ):
     """Ajusta el modelo sobre train con el orden ya elegido.
 
-    `low_memory=True` no es un detalle: sin el, statsmodels guarda las matrices del
-    filtro de Kalman para cada una de las ~44.000 horas y el proceso muere por OOM
-    (ver SARIMA_LOW_MEMORY en ajustes.py).
+    
     """
     y_train, exog = recortar_historia(y_train, exog)
 
@@ -155,9 +148,6 @@ def predecir(
                    modelo el dia observado. Es la simulacion honesta del mercado
                    diario: casa las 24 horas de D+1 con informacion hasta D.
 
-    "walkforward" (hora a hora, horizonte 1h) se ha eliminado: media una tarea que
-    nadie realiza -- nadie predice las 14:00 conociendo el precio de las 13:00 --,
-    daba metricas infladas y tardaba mas de una hora por año.
     """
     if estrategia not in ESTRATEGIAS:
         raise ValueError(f"estrategia debe ser una de {ESTRATEGIAS}, no {estrategia!r}")
@@ -170,8 +160,7 @@ def predecir(
     # bloques24: cada dia se predice entero y despues se le da el dia observado.
     #
     # `extend()` y no `append()`: append re-filtra TODA la serie acumulada en cada
-    # iteracion, asi que la memoria crece dia a dia (medido: 2 GB en 30 dias, y el
-    # OOM killer esperando). extend continua desde el estado y solo procesa el bloque
+    # iteracion, asi que la memoria crece dia a dia extend continua desde el estado y solo procesa el bloque
     # nuevo, con memoria constante. Las predicciones son identicas.
     bloques = []
     current_fit = fit
@@ -213,7 +202,7 @@ def ejecutar(forzar: bool = False, estrategia: str | None = None,
     datos = preparacion.preparar_datos(modo, forzar)
     estrategia = estrategia or config.ESTRATEGIA_SARIMA
 
-    # El orden se cachea aparte: es lo caro, y no cambia al probar otra estrategia
+    
     order, seasonal_order = artifacts.cachear(
         "orden_sarima",
         lambda: buscar_orden(datos["y_train"]),

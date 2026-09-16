@@ -15,9 +15,7 @@ Dos chequeos, ninguno requiere GPU:
   2. CORRELACIÓN CON EL CLIMA YA VALIDADO: ¿alguna de las 32 columnas
      correlaciona con los agregados escalares (*_meteo) que el equipo ya
      usa? Si NINGUNA correlaciona con nada, es señal de un problema en el
-     pipeline (encoder, merge, o normalización) -- no evidencia de que
-     "el clima no importa", porque seguiría siendo el mismo clima medido
-     de otra forma.
+     pipeline (encoder, merge, o normalización) 
 
 Uso: correr sobre matriz_nucleo_tensores.parquet.
 """
@@ -53,7 +51,7 @@ def chequeo_varianza(df, verbose=True):
         else:
             print("  ninguna -- todas las columnas tienen varianza real en los tres splits")
 
-        # Comparacion directa: cuanto cae la varianza de train a val/test
+       
         ratio_val = (tabla["validation"] / tabla["train"]).median()
         ratio_test = (tabla["test"] / tabla["train"]).median()
         print(f"\nRatio mediano de std (val/train): {ratio_val:.3f}")
@@ -70,7 +68,7 @@ def chequeo_correlacion_meteo(df, verbose=True):
     if not cols_meteo:
         raise RuntimeError("No se encontraron columnas *_meteo -- ¿es la matriz correcta?")
 
-    sub = df[df["split"] == "train"]  # correlacion medida solo en train, disciplina de siempre
+    sub = df[df["split"] == "train"]  # correlacion medida solo en train
     correlaciones = pd.DataFrame(
         {m: [sub[e].corr(sub[m]) for e in cols_emb] for m in cols_meteo},
         index=cols_emb,

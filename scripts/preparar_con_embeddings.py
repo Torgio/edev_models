@@ -1,7 +1,6 @@
 """
 Permite usar preparar_tensores.preparar() con matriz_nucleo_tensores sin
-modificar preparar_tensores.py (copia deliberada del notebook del equipo --
-"si divergen, manda el notebook").
+modificar preparar_tensores.py (copia deliberada del notebook del equipo).
 
 EL PROBLEMA: _clasificar() reparte las columnas de la matriz en listas
 (cols_dec, cols_prog, cols_dm1, cols_est) mirando patrones de NOMBRE fijos
@@ -10,13 +9,12 @@ etc.). Ninguno de esos patrones reconoce "tensor_emb_*" -- esas 32 columnas
 quedan fuera de las cuatro listas, y como preparar() arma X_enc/X_dec/X_est
 EXCLUSIVAMENTE con lo que está adentro de esas listas, el embedding queda
 cargado en memoria pero nunca llega a ningún tensor de entrada del modelo.
-Descarte silencioso, sin ningún error que avise.
+
 
 LA SOLUCION: en tiempo de ejecucion, se reemplaza (monkeypatch) la funcion
 _clasificar del modulo preparar_tensores por una version que hace exactamente
-lo mismo y ademas agrega las columnas tensor_emb_* a cols_dec -- el mismo
-balde que *_meteo, la decision ya tomada de que el embedding es "clima de
-D+1 conocido de antemano". El archivo preparar_tensores.py en disco nunca
+lo mismo y ademas agrega las columnas tensor_emb_* a cols_dec. 
+El archivo preparar_tensores.py en disco nunca
 se toca; el reemplazo se deshace automaticamente al terminar.
 
 Uso:
@@ -35,7 +33,7 @@ _clasificar_original = pt._clasificar
 # diseno para ESTA comparacion especifica: neutralizar la señal dominante
 # para ver si el embedding meteorologico puede compensarla. Cambiar a False
 # (o pasar neutralizar_dominantes=False al llamar) para el experimento "con"
-# estas columnas -- no hace falta reconstruir la matriz ni el .meta.json,
+# estas columnas 
 # solo volver a llamar a esta funcion.
 NEUTRALIZAR_DOMINANTES = True
 COLUMNAS_DOMINANTES = ["es_esios_D", "pt_entsoe_D"]
@@ -63,8 +61,7 @@ def preparar_con_embeddings(matriz="nucleo_tensores", neutralizar_dominantes=Non
     toggle), pero con el toggle en True la red no ve el valor real de estas
     columnas como feature (quedan constantes en 0, en espacio ya
     estandarizado -- sin varianza, sin informacion que la red pueda
-    explotar). No es una correccion de fuga -- ver nota junto a
-    NEUTRALIZAR_DOMINANTES mas arriba."""
+    explotar). No es una correccion de fuga """
     pt._clasificar = _clasificar_con_embeddings
     try:
         T = pt.preparar(matriz=matriz, **kwargs)
