@@ -97,6 +97,11 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
       </label>}
     </div>
 
+    <section className="evaluation-guide" aria-labelledby="evaluation-guide-title">
+      <div className="visual-heading"><div><p className="section-label">Cómo leer esta pantalla</p><h3 id="evaluation-guide-title">¿Qué modelo es mejor?</h3></div><span>Los datos de ejemplo son ilustrativos</span></div>
+      <p>Todos los modelos se comparan bajo las mismas condiciones: período, horas observadas y configuración. No hay un ganador único; depende de la pregunta que quieras responder.</p>
+      <div className="evaluation-guide-cards"><article><span>Menor error</span><strong>MAE</strong><small>Cuánto se equivoca de media en cada hora. Menor es mejor.</small></article><article><span>Mayor captura</span><strong>Captura (%)</strong><small>Qué parte del valor económico de referencia consigue el modelo. Mayor es mejor.</small></article><article><span>Mayor mejora</span><strong>Skill frente al naive</strong><small>Cuánto mejora frente a copiar el precio del día anterior. Por encima de cero, aporta.</small></article></div>
+    </section>
     {status !== 'ready' ? <div className="evaluation-empty" role="status">{status === 'loading' ? 'Consultando evaluaciones…' : 'No se pudieron consultar las evaluaciones.'}{status === 'error' && <Button variant="outline" onClick={() => setRetry(value => value + 1)}>Reintentar</Button>}</div>
       : !rows.length ? <div className="evaluation-empty" role="status">No hay evaluaciones guardadas.</div> : <>
       <div className="evaluation-kpis">

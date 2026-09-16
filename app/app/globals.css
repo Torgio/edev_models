@@ -559,6 +559,15 @@ footer svg { width: 13px; }
 .evaluation-method-raw pre { max-height: 320px; }
 .method-card .table-scroll { margin: 12px 20px 18px; max-height: 440px; }
 .evaluation-empty { min-height: 170px; display: grid; place-items: center; border: 1px solid #d8e1dc; border-radius: 18px; background: #fff; color: #52685e; }
+.evaluation-guide { margin: 18px 0; padding: 20px 22px; border: 1px solid #c9ddd5; border-radius: 16px; background: #f1f8f4; color: #52685e; }
+.evaluation-guide .visual-heading { margin-bottom: 8px; }
+.evaluation-guide .visual-heading h3 { color: #173f35; }
+.evaluation-guide-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.evaluation-guide-cards article { display: grid; gap: 5px; padding: 14px; border: 1px solid #d2e3dc; border-radius: 12px; background: #fff; }
+.evaluation-guide-cards span { color: #667770; font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.evaluation-guide-cards strong { color: #173f35; font-size: 16px; }
+.evaluation-guide-cards small { color: #52685e; font-size: 11px; line-height: 1.45; }
+@media (max-width: 720px) { .evaluation-guide-cards { grid-template-columns: 1fr; } }
 
 .history-section { margin-top: 26px; }
 .history-header { display: flex; align-items: end; justify-content: space-between; gap: 28px; margin-bottom: 18px; }
