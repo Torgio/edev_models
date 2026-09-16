@@ -1790,7 +1790,37 @@ nuevas (`bess_plan`/`bess_result` — resultados del equipo, sin usuario — y 6
 oficial), dejando fuera `app_user` y las `app_*` de estudios hasta que exista un mecanismo real
 de filtrado por usuario. Dieciséis herramientas registradas ahora, de catorce; el rol de solo
 lectura pasa a 14 tablas de las 47 que tiene la base (`sql/registro_cambios_bd.md`, entrada 5).
-## 54. El asistente repetía fielmente los errores internos — el LLM no sabe que un `{"error": ...}` no se debe repetir
+## 54. Reentrenamiento completo sin Trayport: el ensemble de 8 familias sigue ganando
+
+Con las dos columnas de Trayport retiradas de `matriz_nucleo` (nota 51), se reentrenaron desde
+cero las 8 familias de deep learning (24 entrenamientos: 8 familias × 3 semillas) más el LightGBM
+núcleo y la capa de incertidumbre horaria — nada de esto se pudo reutilizar de una caché, porque
+el conjunto de columnas cambió.
+
+Resultado en test 2026, la partición que nadie tocó durante el diseño: el **ensemble de las 8
+familias sigue siendo el mejor modelo**, con MAE 12,22 €/MWh, 91,2% de captura del margen de
+arbitraje y 79,2% de acierto de pico a 1 hora — mejor que cualquier familia individual (la mejor,
+seq2seq, se queda en 12,89) y mejor que el LightGBM núcleo reentrenado (13,24, 91,5% de captura).
+Sigue confirmándose el Hallazgo 1 ya visto antes de retirar Trayport: el modelo de mejor MAE
+(seq2seq) y el de mejor captura (seq2seq_absoluto, 92,8%) no son el mismo modelo — hay que elegir
+según qué pregunta importa más, error medio o margen de arbitraje capturado.
+
+Retirar Trayport no rompió el modelo: las cifras se mantienen en el mismo rango que con Trayport
+incluido (dentro de lo esperado, dado que el análisis de ablación previo ya indicaba un coste de
+apenas +1,9% en MAE de test al quitarlo, y una mejora en validación). Es la confirmación empírica,
+con el pipeline completo reentrenado y no solo con una ablación puntual, de que la fuente se podía
+retirar sin pagar un coste real de precisión.
+
+Efecto colateral encontrado al reentrenar: la capa de incertidumbre horaria
+(`lightgbm_horario_incertidumbre.joblib`, sección 6.6) también estaba entrenada con Trayport y
+falló con el mismo `KeyError` que el LightGBM núcleo (nota previa) — se regeneró desde
+`modelos/modelo_lightgbm_horario_incertidumbre.py`, que toma las columnas de forma dinámica y no
+tuvo que tocarse. MAE de la mediana (p50) 12,89 €/MWh, cobertura del intervalo [p10,p90] 71,7%
+(por debajo del ~80% objetivo, que es precisamente la razón de ser de la calibración conforme de
+la sección 6.3 — con esta cifra de partida ya sin Trayport, esa calibración sigue pendiente de
+volver a correrse con el dato limpio).
+
+## 55. El asistente repetía fielmente los errores internos — el LLM no sabe que un `{"error": ...}` no se debe repetir
 
 Una revisión externa de la app en producción (probando la sesión real, no el código) encontró que
 al preguntarle por el modelo campeón, el asistente respondió con una tabla de errores internos:
@@ -1817,3 +1847,32 @@ las 15 llamadas a `herramientas.py` — cualquier excepción no prevista, sea cu
 cae en el mismo `{"error": "Esta herramienta no esta disponible..."}` genérico en vez de
 propagarse. Es la regla general que faltaba: nunca confiar en que el texto de una excepción es
 seguro para mostrar, sin importar de dónde venga.
+
+## 56. El MAE no es el objetivo real — el valor de una batería está concentrado en muy pocas horas, no repartido por igual
+
+La pieza ya estaba dispersa en el código (`scripts/entrenar_finales.py`: "una batería no necesita
+acertar el precio, necesita acertar cuándo el precio es alto y cuándo es bajo") y en un hallazgo
+de producción (una revisión externa de la app encontró que el naive —repetir el precio de
+ayer— capturaba más euros que casi toda la red neuronal, y que el modelo con peor MAE de una
+tabla comparativa era el que mejor acertaba la hora del pico), pero no estaba escrita junta como
+argumento, así que queda aquí para poder citarla en el informe.
+
+El MAE pondera las 24 horas del día por igual. El valor económico de una batería no: está
+concentrado en un puñado de horas (el valle solar, el pico nocturno), no repartido de forma
+uniforme. Un modelo puede tener un MAE excelente por acertar bien las horas "aburridas" del día y
+fallar precisamente la hora que paga, y otro puede tener un MAE mediocre por errar la magnitud en
+el pico pero acertar exactamente CUÁNDO ocurre — que es lo único que le importa a una batería, que
+no necesita el número, necesita el momento. La evidencia cuantitativa ya existía: en
+`entrenar_finales.py`, la correlación entre MAE y la métrica de "captura" (cuánto del margen de
+arbitraje se obtiene cargando en el valle y descargando en el pico que el modelo predijo) es de
+solo -0,285 — son casi independientes. Es la razón por la que el ensemble final incluye
+`seq2seq_absoluto` (MAE 15,08, el peor del grupo) en vez de descartarlo: captura 92,8% del margen,
+más que `seq2seq` (MAE 12,89, captura 89,7%), que es el mejor por MAE.
+
+Consecuencia práctica para el informe: MAE sigue siendo razonable como pérdida de entrenamiento
+(es diferenciable; "captura" no lo es, depende de un argmax/argmin) y como métrica de
+comparabilidad académica entre familias, pero no debería liderar la narrativa de "qué modelo es
+mejor" — ahí manda la captura o, mejor aún, el ingreso real simulado (`bess_result`). El propio
+`entrenar_finales.py` ya usa MAE como filtro de entrada al ensemble antes de mirar captura
+(`if r.MAE_val < nv["MAE"]`), lo cual vale la pena revisar como decisión deliberada y no como un
+defecto a esconder.
