@@ -5,7 +5,7 @@ import {
   Bar, CartesianGrid, Cell, ComposedChart, Line, ReferenceLine,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
-import { Activity, AlertTriangle, CalendarCheck2, CheckCircle2, TrendingUp } from 'lucide-react';
+import { Activity, Info, CalendarCheck2, CheckCircle2, TrendingUp } from 'lucide-react';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import {
   clippedSkill, latestCompleteActualDay, parsePerformanceIdentity, performanceFreshness,
@@ -132,9 +132,9 @@ export function PerformanceHistory({ onSessionExpired }: { onSessionExpired: () 
             : status === 'loading' ? 'Construyendo la serie desde las métricas guardadas…'
               : 'La serie elegida no está disponible. Puedes seleccionar otra combinación.'}
     </div> : <>
-      {freshness?.isStale === true ? <div className="history-freshness is-stale" role="alert"><AlertTriangle aria-hidden="true" /><div><strong>Evaluación atrasada {freshness.lagDays} {freshness.lagDays === 1 ? 'día' : 'días'}</strong><span>Esta serie termina el {dateLabel(freshness.lastEvaluated!)}; el último precio real diario completo llega al {dateLabel(freshness.expectedThrough!)}.</span></div></div>
+      {freshness?.isStale === true ? <div className="history-freshness"><Info aria-hidden="true" /><div><strong>Modelo evaluado hasta el {dateLabel(freshness.lastEvaluated!)}</strong><span>Hay precios reales hasta el {dateLabel(freshness.expectedThrough!)}. Quedan {freshness.lagDays} {freshness.lagDays === 1 ? 'día por evaluar' : 'días por evaluar'}.</span></div></div>
         : freshness?.isStale === false ? <div className="history-freshness is-current"><CheckCircle2 aria-hidden="true" /><div><strong>Evaluación al día</strong><span>Serie evaluada hasta el {dateLabel(freshness.lastEvaluated!)}.</span></div></div>
-          : <div className="history-freshness"><AlertTriangle aria-hidden="true" /><div><strong>Vigencia no disponible</strong><span>No se pudo comparar esta serie con el último día completo de precio real.</span></div></div>}
+          : <div className="history-freshness"><Info aria-hidden="true" /><div><strong>Actualización sin confirmar</strong><span>No se pudo comprobar si la evaluación incluye los últimos precios disponibles.</span></div></div>}
       <div className="history-kpis">
         <article><Activity aria-hidden="true" /><span>Ventaja · {evaluatedRange}</span><strong className={performanceTone(summary.skill_pct)}>{percent(summary.skill_pct)}</strong>
           <small>{summary.evaluated_days}/{summary.window_days} días · {summary.observations} horas</small></article>
@@ -147,7 +147,7 @@ export function PerformanceHistory({ onSessionExpired }: { onSessionExpired: () 
       <article className="history-chart-card">
         <div className="visual-heading"><div><p className="section-label">Ventaja diaria · %</p><h3>{modelLabel(payload.model)} frente al naive</h3></div>
           <div className="history-legend"><span className="win"><i />Gana</span><span className="loss"><i />Pierde</span><span className="rolling"><i />Media móvil 7d</span></div></div>
-        {extremes.length > 0 && <div className="extreme-strip"><strong>Extremos fuera de escala:</strong>{extremes.slice(0, 4).map(row => <span key={row.date}>{dateLabel(row.date)} · {percent(row.skill_vs_naive)}</span>)}
+        {extremes.length > 0 && <div className="extreme-strip"><p>El gráfico muestra de −80 % a +80 %. Estas barras superan ese límite; sus valores completos son:</p>{extremes.slice(0, 4).map(row => <span key={row.date}>{dateLabel(row.date)} · {percent(row.skill_vs_naive)}</span>)}
           {extremes.length > 4 && <span>+{extremes.length - 4} días</span>}</div>}
         <div className="history-chart">
           <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={360}>

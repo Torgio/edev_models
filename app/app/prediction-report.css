@@ -53,6 +53,8 @@
 
 /* Vista previa en pantalla, para revisar sin pasar por el diálogo de impresión. */
 .prediction-print-report.is-preview { display: block; margin-top: 24px; padding: 24px; background: #e9eeeb; overflow-x: auto; }
+.prediction-report-preview { min-height: 100vh; padding: 24px; background: #e9eeeb; }
+.prediction-report-preview .prediction-print-report { display: block; overflow-x: auto; }
 
 @media print {
   .prediction-view > :not(.prediction-print-report) { display: none !important; }

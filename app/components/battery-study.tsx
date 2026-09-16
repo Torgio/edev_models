@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import './battery-study.css';
 import { formatEnergyPrice } from '@/lib/price-format';
-import { Battery, CalendarDays, Factory, Info } from 'lucide-react';
+import { ArrowLeft, Battery, CalendarDays, Factory, FileDown, Info, Printer } from 'lucide-react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,6 +11,7 @@ import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { BatteryCurveUpload } from '@/components/battery-curve-upload';
 import { metric } from '@/lib/stored-evaluations';
 import { nominalDayOffset, studyCoverage, studyInputs, studyPoints, toKilo, type StudyDispatch, type StudyResult } from '@/lib/battery-study';
+import { BatteryStudyReport } from '@/components/battery-study-report';
 
 const API = '/api/battery-study';
 type SavedStudy = { run_id: number; name?: string; code: string; power_kw?: number | null; duration_h?: number | null; date_from?: string | null; date_to?: string | null; run_at: string | null };
@@ -52,6 +53,8 @@ function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; prefe
   const [dispatch, setDispatch] = useState<StudyDispatch | null>(null);
   const [dispatchError, setDispatchError] = useState('');
   const [dispatchLoading, setDispatchLoading] = useState(false);
+  const [reportPreview, setReportPreview] = useState(false);
+  const [reportGeneratedAt, setReportGeneratedAt] = useState('');
   const inputs = result ? studyInputs(result) : null;
   const periodFrom = inputs?.period.date_from ?? '';
   const periodTo = inputs?.period.date_to ?? '';
@@ -105,6 +108,14 @@ function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; prefe
   const points = dispatch ? studyPoints(dispatch) : [];
   const run = result?.run;
   const annual = [...result?.anual ?? []].sort((a, b) => a.ano - b.ano);
+  const openReport = () => {
+    setReportGeneratedAt(new Intl.DateTimeFormat('es-ES', { dateStyle: 'long', timeStyle: 'short', timeZone: 'Europe/Madrid' }).format(new Date()));
+    setReportPreview(true);
+  };
+  if (reportPreview && result) return <section className="study-report-preview">
+    <div className="report-preview-controls"><Button variant="outline" onClick={() => setReportPreview(false)}><ArrowLeft aria-hidden="true" /> Volver al estudio</Button><Button className="pdf-export-button" onClick={() => window.print()}><Printer aria-hidden="true" /> Guardar como PDF</Button></div>
+    <BatteryStudyReport result={result} inputs={inputs} generatedAt={reportGeneratedAt} />
+  </section>;
   return <section className="study-view" aria-labelledby="study-heading">
     <div className="study-heading">
       <div><p className="kicker">Estudio de instalación · prueba local</p><h2 id="study-heading">Una batería, a lo largo del tiempo</h2>
@@ -114,6 +125,7 @@ function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; prefe
         {ids.length > 0 && <label>Estudio guardado<NativeSelect value={runId ?? ''} onChange={e => setRunId(Number(e.target.value))}>
           {ids.map(id => <NativeSelectOption key={id} value={id}>{studies.find(study => study.run_id === id)?.name || 'Estudio'} · ejecución {id}</NativeSelectOption>)}
         </NativeSelect></label>}
+        <Button variant="outline" disabled={!result || loading} onClick={openReport}><FileDown aria-hidden="true" /> Exportar informe PDF</Button>
         <Button variant="outline" onClick={() => setReload(n => n + 1)}>Actualizar</Button>
       </div>
     </div>

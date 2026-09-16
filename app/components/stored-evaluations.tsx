@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown, FileDown, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -13,6 +13,7 @@ import { EvaluationMethod } from '@/components/evaluation-method';
 import { modelColor } from '@/lib/model-color';
 import { formatEnergyPrice } from '@/lib/price-format';
 import { EvaluationReport } from '@/components/evaluation-report';
+import { evaluationGroupLabels } from '@/lib/evaluation-group-label';
 
 const orderLabels: Record<Order, string> = {
   captura_pct: 'Captura (%)',
@@ -59,6 +60,8 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
   const [order, setOrder] = useState<Order>('captura_pct');
   const [tableSort, setTableSort] = useState<{ key: EvaluationSortKey; direction: 'asc' | 'desc' }>({ key: 'captura_pct', direction: 'desc' });
   const [modelSearch, setModelSearch] = useState('');
+  const [reportGeneratedAt, setReportGeneratedAt] = useState<string | null>(null);
+  const [preview, setPreview] = useState(false);
 
   useEffect(() => {
     setStatus('loading');
@@ -73,6 +76,7 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
   }, [retry]);
 
   const groups = [...new Map(rows.map(row => [evaluationGroup(row), row])).entries()];
+  const groupLabels = evaluationGroupLabels(groups);
   const selected = groups.some(([key]) => key === group) ? group : groups[0]?.[0] ?? '';
   const ranked = rankedEvaluations(rows, selected, order);
   const query = modelSearch.trim().toLocaleLowerCase('es');
@@ -86,25 +90,39 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
   const lowMae = bestMae(comparable);
   const highCapture = bestBy(comparable, 'captura_pct');
   const highSkill = bestBy(comparable, 'skill_vs_naive');
+  const selectedGroupLabel = groupLabels.find(item => item.key === selected)?.label ?? 'Conjunto de evaluación';
+
+  const exportReport = () => {
+    setReportGeneratedAt(new Intl.DateTimeFormat('es-ES', {
+      dateStyle: 'short', timeStyle: 'short', hour12: false,
+    }).format(new Date()));
+    setPreview(true);
+  };
+
+  const printReport = () => window.setTimeout(() => window.print(), 0);
+
+  if (preview && ranked.length > 0) return <section className="evaluation-print-report is-preview" aria-label="Vista previa del informe de evaluación">
+    <div className="report-preview-controls">
+      <Button variant="outline" onClick={() => setPreview(false)}><ArrowLeft aria-hidden="true" /> Volver a evaluación</Button>
+      <Button className="pdf-export-button" onClick={printReport}><Printer aria-hidden="true" /> Guardar como PDF</Button>
+    </div>
+    <EvaluationReport rows={ranked} groupLabel={selectedGroupLabel} generatedAt={reportGeneratedAt} />
+  </section>;
 
   return <><section className="evaluation-section" id="hitos" aria-labelledby="evaluation-title">
     <div className="evaluation-header">
       <div><p className="section-label">Comparación por período</p><h2 id="evaluation-title">Evaluación de modelos</h2>
         <p>Compara precisión y captura económica bajo la misma configuración. Cada semilla conserva sus resultados.</p></div>
-      {groups.length > 0 && <label>Período y configuración
+      {groups.length > 0 && <label>Conjunto de evaluación
         <NativeSelect value={selected} onChange={event => { setGroup(event.target.value); setSelection([]); }}>
-          {groups.map(([key, row], index) => <NativeSelectOption key={key} value={key}>{row.periodo} · {row.corte} · configuración {index + 1}</NativeSelectOption>)}
+          {groupLabels.map(item => <NativeSelectOption key={item.key} value={item.key}>{item.label}</NativeSelectOption>)}
         </NativeSelect>
       </label>}
-      {rows.length > 0 && <Button variant="outline" onClick={() => window.print()}>Exportar informe de evaluación PDF</Button>}
+      {status === 'ready' && ranked.length > 0 && <Button className="pdf-export-button" variant="outline" onClick={exportReport}>
+        <FileDown aria-hidden="true" /> Exportar informe PDF
+      </Button>}
     </div>
 
-    <section className="evaluation-guide" aria-labelledby="evaluation-guide-title">
-      <div className="visual-heading"><div><p className="section-label">Cómo leer esta pantalla</p><h3 id="evaluation-guide-title">¿Qué modelo es mejor?</h3></div><span>Los datos de ejemplo son ilustrativos</span></div>
-      <p>Todos los modelos se comparan bajo las mismas condiciones: período, horas observadas y configuración. No hay un ganador único; depende de la pregunta que quieras responder.</p>
-      <div className="evaluation-guide-cards"><article><span>Menor error</span><strong>MAE</strong><small>Cuánto se equivoca de media en cada hora. Menor es mejor.</small></article><article><span>Mayor captura</span><strong>Captura (%)</strong><small>Qué parte del valor económico de referencia consigue el modelo. Mayor es mejor.</small></article><article><span>Mayor mejora</span><strong>Skill frente al naive</strong><small>Cuánto mejora frente a copiar el precio del día anterior. Por encima de cero, aporta.</small></article></div>
-    </section>
-    {rows.length > 0 && <div className="evaluation-print-report" aria-hidden="true"><EvaluationReport rows={rows} /></div>}
     {status !== 'ready' ? <div className="evaluation-empty" role="status">{status === 'loading' ? 'Consultando evaluaciones…' : 'No se pudieron consultar las evaluaciones.'}{status === 'error' && <Button variant="outline" onClick={() => setRetry(value => value + 1)}>Reintentar</Button>}</div>
       : !rows.length ? <div className="evaluation-empty" role="status">No hay evaluaciones guardadas.</div> : <>
       <div className="evaluation-kpis">

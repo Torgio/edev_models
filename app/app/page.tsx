@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { addDays, format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import {
-  ArrowDownRight, ArrowUpRight, Bell, CalendarDays,
+  ArrowDownRight, ArrowLeft, ArrowUpRight, Bell, CalendarDays,
   ChevronLeft, ChevronRight, Clock3, Database, FileDown,
-  GitCompareArrows, LockKeyhole, TrendingUp, TriangleAlert, Zap,
+  GitCompareArrows, LockKeyhole, Printer, TrendingUp, TriangleAlert, Zap,
 } from 'lucide-react';
 import {
   Area, CartesianGrid, Line, LineChart, ReferenceArea, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip,
@@ -23,15 +23,15 @@ import { TeamAccess } from '@/components/team-access';
 import { AsistenteWidget } from '@/components/asistente-widget';
 import { PeakAccuracy } from '@/components/peak-accuracy';
 import { forecastMinimum } from '@/lib/forecast-minimum';
-import { groupedModels } from '@/lib/model-color';
 import { dailyPrice } from '@/lib/daily-price';
 import { StoredEvaluations } from '@/components/stored-evaluations';
 import { StoredBattery } from '@/components/stored-battery';
 import { BatteryStudy } from '@/components/battery-study';
+import { PredictionReport } from '@/components/prediction-report';
 import { predictionUpdate } from '@/lib/prediction-update';
 import { initialDashboardDay, type AvailableDay } from '@/lib/initial-day';
 import { marketHourClockLabel } from '@/lib/market-hour';
-import { MODEL_STYLES, modelColor } from '@/lib/model-color';
+import { ANNOTATION_COLORS, MODEL_STYLES, groupedModels, modelColor, seriesOpacity } from '@/lib/model-color';
 import { forecastRamp, negativePriceHours } from '@/lib/market-signals';
 import { priceAxisLower, priceAxisTick, priceAxisUpper } from '@/lib/price-axis';
 import { formatEnergyPrice } from '@/lib/price-format';
@@ -160,6 +160,7 @@ function Dashboard({ username, authenticated, authReady, authUnavailable, onLogi
   const [comparisonState, setComparisonState] = useState<{ day: string; hours: PriceHour[]; status: 'loading' | 'ready' | 'error' } | null>(null);
   const [selectedAlert, setSelectedAlert] = useState<string | null>(null);
   const [reportGeneratedAt, setReportGeneratedAt] = useState<string | null>(null);
+  const [reportPreview, setReportPreview] = useState(false);
   const [referenceModel, setReferenceModel] = useState('');
   const [dayState, setDayState] = useState<{ day: string; hours: PriceHour[]; updated: string | null } | null>(null);
   const [dataStatus, setDataStatus] = useState<'loading' | 'live' | 'error'>('loading');
@@ -170,6 +171,7 @@ function Dashboard({ username, authenticated, authReady, authUnavailable, onLogi
   const MODELS = availableModels.map(key => MODEL_STYLES.find(model => model.key === key) ?? {
     key, label: key, color: modelColor(key),
   });
+  const modelGroups = groupedModels(availableModels);
   const selectedModel = availableModels.includes(referenceModel) ? referenceModel : availableModels.includes('ensemble') ? 'ensemble' : availableModels[0] ?? '';
   const currentMinimum = current ? forecastMinimum(priceHours, selectedModel) : null;
   const minimum = currentMinimum?.minimum;
@@ -293,6 +295,38 @@ function Dashboard({ username, authenticated, authReady, authUnavailable, onLogi
       : [...visibleModels, key]);
   }
 
+  function toggleGroup(keys: readonly ModelKey[], on: boolean) {
+    const others = visibleModels.filter(item => !keys.includes(item));
+    const next = on ? [...others, ...keys] : others;
+    setVisible([...new Set(next.includes(selectedModel) ? next : [selectedModel, ...next])]);
+  }
+
+  const openPredictionReport = () => {
+    setReportGeneratedAt(format(new Date(), 'dd/MM/yyyy, HH:mm'));
+    setReportPreview(true);
+  };
+  const reportStatus = isClosed ? 'Día cerrado' : actualHours ? 'Cierre parcial' : 'Precio real pendiente';
+  if (reportPreview && current) return <main className="prediction-view prediction-report-preview">
+    <div className="report-preview-controls">
+      <Button variant="outline" onClick={() => setReportPreview(false)}><ArrowLeft aria-hidden="true" /> Volver a predicción</Button>
+      <Button className="pdf-export-button" onClick={() => requestAnimationFrame(() => window.print())}><Printer aria-hidden="true" /> Guardar como PDF</Button>
+    </div>
+    <PredictionReport
+      dayLabel={selectedDayLabel}
+      model={selectedModel}
+      comparisonLabel={comparisonDayLabel}
+      statusLabel={reportStatus}
+      generatedAt={reportGeneratedAt}
+      coverageLabel={dayCoverageLabel}
+      hours={data.map(row => ({ label: row.label, forecast: row.marketValue, actual: row.actual, comparison: row.comparison }))}
+      averages={averages}
+      windows={windows}
+      comparison={{ difference: comparisonResult.difference, hours: comparisonResult.hours }}
+      ramp={ramp}
+      negatives={negatives}
+    />
+  </main>;
+
   return (
     <main className="dashboard-shell">
       <header className="topbar">
@@ -321,17 +355,6 @@ function Dashboard({ username, authenticated, authReady, authUnavailable, onLogi
         </div>
         {daysError && <div className="study-notice" role="alert">No se pudieron consultar las fechas disponibles. <Button variant="outline" onClick={() => setDaysRetry(value => value + 1)}>Reintentar calendario</Button></div>}
         {view === 'prediction' ? <>
-        <header className="print-report-header" aria-hidden="true">
-          <div className="print-report-brand"><span><Zap /></span><div><small>TFM · Mercado eléctrico</small><strong>Pulso Energía</strong></div></div>
-          <div className="print-report-title"><small>Informe diario de mercado</small><h2>{selectedDayLabel}</h2><p>Resumen de precios, previsión, comparación y alertas</p></div>
-          <dl>
-            <div><dt>Modelo</dt><dd>{selectedModel || 'Sin modelo'}</dd></div>
-            <div><dt>Comparación</dt><dd>{comparisonDayLabel ?? 'Sin comparación'}</dd></div>
-            <div><dt>Estado de datos</dt><dd>{isClosed ? 'Día cerrado' : actualHours ? 'Cierre parcial' : 'Precio real pendiente'}</dd></div>
-            <div><dt>Generado</dt><dd>{reportGeneratedAt ?? 'Al exportar'}</dd></div>
-          </dl>
-          <p className="print-report-note">Informe académico · TFM UCM 2026 · Datos en UTC, visualización Europe/Madrid</p>
-        </header>
         <div className="page-heading market-heading">
           <div>
             <p className="kicker">Mercado eléctrico · España</p>
@@ -341,20 +364,17 @@ function Dashboard({ username, authenticated, authReady, authUnavailable, onLogi
           </div>
           <div className="market-heading-actions">
             <DateNavigator date={date} days={availableDays} coverageLabel={dayCoverageLabel} ariaLabel="Navegación por fecha" onChange={setDate} />
-            <Button className="pdf-export-button" variant="outline" onClick={() => {
-              setReportGeneratedAt(format(new Date(), 'dd/MM/yyyy, HH:mm'));
-              window.setTimeout(() => window.print(), 0);
-            }} disabled={!current}>
+            <Button className="pdf-export-button" variant="outline" onClick={openPredictionReport} disabled={!current}>
               <FileDown aria-hidden="true" /> Exportar informe PDF
             </Button>
           </div>
         </div>
 
         <section className="market-summary" aria-label="Resumen operativo previsto" aria-live="polite">
-          <article><span>Tramo más barato · 3 h</span><strong>{windows.cheapest?.label ?? '—'}</strong><p>{windows.cheapest ? `${formatEnergyPrice(windows.cheapest.average)} de media` : dataStatus === 'loading' ? 'Consultando previsión…' : 'Sin tres horas consecutivas disponibles'}</p></article>
-          <article><span>Tramo más caro · 3 h</span><strong>{windows.priciest?.label ?? '—'}</strong><p>{windows.priciest ? `${formatEnergyPrice(windows.priciest.average)} de media` : dataStatus === 'loading' ? 'Consultando previsión…' : 'Sin tres horas consecutivas disponibles'}</p></article>
+          <article><span>Ventana prevista más barata · 3 h</span><strong>{windows.cheapest?.label ?? '—'}</strong><p>{windows.cheapest ? `${formatEnergyPrice(windows.cheapest.average)} de media` : dataStatus === 'loading' ? 'Consultando previsión…' : 'Sin tres horas consecutivas disponibles'}</p></article>
+          <article><span>Ventana prevista más cara · 3 h</span><strong>{windows.priciest?.label ?? '—'}</strong><p>{windows.priciest ? `${formatEnergyPrice(windows.priciest.average)} de media` : dataStatus === 'loading' ? 'Consultando previsión…' : 'Sin tres horas consecutivas disponibles'}</p></article>
         </section>
-        <p className="market-summary-note">Previsión de {selectedModel || 'modelo pendiente'} · tramos de 3 horas entre los datos disponibles ({windows.covered}/{windows.expected} h).</p>
+        <p className="market-summary-note">Ventanas de precio de la previsión {selectedModel || 'pendiente'} · tramos de 3 horas entre los datos disponibles ({windows.covered}/{windows.expected} h). No son una recomendación de carga o descarga.</p>
 
         <section className="day-comparison-summary" aria-label="Comparación entre días" aria-live="polite">
           <div><span>Día analizado</span><strong>{selectedDayLabel}</strong><small>Precio real y previsión · {selectedModel || 'sin modelo'}</small></div>
@@ -388,14 +408,20 @@ function Dashboard({ username, authenticated, authReady, authUnavailable, onLogi
               <div className="chart-view-controls"><label><Checkbox checked={compareModels} onCheckedChange={setCompareModels} />Comparar modelos</label></div>
               {compareModels && <details className="model-picker">
                 <summary>Series visibles <strong>{visibleModels.length}</strong></summary>
-                <div className="model-toggles" aria-label="Modelos visibles">
-                  {groupedModels(MODELS.map(model => model.key)).map(group => <div key={group.group} className="model-family"><strong>{group.label}</strong>{group.models.map(model => (
-                    <button key={model.key} type="button" className={`${visibleModels.includes(model.key) ? 'selected' : ''} ${model.key === selectedModel ? 'reference-series' : ''}`}
-                      onClick={() => toggleModel(model.key)} aria-pressed={visibleModels.includes(model.key)}
-                      disabled={model.key === selectedModel} title={model.key === selectedModel ? 'El modelo de referencia siempre permanece visible' : undefined}>
-                      <span style={{ background: model.color }} />{model.label}
-                    </button>
-                  ))}</div>)}
+                <div className="model-groups" aria-label="Modelos visibles">
+                  {modelGroups.map(group => <section key={group.group} className="model-group" aria-label={group.label}>
+                    <div className="model-group-head">
+                      <span>{group.label}</span><em>{group.models.filter(model => visibleModels.includes(model.key)).length}/{group.models.length}</em>
+                      <div className="model-group-actions">
+                        <button type="button" onClick={() => toggleGroup(group.models.map(model => model.key), true)} disabled={group.models.every(model => visibleModels.includes(model.key))}>Todos</button>
+                        <button type="button" onClick={() => toggleGroup(group.models.map(model => model.key), false)} disabled={group.models.every(model => model.key === selectedModel || !visibleModels.includes(model.key))}>Ninguno</button>
+                      </div>
+                    </div>
+                    <div className="model-chips">{group.models.map(model => <button key={model.key} type="button" className={`${visibleModels.includes(model.key) ? 'selected' : ''} ${model.key === selectedModel ? 'reference-series' : ''}`}
+                      onClick={() => toggleModel(model.key)} aria-pressed={visibleModels.includes(model.key)} disabled={model.key === selectedModel} title={model.key === selectedModel ? 'El modelo de referencia siempre permanece visible' : undefined}>
+                      <i style={{ '--series': model.color } as CSSProperties} />{model.label}
+                    </button>)}</div>
+                  </section>)}
                 </div>
               </details>}
               <div className="chart-legend">
@@ -422,26 +448,26 @@ function Dashboard({ username, authenticated, authReady, authUnavailable, onLogi
                     formatter={(value, name) => [Array.isArray(value)
                       ? `${formatEnergyPrice(Number(value[0]), { unit: false })}–${formatEnergyPrice(Number(value[1]))}`
                       : formatEnergyPrice(Number(value), { sign: String(name).startsWith('Diferencia ') }), String(name)]} />
-                  {compareModels && <Area type="monotone" dataKey="consensusBand" name="Dispersión central" stroke="none" fill="#43a99f" fillOpacity={0.12} activeDot={false} />}
+                  {compareModels && <Area type="monotone" dataKey="consensusBand" name="Dispersión central" stroke="none" fill={ANNOTATION_COLORS.spread} fillOpacity={0.14} activeDot={false} />}
                   <ReferenceLine y={0} stroke="#aab6b1" strokeDasharray="3 4" />
                   {negatives.entries.map(mark => <ReferenceArea key={`negative:${mark.index}`} x1={mark.index - .45} x2={mark.index + .45}
-                    fill={mark.actual ? '#b85f3b' : '#e8a36f'} fillOpacity={mark.actual && mark.predicted ? .16 : .1} strokeOpacity={0} ifOverflow="hidden" />)}
-                  {ramp && <ReferenceArea x1={ramp.from} x2={ramp.to} fill="#6689a8" fillOpacity={.08} strokeOpacity={0} ifOverflow="hidden" />}
+                    fill={mark.actual ? ANNOTATION_COLORS.negative : ANNOTATION_COLORS.negativeForecast} fillOpacity={mark.actual && mark.predicted ? .16 : .1} strokeOpacity={0} ifOverflow="hidden" />)}
+                  {ramp && <ReferenceArea x1={ramp.from} x2={ramp.to} fill={ANNOTATION_COLORS.ramp} fillOpacity={.1} strokeOpacity={0} ifOverflow="hidden" />}
                   {activeAlert && <ReferenceArea x1={activeAlert.from - .45} x2={activeAlert.to + .45} fill="#e58b45" fillOpacity={.24} stroke="#b9662f" strokeWidth={1.5} strokeOpacity={.9} ifOverflow="hidden" />}
                   {MODELS.filter(model => plottedModels.includes(model.key)).map(model => (
                     <Line key={model.key} type="monotone" dataKey={(row: ChartRow) => row.predictions[model.key]} name={`${selectedDayLabel} · previsión ${model.label}`}
-                      stroke={model.color} strokeWidth={model.key === selectedModel ? 3 : 1.6} strokeOpacity={model.key === selectedModel ? 1 : .42}
+                      stroke={model.color} strokeWidth={model.key === selectedModel ? 3 : 1.6} strokeOpacity={model.key === selectedModel ? 1 : seriesOpacity(model.color)}
                       dot={false} activeDot={{ r: 4 }} />
                   ))}
-                  {hasActual && <Line type="monotone" dataKey="actual" name={`${selectedDayLabel} · precio real`} stroke="#142e28" strokeWidth={2.4} strokeDasharray="4 4" dot={false} />}
-                  {comparisonDayLabel && <Line type="monotone" dataKey="comparison" name={`${comparisonDayLabel} · ${comparedSeries.kind === 'real' ? 'precio real' : `previsión ${selectedModel}`}`} stroke="#6689a8" strokeWidth={2} strokeDasharray="7 5" dot={false} activeDot={{ r: 4 }} />}
+                  {hasActual && <Line type="monotone" dataKey="actual" name={`${selectedDayLabel} · precio real`} stroke={ANNOTATION_COLORS.actual} strokeWidth={2.4} strokeDasharray="4 4" dot={false} />}
+                  {comparisonDayLabel && <Line type="monotone" dataKey="comparison" name={`${comparisonDayLabel} · ${comparedSeries.kind === 'real' ? 'precio real' : `previsión ${selectedModel}`}`} stroke={ANNOTATION_COLORS.comparison} strokeWidth={2} strokeDasharray="7 5" dot={false} activeDot={{ r: 4 }} />}
                   {comparisonDayLabel && <Line type="linear" dataKey="dayDifference" name={`Diferencia ${selectedDayLabel} − ${comparisonDayLabel}`} stroke="transparent" strokeWidth={0} dot={false} activeDot={false} legendType="none" />}
                   {activeAlert && <ReferenceLine x={activeAlert.to} stroke="#b9662f" strokeWidth={2} strokeDasharray="3 3"
                     label={{ value: activeAlert.title, position: 'insideTopRight', fontSize: 11, fontWeight: 700, fill: '#8b4b26' }} />}
                   {activeAlert && Number.isFinite(data[activeAlert.to]?.marketValue) && <ReferenceDot x={activeAlert.to} y={data[activeAlert.to].marketValue!} r={7} fill="#e58b45" stroke="#8b4b26" strokeWidth={2} ifOverflow="extendDomain" />}
-                  {minimum && <ReferenceDot x={minimum.index} y={minimum.value} r={5} fill="#e58b45" stroke="#142e28" ifOverflow="extendDomain"
-                    label={{ value: 'Valle previsto', position: 'top', fontSize: 11, fill: '#142e28' }} />}
-                  {ramp && <ReferenceDot x={ramp.to} y={ramp.value} r={4} fill="#6689a8" stroke="#fff" ifOverflow="extendDomain" />}
+                  {minimum && <ReferenceDot x={minimum.index} y={minimum.value} r={5} fill={ANNOTATION_COLORS.mark} stroke={ANNOTATION_COLORS.actual} ifOverflow="extendDomain"
+                    label={{ value: 'Valle previsto', position: 'top', fontSize: 11, fill: ANNOTATION_COLORS.actual }} />}
+                  {ramp && <ReferenceDot x={ramp.to} y={ramp.value} r={4} fill={ANNOTATION_COLORS.ramp} stroke="#fff" ifOverflow="extendDomain" />}
                 </LineChart>
               </ResponsiveContainer>
             </div>

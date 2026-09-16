@@ -1,6 +1,5 @@
 import '@/app/prediction-report.css';
 import { Zap } from 'lucide-react';
-import { BESS_DURATION_STUDY, durationErrorCost, euro } from '@/lib/bess-durations';
 import type { dailyPrice } from '@/lib/daily-price';
 import type { forecastRamp, negativePriceHours } from '@/lib/market-signals';
 import type { marketWindows } from '@/lib/market-summary';
@@ -20,7 +19,6 @@ type Props = {
   comparison: { difference: number | null; hours: number };
   ramp: ReturnType<typeof forecastRamp>;
   negatives: ReturnType<typeof negativePriceHours>;
-  battery: { income: number | null; oracle: number | null } | null;
 };
 
 const PLOT = { width: 688, height: 250, left: 40, right: 686, top: 8, bottom: 212 };
@@ -41,7 +39,7 @@ const signed = (value: number | null | undefined, digits = 2) =>
  * hoja sin depender del layout de pantalla.
  */
 export function PredictionReport(props: Props) {
-  const { dayLabel, model, comparisonLabel, statusLabel, generatedAt, coverageLabel, hours, averages, windows, comparison, ramp, negatives, battery } = props;
+  const { dayLabel, model, comparisonLabel, statusLabel, generatedAt, coverageLabel, hours, averages, windows, comparison, ramp, negatives } = props;
 
   const forecast = hours.map(hour => hour.forecast);
   const actual = hours.map(hour => hour.actual);
@@ -71,9 +69,6 @@ export function PredictionReport(props: Props) {
     const difference = hour.forecast - hour.comparison;
     return !best || Math.abs(difference) > Math.abs(best.value) ? { index, value: difference } : best;
   }, null);
-
-  const errorCost = battery && finite(battery.income) && finite(battery.oracle) ? battery.oracle - battery.income : null;
-  const ceilingShare = errorCost != null && finite(battery?.oracle) && battery!.oracle! > 0 ? (100 * errorCost) / battery!.oracle! : null;
 
   const alerts = [
     actualPeakIndex >= 0 && {
@@ -213,36 +208,11 @@ export function PredictionReport(props: Props) {
         </div>) : <div><strong>Sin alertas</strong><em>—</em><span>La jornada no presenta máximos, rampas ni desvíos destacables con los datos disponibles.</span></div>}
       </div>
 
-      {battery && <>
-        <h2>Impacto económico</h2>
-        <p className="report-lead">Mismo plan de batería: ingreso liquidado con la previsión frente al techo calculado con el precio real ya conocido.</p>
-        <div className="report-tiles report-tiles-3">
-          <article><small>Ingreso con previsión</small><strong>{euro(battery.income)}</strong><span>{model || 'sin modelo'} · {dayLabel}</span></article>
-          <article><small>Techo con precio real</small><strong>{euro(battery.oracle)}</strong><span>Decisión con información perfecta</span></article>
-          <article><small>Coste del error</small><strong>{errorCost == null ? '—' : euro(errorCost)}</strong><span>{ceilingShare == null ? 'Sin liquidación completa' : `${num(ceilingShare, 1)} % del techo`}</span></article>
-        </div>
-
-        <p className="report-kicker" style={{ marginTop: 18 }}>Estudio anual · 1 MW</p>
-        <table>
-          <thead><tr><th>Duración</th><th>Ingreso modelo</th><th>Techo oráculo</th><th>Coste del error</th><th>Captura</th></tr></thead>
-          <tbody>{BESS_DURATION_STUDY.map(row => <tr key={row.hours}>
-            <td>{row.hours} h</td>
-            <td>{euro(row.model)}</td>
-            <td>{euro(row.oracle)}</td>
-            <td>{euro(durationErrorCost(row))}</td>
-            <td>{num(row.capture, 1)} %</td>
-          </tr>)}</tbody>
-        </table>
-        <p className="report-note">Año completo con 1 MW de potencia, no la jornada de este informe. Arbitraje bruto en mercado diario: sin degradación, peajes, O&amp;M, intradiario, balance ni capacidad. Más duración captura más del techo, pero el coste absoluto del error también crece.</p>
-      </>}
-
       <h2>Metodología y límites</h2>
       <ol>
         <li>Precios del mercado diario español. Datos almacenados en UTC y presentados en Europe/Madrid; un día natural puede tener 23, 24 o 25 horas y solo entran las horas del día seleccionado.</li>
         <li>La previsión es la del modelo indicado en la cabecera. El desvío se calcula solo sobre las horas con previsión y precio real; el número de horas comparables consta en cada cifra.</li>
         <li>La banda de dispersión que aparece en pantalla es el recorrido central entre modelos, no un intervalo de confianza: no expresa probabilidad.</li>
-        <li>El ingreso y el techo del plan de batería salen del simulador con los supuestos guardados. El techo usa el precio real ya conocido, por lo que no es un ingreso alcanzable en tiempo real.</li>
-        <li>El estudio anual por duración procede de una simulación independiente a 1 MW y no se deduce de esta jornada.</li>
         <li>Valle, rampa y horas bajo cero describen la forma de la curva prevista. No identifican la causa del precio ni sustituyen el análisis de fundamentales.</li>
       </ol>
       {foot(2)}

@@ -1,6 +1,7 @@
 export type Evaluation = {
   model: string; seed: number; periodo: string; corte: string; n_obs: number | null;
-  mae: number | null; captura_pct: number | null; skill_vs_naive: number | null;
+  mae: number | null; rmse: number | null; eur_dia: number | null;
+  captura_pct: number | null; skill_vs_naive: number | null;
   pico_1h_pct: number | null; cobertura_ic80: number | null;
   simulador: Record<string, unknown> | null; estado: string | null; calculado_en: string;
 };

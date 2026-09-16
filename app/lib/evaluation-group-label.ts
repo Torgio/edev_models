@@ -22,7 +22,34 @@ const NAMED_FIELDS: Array<{ key: string; label: string; unit?: string }> = [
   { key: 'version', label: '' },
 ];
 
+/**
+ * Las ventanas de producción que llegaron antes de que existiera la pantalla
+ * guardan algunos supuestos con nombres distintos. No podemos asumir uno
+ * concreto, pero sí mostrar un valor corto y estable antes que dos opciones
+ * indistinguibles. Las claves de esta lista se traducen sin exponer el JSON.
+ */
+const EXTRA_FIELDS: Array<{ key: string; label: string; unit?: string }> = [
+  { key: 'modo', label: 'modo' },
+  { key: 'estrategia', label: 'estrategia' },
+  { key: 'politica', label: 'política' },
+  { key: 'soc_inicial', label: 'SOC inicial' },
+  { key: 'soc_final', label: 'SOC final' },
+  { key: 'coste_carga_eur_mwh', label: 'coste de carga', unit: '€/MWh' },
+  { key: 'coste_descarga_eur_mwh', label: 'coste de descarga', unit: '€/MWh' },
+  { key: 'peajes', label: 'peajes' },
+  { key: 'paso_h', label: 'paso', unit: 'h' },
+];
+
 const MAX_FIELDS = 3;
+
+const periodLabel = (value: string) => {
+  const known: Record<string, string> = {
+    prod_30d: 'Producción · últimos 30 días',
+    test_2026: 'Prueba · año 2026',
+    val_2025: 'Validación · año 2025',
+  };
+  return known[value] ?? value.replaceAll('_', ' ');
+};
 
 /** Descarta lo que no se puede leer de un vistazo: objetos, hashes, fechas, textos largos. */
 const readable = (value: unknown): value is string | number =>
@@ -39,15 +66,18 @@ export type GroupLabel = { key: string; label: string; detail: string | null };
 
 export function evaluationGroupLabels(groups: Array<[string, Evaluation]>): GroupLabel[] {
   const assumptions = groups.map(([, row]) => row.simulador ?? {});
-  const varying = NAMED_FIELDS.filter(field =>
+  const allFields = [...NAMED_FIELDS, ...EXTRA_FIELDS];
+  const varying = allFields.filter(field =>
     new Set(assumptions.map(entry => JSON.stringify(entry[field.key]))).size > 1);
 
   // Con un solo grupo nada «varía»: entonces los campos conocidos sirven igual
   // para describirlo, porque no hay ambigüedad que resolver.
   const fields = (varying.length ? varying : NAMED_FIELDS).slice(0, MAX_FIELDS);
 
-  return groups.map(([key, row]) => {
-    const base = [row.periodo, row.corte].filter(Boolean).join(' · ');
+  const labels = groups.map(([key, row]) => {
+    // «global» es un detalle interno: si no hay un corte específico, no aporta
+    // información a quien escoge el conjunto de evaluación.
+    const base = [periodLabel(row.periodo), row.corte && row.corte !== 'global' ? row.corte : null].filter(Boolean).join(' · ');
     const detail = fields
       .map(field => {
         const value = (row.simulador ?? {})[field.key];
@@ -58,5 +88,22 @@ export function evaluationGroupLabels(groups: Array<[string, Evaluation]>): Grou
     if (detail.length) return { key, label: `${base} · ${detail.join(' · ')}`, detail: detail.join(' · ') };
     // Sin supuestos legibles no hay nada que nombrar: dilo, no lo numeres.
     return { key, label: row.simulador ? base : `${base} · sin supuestos registrados`, detail: null };
+  });
+
+  // Una diferencia puede ser una estructura antigua que no es sensato pintar
+  // en un <select> (por ejemplo una lista completa de modelos). En ese caso
+  // conservamos ambos conjuntos, pero los nombramos como ejecuciones guardadas
+  // distintas: nunca como las opacas «configuración 1/2».
+  const repeated = new Map<string, number>();
+  return labels.map(item => {
+    const total = labels.filter(other => other.label === item.label).length;
+    if (total < 2) return item;
+    const position = (repeated.get(item.label) ?? 0) + 1;
+    repeated.set(item.label, position);
+    return {
+      ...item,
+      label: `${item.label} · ejecución guardada ${position} de ${total}`,
+      detail: item.detail ? `${item.detail} · ejecución guardada ${position} de ${total}` : `ejecución guardada ${position} de ${total}`,
+    };
   });
 }
