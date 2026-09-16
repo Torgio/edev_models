@@ -41,11 +41,11 @@ export function preferredBatteryModel(
   if (chosenModel && models.includes(chosenModel)) return chosenModel;
 
   const planModels = batteryModels(plan, []);
-  return (planModels.includes('ensemble11') ? 'ensemble11' : undefined)
-    ?? (planModels.includes('ensemble') ? 'ensemble' : undefined)
+  return (planModels.includes('ensemble') ? 'ensemble' : undefined)
+    ?? (planModels.includes('ensemble11') ? 'ensemble11' : undefined)
     ?? planModels[0]
-    ?? (models.includes('ensemble11') ? 'ensemble11' : undefined)
     ?? (models.includes('ensemble') ? 'ensemble' : undefined)
+    ?? (models.includes('ensemble11') ? 'ensemble11' : undefined)
     ?? models[0]
     ?? '';
 }

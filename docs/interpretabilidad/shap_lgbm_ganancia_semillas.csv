@@ -1,0 +1,13 @@
+modelo,variable,proporcion_ganancia,rango_ganancia,divisiones,rango_divisiones
+lgbm_nucleo__s0,pt_entsoe_D,0.51297,1,907,8
+lgbm_nucleo__s0,es_esios_D,0.22664,2,1138,5
+lgbm_nucleo__s0,spread_es_pt_D,0.0001,107,110,102
+lgbm_nucleo__s0,es_esios_Dm1,0.05716,3,637,17
+lgbm_nucleo__s1,pt_entsoe_D,0.45407,1,842,9
+lgbm_nucleo__s1,es_esios_D,0.23147,2,1125,5
+lgbm_nucleo__s1,spread_es_pt_D,0.00012,106,112,102
+lgbm_nucleo__s1,es_esios_Dm1,0.09458,3,633,16
+lgbm_nucleo__s2,pt_entsoe_D,0.55072,1,935,8
+lgbm_nucleo__s2,es_esios_D,0.20649,2,1149,5
+lgbm_nucleo__s2,spread_es_pt_D,0.00011,107,116,102
+lgbm_nucleo__s2,es_esios_Dm1,0.02913,5,639,20

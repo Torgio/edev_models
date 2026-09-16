@@ -1,0 +1,125 @@
+variable,nulos_antes,cero_convencion,cero_sin_serie,cero_no_existia,ffill,interpolado,analogo_7d,hora_saltada_lag,sin_reconstruir,cero_hora_inexistente,via_principal,celdas,bloque
+ree_gbattery_mw_Dm6,43526,718.0,42808.0,0.0,0.0,0.0,0.0,0.0,0,0.0,cero_sin_serie,42808.0,estado real de días anteriores
+ree_cbattery_mw_Dm6,43526,718.0,42808.0,0.0,0.0,0.0,0.0,0.0,0,0.0,cero_sin_serie,42808.0,estado real de días anteriores
+ree_gbattery_mw_Dm1,43406,718.0,42688.0,0.0,0.0,0.0,0.0,0.0,0,0.0,cero_sin_serie,42688.0,estado real de días anteriores
+ree_cbattery_mw_Dm1,43406,718.0,42688.0,0.0,0.0,0.0,0.0,0.0,0,0.0,cero_sin_serie,42688.0,estado real de días anteriores
+capinst_battery_hybrid_mw,34892,0.0,0.0,34892.0,0.0,0.0,0.0,0.0,0,0.0,cero_no_existia,34892.0,capacidad instalada
+capinst_wind_hybrid_mw,34125,0.0,0.0,27549.0,6576.0,0.0,0.0,0.0,0,0.0,cero_no_existia,27549.0,capacidad instalada
+pbfli_net_flow_ma_mw_D,31182,21462.0,9720.0,0.0,0.0,0.0,0.0,0.0,0,0.0,cero_convencion,21462.0,programas de casación
+capinst_solar_pv_hybrid_mw,29756,0.0,0.0,29756.0,0.0,0.0,0.0,0.0,0,0.0,cero_no_existia,29756.0,capacidad instalada
+bil_direct_consumer_mw_D,9267,5044.0,4223.0,0.0,0.0,0.0,0.0,0.0,0,0.0,cero_convencion,5044.0,programas de casación
+pbfli_net_flow_ad_mw_D,7070,7070.0,0.0,0.0,0.0,0.0,0.0,0.0,0,0.0,cero_convencion,7070.0,programas de casación
+bil_generic_buy_mw_D,41,41.0,0.0,0.0,0.0,0.0,0.0,0.0,0,0.0,cero_convencion,41.0,programas de casación
+pbfli_net_flow_pt_mw_D,33,0.0,0.0,0.0,0.0,0.0,33.0,0.0,0,0.0,analogo_7d,33.0,programas de casación
+bil_generic_sales_mw_D,32,32.0,0.0,0.0,0.0,0.0,0.0,0.0,0,0.0,cero_convencion,32.0,programas de casación
+pbfli_net_flow_fr_mw_D,26,0.0,0.0,0.0,0.0,0.0,26.0,0.0,0,0.0,analogo_7d,26.0,programas de casación
+pdbc_total_gen_mw_D,9,0.0,0.0,0.0,0.0,0.0,9.0,0.0,0,0.0,analogo_7d,9.0,programas de casación
+pumping_cons_mw_Dm1,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,estado real de días anteriores
+biomass_mw_Dm1,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,estado real de días anteriores
+hydro_run_river_mw_Dm1,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,estado real de días anteriores
+spread_es_de_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,precio: diferencial entre zonas
+waste_mw_Dm1,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,estado real de días anteriores
+nl_entsoe_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,precio: mercados vecinos
+at_entsoe_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,precio: mercados vecinos
+ch_entsoe_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,precio: mercados vecinos
+be_entsoe_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,precio: mercados vecinos
+fr_entsoe_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,precio: mercados vecinos
+pt_entsoe_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,precio: mercados vecinos
+it_nord_entsoe_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,precio: mercados vecinos
+de_lu_entsoe_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,precio: mercados vecinos
+pumping_cons_mw_Dm6,8,0.0,0.0,0.0,0.0,0.0,1.0,7.0,0,0.0,hora_saltada_lag,7.0,estado real de días anteriores
+wind_mw_Dm6,8,0.0,0.0,0.0,0.0,0.0,1.0,7.0,0,0.0,hora_saltada_lag,7.0,estado real de días anteriores
+waste_mw_Dm6,8,0.0,0.0,0.0,0.0,0.0,1.0,7.0,0,0.0,hora_saltada_lag,7.0,estado real de días anteriores
+other_renewable_mw_Dm6,8,0.0,0.0,0.0,0.0,0.0,1.0,7.0,0,0.0,hora_saltada_lag,7.0,estado real de días anteriores
+oil_mw_Dm6,8,0.0,0.0,0.0,0.0,0.0,1.0,7.0,0,0.0,hora_saltada_lag,7.0,estado real de días anteriores
+solar_fv_mw_Dm6,8,0.0,0.0,0.0,0.0,0.0,1.0,7.0,0,0.0,hora_saltada_lag,7.0,generación: reconstruida entre fuentes
+pdbc_cogen_mw_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,programas de casación
+pdbc_wind_mw_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,programas de casación
+pbfli_demand_aux_mw_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,programas de casación
+pdbc_biomass_mw_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,programas de casación
+pdbc_other_renew_mw_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,programas de casación
+pdbc_biogas_mw_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,programas de casación
+pbfli_demand_reference_mw_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,programas de casación
+pbfli_demand_direct_mw_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,programas de casación
+pbfli_demand_free_market_mw_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,programas de casación
+pdbc_waste_mw_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,programas de casación
+pdbc_hydro_ugh_mw_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,programas de casación
+pdbc_solar_thermal_mw_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,programas de casación
+pdbc_solar_pv_mw_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,programas de casación
+pdbc_hydro_no_ugh_mw_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,programas de casación
+hydro_dispatch_mw_Dm6,8,0.0,0.0,0.0,0.0,0.0,1.0,7.0,0,0.0,hora_saltada_lag,7.0,generación: reconstruida entre fuentes
+wind_mw_Dm1,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,estado real de días anteriores
+hydro_run_river_mw_Dm6,8,0.0,0.0,0.0,0.0,0.0,1.0,7.0,0,0.0,hora_saltada_lag,7.0,estado real de días anteriores
+biomass_mw_Dm6,8,0.0,0.0,0.0,0.0,0.0,1.0,7.0,0,0.0,hora_saltada_lag,7.0,estado real de días anteriores
+oil_mw_Dm1,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,estado real de días anteriores
+other_renewable_mw_Dm1,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,estado real de días anteriores
+solar_fv_mw_Dm1,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,generación: reconstruida entre fuentes
+hydro_dispatch_mw_Dm1,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,generación: reconstruida entre fuentes
+pl_entsoe_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,precio: mercados vecinos
+cz_entsoe_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,precio: mercados vecinos
+spread_es_fr_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,precio: diferencial entre zonas
+spread_es_pt_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,precio: diferencial entre zonas
+bil_retail_free_sales_mw_D,8,8.0,0.0,0.0,0.0,0.0,0.0,0.0,0,0.0,cero_convencion,8.0,programas de casación
+pbfli_total_demand_mw_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,programas de casación
+pdbc_nuclear_mw_D,8,0.0,0.0,0.0,0.0,0.0,8.0,0.0,0,0.0,analogo_7d,8.0,programas de casación
+bil_retail_free_buy_mw_D,8,8.0,0.0,0.0,0.0,0.0,0.0,0.0,0,0.0,cero_convencion,8.0,programas de casación
+bil_retail_last_resort_mw_D,8,8.0,0.0,0.0,0.0,0.0,0.0,0.0,0,0.0,cero_convencion,8.0,programas de casación
+ree_gcoal_mw_Dm6,7,0.0,0.0,0.0,0.0,0.0,0.0,7.0,0,0.0,hora_saltada_lag,7.0,estado real de días anteriores
+pdbc_coal_mw_D,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,programas de casación
+ree_gsolter_mw_Dm6,7,0.0,0.0,0.0,0.0,0.0,0.0,7.0,0,0.0,hora_saltada_lag,7.0,estado real de días anteriores
+ree_gotherthermal_mw_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,estado real de días anteriores
+ree_gnuclear_mw_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,estado real de días anteriores
+ree_gnuclear_mw_Dm6,7,0.0,0.0,0.0,0.0,0.0,0.0,7.0,0,0.0,hora_saltada_lag,7.0,estado real de días anteriores
+ree_gotherthermal_mw_Dm6,7,0.0,0.0,0.0,0.0,0.0,0.0,7.0,0,0.0,hora_saltada_lag,7.0,estado real de días anteriores
+ree_gccgas_mw_Dm6,7,0.0,0.0,0.0,0.0,0.0,0.0,7.0,0,0.0,hora_saltada_lag,7.0,estado real de días anteriores
+gen_peninsular_mw_Dm6,7,0.0,0.0,0.0,0.0,0.0,0.0,7.0,0,0.0,hora_saltada_lag,7.0,demanda e intercambios: agregado
+ree_gccgas_mw_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,estado real de días anteriores
+ree_gsolter_mw_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,estado real de días anteriores
+es_esios_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,precio: referencia de persistencia
+ree_netflow_fr_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,estado real de días anteriores
+entsoe_load_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,estado real de días anteriores
+es_esios_Dm6,7,0.0,0.0,0.0,0.0,0.0,0.0,7.0,0,0.0,hora_saltada_lag,7.0,precio: referencia de persistencia
+ree_netflow_ma_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,estado real de días anteriores
+gen_peninsular_mw_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,demanda e intercambios: agregado
+ree_netflow_pt_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,estado real de días anteriores
+es_esios_D,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,precio: referencia de persistencia
+total_net_flow_mw_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,demanda e intercambios: agregado
+total_net_flow_mw_Dm6,7,0.0,0.0,0.0,0.0,0.0,0.0,7.0,0,0.0,hora_saltada_lag,7.0,demanda e intercambios: agregado
+ree_gcoal_mw_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,estado real de días anteriores
+entsoe_load_Dm6,7,0.0,0.0,0.0,0.0,0.0,0.0,7.0,0,0.0,hora_saltada_lag,7.0,estado real de días anteriores
+ree_netflow_fr_Dm6,7,0.0,0.0,0.0,0.0,0.0,0.0,7.0,0,0.0,hora_saltada_lag,7.0,estado real de días anteriores
+ree_netflow_pt_Dm6,7,0.0,0.0,0.0,0.0,0.0,0.0,7.0,0,0.0,hora_saltada_lag,7.0,estado real de días anteriores
+ree_netflow_ma_Dm6,7,0.0,0.0,0.0,0.0,0.0,0.0,7.0,0,0.0,hora_saltada_lag,7.0,estado real de días anteriores
+t2m_mean_met_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+msl_mean_met_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+ssrd_mean_met_Dm2,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+tcc_mean_met_Dm2,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+wind_gust10_mean_met_Dm2,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+tp_acum_7d_met_Dm2,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+tp_acum_30d_met_Dm2,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+wind_gust10_mean_met_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+tcc_mean_met_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+ssrd_mean_met_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+tp_acum_7d_met_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+tp_acum_30d_met_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+t2m_mean_met_Dm2,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+d2m_mean_met_Dm2,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+msl_mean_met_Dm2,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+wind10_mean_met_Dm2,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+wind100_mean_met_Dm2,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+pdbc_pumping_cons_mw_D,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,programas de casación
+d2m_mean_met_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+wind100_mean_met_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+wind10_mean_met_Dm1,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,meteorología: reanálisis desfasado
+pdbc_ccgt_mw_D,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,programas de casación
+pdbc_hybrid_mw_D,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,programas de casación
+pdbc_fuel_gas_mw_D,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,programas de casación
+pdbc_pumping_gen_mw_D,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,programas de casación
+bil_total_purchases_mw_D,7,7.0,0.0,0.0,0.0,0.0,0.0,0.0,0,0.0,cero_convencion,7.0,programas de casación
+pdbc_unavailable_power_mw_D,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,programas de casación
+pbfli_total_net_flow_mw_D,7,0.0,0.0,0.0,0.0,0.0,7.0,0.0,0,0.0,analogo_7d,7.0,programas de casación
+bil_total_sales_mw_D,7,7.0,0.0,0.0,0.0,0.0,0.0,0.0,0,0.0,cero_convencion,7.0,programas de casación
+pbf_completo_D,7,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0,7.0,cero_hora_inexistente,7.0,trazabilidad
+pbf_publicado_D,7,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0,7.0,cero_hora_inexistente,7.0,trazabilidad
+capdisp_coal_antracita_mw,4,0.0,0.0,0.0,0.0,0.0,4.0,0.0,0,0.0,analogo_7d,4.0,capacidad disponible
+ree_demanda_prev,1,0.0,0.0,0.0,0.0,0.0,1.0,0.0,0,0.0,analogo_7d,1.0,previsión para el día objetivo

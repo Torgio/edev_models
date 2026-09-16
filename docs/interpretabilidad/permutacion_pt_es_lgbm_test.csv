@@ -1,0 +1,7 @@
+variante,columnas,MAE_base,MAE_perm_media,MAE_perm_sd,delta_MAE_media,delta_MAE_p05,delta_MAE_p95,delta_MAE_pct,repeticiones
+pt_entsoe_D,pt_entsoe_D,14.1643,19.8125,0.2986,5.6482,5.2176,6.0389,39.8765,30
+es_esios_D,es_esios_D,14.1643,18.7252,0.2569,4.561,4.1683,4.9886,32.2004,30
+pt_entsoe_D + es_esios_D,pt_entsoe_D | es_esios_D,14.1643,26.5461,0.4474,12.3818,11.6474,13.0549,87.4156,30
+pt_entsoe_D + es_esios_D + spread_es_pt_D,pt_entsoe_D | es_esios_D | spread_es_pt_D,14.1643,26.5533,0.4498,12.389,11.6434,13.0639,87.4664,30
+es_esios_Dm1 (referencia),es_esios_Dm1,14.1643,14.6787,0.0936,0.5145,0.367,0.6486,3.6321,30
+gas_mibgas (referencia),gas_mibgas,14.1643,14.2242,0.1795,0.06,-0.1731,0.3924,0.4234,30

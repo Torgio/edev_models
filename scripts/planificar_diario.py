@@ -13,7 +13,7 @@ mantenerlo en dos sitios -- el mismo motivo por el que `construir()` en `run_dia
 delega en `construir_matriz_produccion.py` en vez de reescribirlo.
 
 CUANDO CORRE
-    11:30  guardar_predicciones --equipo   escribe `predictions` de mañana
+    11:30  guardar_predicciones --produccion  escribe `predictions` de mañana
     ---------------------------------------------------------------------
     11:35  este script                      lee esas filas y planifica `bess_plan`
 

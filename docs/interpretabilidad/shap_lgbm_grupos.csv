@@ -1,0 +1,10 @@
+grupo,n_variables,shap_abs_test,shap_abs_val,shap_abs_train,ganancia,proporcion_test,proporcion_val,proporcion_train,proporcion_ganancia,shap_abs_neto_fila_test,proporcion_neto_fila_test,variable_principal,regla
+"Previsiones REE (demanda, eólica, solar)",3.0,30.632278,25.124958,20.935657,164155966.660482,0.255205,0.242511,0.194345,0.043361,16.932112,0.225475,ree_gwind_prev,prefijo ree_ y sufijo _prev
+"Precio español (D, D-1, D-6)",3.0,22.872852,20.818855,25.002463,1289950056.198527,0.19056,0.200948,0.232098,0.340737,19.295442,0.256946,es_esios_D,prefijo es_esios_
+Precios europeos D y diferenciales,8.0,21.838538,19.415395,25.997374,1960339634.120209,0.181942,0.187401,0.241333,0.517819,19.908753,0.265113,pt_entsoe_D,sufijo _entsoe_D o prefijo spread_
+Programas PDBC/PBF de D,30.0,15.335368,13.576438,11.966905,104328036.416443,0.127763,0.131042,0.111089,0.027558,4.742964,0.063159,pdbc_wind_mw_D,prefijo pdbc_/pbfli_/bil_ y sufijo _D
+"Generación, demanda y flujos reales D-1/D-6",39.0,12.417628,11.077429,8.782324,101256265.273946,0.103454,0.106921,0.081526,0.026747,2.564093,0.034144,ree_gcoal_mw_Dm6,sufijo _Dm1 o _Dm6 (tras las reglas anteriores)
+Calendario y hora,13.0,4.876166,4.814828,4.368379,50643111.206289,0.040625,0.046474,0.040552,0.013377,3.472804,0.046245,d1_dow,prefijo d1_ o hora_sin/hora_cos
+Gas MIBGAS,1.0,4.498606,2.237718,4.29009,42396816.142415,0.037479,0.021599,0.039825,0.011199,4.498606,0.059905,gas_mibgas,gas_mibgas
+Meteorología prevista,6.0,4.373919,3.456437,3.628346,42839397.399261,0.03644,0.033362,0.033682,0.011316,1.905743,0.025378,wind100_meteo,sufijo _meteo
+Capacidades (disponible e instalada),9.0,3.184605,3.081364,2.752419,29853989.079336,0.026532,0.029742,0.025551,0.007886,1.774918,0.023635,capdisp_nuclear_mw,prefijo capdisp_ o capinst_

@@ -1,0 +1,191 @@
+variable,bloque,naturaleza,disponibilidad
+fecha_pred,control,eje temporal,no aplica
+fecha_objetivo,control,eje temporal,no aplica
+hora,calendario,construida,conocida de antemano
+target_price,objetivo,construida,es lo que se predice
+ree_demanda_prev,previsión para el día objetivo,de fuente,publicada antes del cierre
+ree_gwind_prev,previsión para el día objetivo,de fuente,publicada antes del cierre
+ree_gsolar_prev,previsión para el día objetivo,de fuente,publicada antes del cierre
+ree_grenov_prev,previsión para el día objetivo,de fuente,publicada antes del cierre
+es_esios_D,precio: referencia de persistencia,desfasada,publicado antes del cierre
+pt_entsoe_D,precio: mercados vecinos,desfasada,publicado antes del cierre
+fr_entsoe_D,precio: mercados vecinos,desfasada,publicado antes del cierre
+de_lu_entsoe_D,precio: mercados vecinos,desfasada,publicado antes del cierre
+it_nord_entsoe_D,precio: mercados vecinos,desfasada,publicado antes del cierre
+ch_entsoe_D,precio: mercados vecinos,desfasada,publicado antes del cierre
+be_entsoe_D,precio: mercados vecinos,desfasada,publicado antes del cierre
+nl_entsoe_D,precio: mercados vecinos,desfasada,publicado antes del cierre
+at_entsoe_D,precio: mercados vecinos,desfasada,publicado antes del cierre
+pl_entsoe_D,precio: mercados vecinos,desfasada,publicado antes del cierre
+cz_entsoe_D,precio: mercados vecinos,desfasada,publicado antes del cierre
+spread_es_pt_D,precio: diferencial entre zonas,construida,publicado antes del cierre
+spread_es_fr_D,precio: diferencial entre zonas,construida,publicado antes del cierre
+spread_es_de_D,precio: diferencial entre zonas,construida,publicado antes del cierre
+es_esios_Dm1,precio: referencia de persistencia,desfasada,publicado antes del cierre
+es_esios_Dm6,precio: referencia de persistencia,desfasada,publicado antes del cierre
+entsoe_load_Dm1,estado real de días anteriores,desfasada,observado y publicado
+ree_netflow_fr_Dm1,estado real de días anteriores,desfasada,observado y publicado
+ree_netflow_pt_Dm1,estado real de días anteriores,desfasada,observado y publicado
+ree_netflow_ma_Dm1,estado real de días anteriores,desfasada,observado y publicado
+total_net_flow_mw_Dm1,demanda e intercambios: agregado,derivada en la base,observado y publicado
+gen_peninsular_mw_Dm1,demanda e intercambios: agregado,derivada en la base,observado y publicado
+wind_mw_Dm1,estado real de días anteriores,desfasada,observado y publicado
+pumping_cons_mw_Dm1,estado real de días anteriores,desfasada,observado y publicado
+hydro_run_river_mw_Dm1,estado real de días anteriores,desfasada,observado y publicado
+biomass_mw_Dm1,estado real de días anteriores,desfasada,observado y publicado
+waste_mw_Dm1,estado real de días anteriores,desfasada,observado y publicado
+other_renewable_mw_Dm1,estado real de días anteriores,desfasada,observado y publicado
+oil_mw_Dm1,estado real de días anteriores,desfasada,observado y publicado
+ree_gsolter_mw_Dm1,estado real de días anteriores,desfasada,observado y publicado
+ree_gccgas_mw_Dm1,estado real de días anteriores,desfasada,observado y publicado
+ree_gbattery_mw_Dm1,estado real de días anteriores,desfasada,observado y publicado
+ree_cbattery_mw_Dm1,estado real de días anteriores,desfasada,observado y publicado
+ree_gnuclear_mw_Dm1,estado real de días anteriores,desfasada,observado y publicado
+ree_gotherthermal_mw_Dm1,estado real de días anteriores,desfasada,observado y publicado
+ree_gcoal_mw_Dm1,estado real de días anteriores,desfasada,observado y publicado
+solar_fv_mw_Dm1,generación: reconstruida entre fuentes,construida,observada y publicada
+hydro_dispatch_mw_Dm1,generación: reconstruida entre fuentes,construida,observada y publicada
+entsoe_load_Dm6,estado real de días anteriores,desfasada,observado y publicado
+ree_netflow_fr_Dm6,estado real de días anteriores,desfasada,observado y publicado
+ree_netflow_pt_Dm6,estado real de días anteriores,desfasada,observado y publicado
+ree_netflow_ma_Dm6,estado real de días anteriores,desfasada,observado y publicado
+total_net_flow_mw_Dm6,demanda e intercambios: agregado,derivada en la base,observado y publicado
+gen_peninsular_mw_Dm6,demanda e intercambios: agregado,derivada en la base,observado y publicado
+wind_mw_Dm6,estado real de días anteriores,desfasada,observado y publicado
+pumping_cons_mw_Dm6,estado real de días anteriores,desfasada,observado y publicado
+hydro_run_river_mw_Dm6,estado real de días anteriores,desfasada,observado y publicado
+biomass_mw_Dm6,estado real de días anteriores,desfasada,observado y publicado
+waste_mw_Dm6,estado real de días anteriores,desfasada,observado y publicado
+other_renewable_mw_Dm6,estado real de días anteriores,desfasada,observado y publicado
+oil_mw_Dm6,estado real de días anteriores,desfasada,observado y publicado
+ree_gsolter_mw_Dm6,estado real de días anteriores,desfasada,observado y publicado
+ree_gccgas_mw_Dm6,estado real de días anteriores,desfasada,observado y publicado
+ree_gbattery_mw_Dm6,estado real de días anteriores,desfasada,observado y publicado
+ree_cbattery_mw_Dm6,estado real de días anteriores,desfasada,observado y publicado
+ree_gnuclear_mw_Dm6,estado real de días anteriores,desfasada,observado y publicado
+ree_gotherthermal_mw_Dm6,estado real de días anteriores,desfasada,observado y publicado
+ree_gcoal_mw_Dm6,estado real de días anteriores,desfasada,observado y publicado
+solar_fv_mw_Dm6,generación: reconstruida entre fuentes,construida,observada y publicada
+hydro_dispatch_mw_Dm6,generación: reconstruida entre fuentes,construida,observada y publicada
+t2m_mean_met_Dm1,meteorología: reanálisis desfasado,desfasada,observado y publicado
+d2m_mean_met_Dm1,meteorología: reanálisis desfasado,desfasada,observado y publicado
+msl_mean_met_Dm1,meteorología: reanálisis desfasado,desfasada,observado y publicado
+wind10_mean_met_Dm1,meteorología: reanálisis desfasado,desfasada,observado y publicado
+wind100_mean_met_Dm1,meteorología: reanálisis desfasado,desfasada,observado y publicado
+wind_gust10_mean_met_Dm1,meteorología: reanálisis desfasado,desfasada,observado y publicado
+tcc_mean_met_Dm1,meteorología: reanálisis desfasado,desfasada,observado y publicado
+ssrd_mean_met_Dm1,meteorología: reanálisis desfasado,desfasada,observado y publicado
+tp_acum_7d_met_Dm1,meteorología: reanálisis desfasado,desfasada,observado y publicado
+tp_acum_30d_met_Dm1,meteorología: reanálisis desfasado,desfasada,observado y publicado
+t2m_mean_met_Dm2,meteorología: reanálisis desfasado,desfasada,observado y publicado
+d2m_mean_met_Dm2,meteorología: reanálisis desfasado,desfasada,observado y publicado
+msl_mean_met_Dm2,meteorología: reanálisis desfasado,desfasada,observado y publicado
+wind10_mean_met_Dm2,meteorología: reanálisis desfasado,desfasada,observado y publicado
+wind100_mean_met_Dm2,meteorología: reanálisis desfasado,desfasada,observado y publicado
+wind_gust10_mean_met_Dm2,meteorología: reanálisis desfasado,desfasada,observado y publicado
+tcc_mean_met_Dm2,meteorología: reanálisis desfasado,desfasada,observado y publicado
+ssrd_mean_met_Dm2,meteorología: reanálisis desfasado,desfasada,observado y publicado
+tp_acum_7d_met_Dm2,meteorología: reanálisis desfasado,desfasada,observado y publicado
+tp_acum_30d_met_Dm2,meteorología: reanálisis desfasado,desfasada,observado y publicado
+gas_mibgas,materias primas,de fuente,cierre del día anterior
+capinst_total_mw,capacidad instalada,de fuente,estructural
+capinst_total_renewable_mw,capacidad instalada,de fuente,estructural
+capinst_total_nonrenewable_mw,capacidad instalada,de fuente,estructural
+capinst_total_hybrid_mw,capacidad instalada,de fuente,estructural
+capinst_total_autoconsume_mw,capacidad instalada,de fuente,estructural
+capinst_hydro_mw,capacidad instalada,de fuente,estructural
+capinst_pump_mw,capacidad instalada,de fuente,estructural
+capinst_wind_mw,capacidad instalada,de fuente,estructural
+capinst_wind_hybrid_mw,capacidad instalada,de fuente,estructural
+capinst_solar_pv_mw,capacidad instalada,de fuente,estructural
+capinst_solar_thermal_mw,capacidad instalada,de fuente,estructural
+capinst_solar_pv_hybrid_mw,capacidad instalada,de fuente,estructural
+capinst_other_renewable_mw,capacidad instalada,de fuente,estructural
+capinst_waste_nonrenewable_mw,capacidad instalada,de fuente,estructural
+capinst_waste_renewable_mw,capacidad instalada,de fuente,estructural
+capinst_battery_hybrid_mw,capacidad instalada,de fuente,estructural
+capinst_autoconsume_solar_pv_mw,capacidad instalada,de fuente,estructural
+capinst_autoconsume_battery_mw,capacidad instalada,de fuente,estructural
+capinst_nuclear_mw,capacidad instalada,de fuente,estructural
+capinst_coal_mw,capacidad instalada,de fuente,estructural
+capinst_fuel_mw,capacidad instalada,de fuente,estructural
+capinst_ccgt_mw,capacidad instalada,de fuente,estructural
+capinst_cogeneration_mw,capacidad instalada,de fuente,estructural
+d1_dow,calendario,construida,conocida de antemano
+d1_month,calendario,construida,conocida de antemano
+d1_is_weekend,calendario,construida,conocida de antemano
+d1_dow_sin,calendario: codificación cíclica,construida,conocida de antemano
+d1_dow_cos,calendario: codificación cíclica,construida,conocida de antemano
+d1_month_sin,calendario: codificación cíclica,construida,conocida de antemano
+d1_month_cos,calendario: codificación cíclica,construida,conocida de antemano
+d1_doy_sin,calendario: codificación cíclica,construida,conocida de antemano
+d1_doy_cos,calendario: codificación cíclica,construida,conocida de antemano
+d1_is_festivo,calendario,construida,conocida de antemano
+d1_es_puente,calendario,construida,conocida de antemano
+d1_vispera_festivo,calendario,construida,conocida de antemano
+d1_regimen_tope_gas,régimen regulatorio,construida,conocida de antemano
+hora_sin,calendario: codificación cíclica,construida,conocida de antemano
+hora_cos,calendario: codificación cíclica,construida,conocida de antemano
+split,control,eje temporal,no aplica
+pbf_publicado_D,trazabilidad,construida,no aplica
+pbf_completo_D,trazabilidad,construida,no aplica
+pdbc_wind_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_solar_pv_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_solar_thermal_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_hydro_ugh_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_hydro_no_ugh_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_nuclear_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_coal_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_cogen_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_biomass_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_biogas_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_hybrid_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_ccgt_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_fuel_gas_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_waste_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_other_renew_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_pumping_gen_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_pumping_cons_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_total_gen_mw_D,programas de casación,desfasada,publicado antes del cierre
+pdbc_unavailable_power_mw_D,programas de casación,desfasada,publicado antes del cierre
+pbfli_demand_free_market_mw_D,programas de casación,desfasada,publicado antes del cierre
+pbfli_demand_reference_mw_D,programas de casación,desfasada,publicado antes del cierre
+pbfli_demand_direct_mw_D,programas de casación,desfasada,publicado antes del cierre
+pbfli_demand_aux_mw_D,programas de casación,desfasada,publicado antes del cierre
+pbfli_total_demand_mw_D,programas de casación,desfasada,publicado antes del cierre
+pbfli_net_flow_fr_mw_D,programas de casación,desfasada,publicado antes del cierre
+pbfli_net_flow_pt_mw_D,programas de casación,desfasada,publicado antes del cierre
+pbfli_net_flow_ma_mw_D,programas de casación,desfasada,publicado antes del cierre
+pbfli_net_flow_ad_mw_D,programas de casación,desfasada,publicado antes del cierre
+pbfli_total_net_flow_mw_D,programas de casación,desfasada,publicado antes del cierre
+bil_total_sales_mw_D,programas de casación,desfasada,publicado antes del cierre
+bil_total_purchases_mw_D,programas de casación,desfasada,publicado antes del cierre
+bil_retail_free_sales_mw_D,programas de casación,desfasada,publicado antes del cierre
+bil_retail_free_buy_mw_D,programas de casación,desfasada,publicado antes del cierre
+bil_retail_last_resort_mw_D,programas de casación,desfasada,publicado antes del cierre
+bil_direct_consumer_mw_D,programas de casación,desfasada,publicado antes del cierre
+bil_generic_sales_mw_D,programas de casación,desfasada,publicado antes del cierre
+bil_generic_buy_mw_D,programas de casación,desfasada,publicado antes del cierre
+capdisp_hydro_mw,capacidad disponible,de fuente,declarada antes del cierre
+capdisp_pump_mw,capacidad disponible,de fuente,declarada antes del cierre
+capdisp_nuclear_mw,capacidad disponible,de fuente,declarada antes del cierre
+capdisp_coal_antracita_mw,capacidad disponible,de fuente,declarada antes del cierre
+capdisp_ccgt_mw,capacidad disponible,de fuente,declarada antes del cierre
+capdisp_fuel_mw,capacidad disponible,de fuente,declarada antes del cierre
+t2m_fc,meteorología: previsión cruda,de fuente,publicada antes del cierre
+d2m_fc,meteorología: previsión cruda,de fuente,publicada antes del cierre
+wind10_fc,meteorología: previsión cruda,de fuente,publicada antes del cierre
+wind100_fc,meteorología: previsión cruda,de fuente,publicada antes del cierre
+ssrd_fc,meteorología: previsión cruda,de fuente,publicada antes del cierre
+tcc_fc,meteorología: previsión cruda,de fuente,publicada antes del cierre
+tp_fc,meteorología: previsión cruda,de fuente,publicada antes del cierre
+msl_fc,meteorología: previsión cruda,de fuente,publicada antes del cierre
+meteo_es_forecast,meteorología: procedencia del canal,construida,conocida de antemano
+t2m_meteo,meteorología: canal empalmado,construida,publicada antes del cierre
+d2m_meteo,meteorología: canal empalmado,construida,publicada antes del cierre
+wind10_meteo,meteorología: canal empalmado,construida,publicada antes del cierre
+wind100_meteo,meteorología: canal empalmado,construida,publicada antes del cierre
+ssrd_meteo,meteorología: canal empalmado,construida,publicada antes del cierre
+tcc_meteo,meteorología: canal empalmado,construida,publicada antes del cierre
+msl_meteo,meteorología: canal empalmado,construida,publicada antes del cierre
+ts,control,eje temporal,no aplica

@@ -1,0 +1,81 @@
+<title>discusion_interpretabilidad_informe</title>
+<style>
+:root {
+  --paper: #FFFFFF;
+  --ink: #1B1B1B;
+  --ink-2: #4A4A4A;
+  --rule: #C9C9C9;
+  --nuevo: #FCE5B8;
+  --corr: #D6E6FA;
+  color-scheme: light;
+}
+@page {
+  size: A4;
+  margin: 25mm 25mm 22mm;
+  @bottom-right { content: counter(page); font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #4A4A4A; }
+}
+* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+html, body { background: var(--paper); }
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+  font-size: 11pt;
+  line-height: 1.4;
+}
+.informe { max-width: 160mm; margin-inline: auto; padding-inline: 16px; padding-block: 16mm; }
+.aviso {
+  display: grid;
+  gap: 1.6mm;
+  margin-bottom: 8mm;
+  padding: 3mm 4mm;
+  border: 1px solid var(--rule);
+  font-size: 9pt;
+  line-height: 1.35;
+  color: var(--ink-2);
+}
+.aviso strong { color: var(--ink); }
+.claves { display: flex; flex-wrap: wrap; gap: 1.5mm 6mm; }
+.muestra { display: inline-block; width: 9mm; height: 3.4mm; margin-right: 1.8mm; vertical-align: -0.5mm; border: 1px solid rgba(0, 0, 0, 0.08); }
+.muestra.m-nuevo { background: var(--nuevo); }
+.muestra.m-corr { background: var(--corr); }
+h1 { margin: 0 0 5mm; font-size: 16pt; line-height: 1.2; font-weight: 700; }
+h2 { margin: 7mm 0 2.5mm; font-size: 12pt; line-height: 1.25; font-weight: 700; break-after: avoid; }
+p { margin: 0 0 3.2mm; text-align: justify; hyphens: manual; orphans: 3; widows: 3; }
+.nuevo, .corr { -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.nuevo { background: var(--nuevo); }
+.corr { background: var(--corr); }
+body.limpio .nuevo, body.limpio .corr { background: none; }
+body.limpio .aviso { display: none; }
+@media print {
+  .informe { max-width: none; padding: 0; }
+}
+
+h2 { margin: 5mm 0 2mm; }
+h3 { margin: 3.5mm 0 1.5mm; font-size: 11pt; font-weight: 700; break-after: avoid; }
+table { width: 100%; border-collapse: collapse; margin: 2mm 0 2mm; font-size: 8.8pt; line-height: 1.25; break-inside: avoid; }
+th, td { padding: 1mm 1.4mm; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+th { border-bottom: 1.5px solid var(--ink); font-weight: 700; }
+td:nth-child(n+2), th:nth-child(n+2) { text-align: right; font-variant-numeric: tabular-nums; }
+ul { margin: 0 0 3mm; padding-left: 5mm; }
+li { margin-bottom: 1mm; }
+figure, p > img { break-inside: avoid; }
+img { display: block; width: 100%; max-width: 160mm; margin: 2mm auto 1mm; }
+.pie { font-size: 9pt; line-height: 1.3; color: var(--ink-2); margin: 0 0 4mm; text-align: justify; }
+</style>
+<main class="informe">
+<h2>Discusión de los resultados: explicatividad e interpretabilidad</h2>
+<p><strong>Por qué no hay coeficientes que leer.</strong> El modelo final es una media ponderada de seis modelos (LightGBM, red densa, LSTM, GRU y dos seq2seq) que combinan tres formatos de entrada y dos objetivos (precio absoluto o residuo respecto al precio de D). Sin coeficientes interpretables, la explicación es posterior al entrenamiento y se ofrece en dos niveles: una permutación por grupos, agnóstica al modelo, para el sistema completo, y TreeSHAP para su miembro de mayor peso.</p>
+<p><strong>Qué gobierna la predicción del sistema.</strong> Se permutaron los 212&nbsp;días de test, grupo a grupo y en todos los formatos a la vez, con tres repeticiones (Figura X). Sobre un MAE de 11,72&nbsp;€/MWh, dominan las previsiones de REE para D+1: permutarlas lo eleva en 10,10&nbsp;€/MWh (+86,2&nbsp;%). Muy por detrás quedan el precio español de D, D-1 y D-6 (+1,69), los precios europeos (+1,25), los programas de D (+1,11), la generación y flujos reales (+0,94), la meteorología prevista (+0,85) y el calendario (+0,84). El gas (+0,13) y las capacidades apenas alteran el error, pero son variables lentas y siete meses de test no permiten descartarlas entre regímenes. Como el histórico de REE se cargó ya revisado, el +10,10 y el MAE de test pueden ser optimistas frente a producción.</p>
+<p><img src="fig_permutacion_ensemble.png" alt=""></p>
+<p class="pie">Aumento del MAE de test del ensemble (base 11,72&nbsp;€/MWh; 212&nbsp;días de enero a julio de 2026) al permutar entre días cada grupo de variables en todos los formatos, con el ancla del residuo fija. Barra: media de tres permutaciones; bigotes: mínimo y máximo.</p>
+
+<p><strong>Cómo leer el precio de D.</strong> El +1,69 no mide la dependencia del sistema respecto al precio de D: el precio portugués y los diferenciales quedan intactos en otro grupo y reconstruyen el español, y los errores de los miembros se compensan al combinarse. Permutando también el ancla del residuo, el aumento es de 20,36&nbsp;€/MWh.</p>
+<p><strong>El miembro de mayor peso.</strong> En LightGBM (11/30 del ensemble), el |SHAP| medio de test se reparte entre previsiones de REE (25,5&nbsp;%), precio español (19,1&nbsp;%), precios europeos (18,2&nbsp;%) y programas de D (12,8&nbsp;%), los cuatro primeros grupos de la permutación, con un reparto casi igual en validación. Su primera variable, el precio portugués de D, supera al español, pero la separación no es interpretable: ambos correlacionan 0,997 en 2020-2026, y permutarlos juntos eleva el MAE de LightGBM en 12,38&nbsp;€/MWh, más que la suma por separado (5,65 y 4,56). Permutar uno solo crea combinaciones casi inexistentes en entrenamiento, así que la cifra fiable es la conjunta.</p>
+<p><strong>Contraste con el EDA.</strong> La asociación de Spearman del EDA anticipaba mal la importancia SHAP: la correlación de rangos entre |rho| y |SHAP| de test es 0,314. Discrepan las previsiones de REE, en los puestos 34 a 43 por asociación y 2, 4 y 6 por SHAP, por motivos no comprobados.</p>
+<p><strong>Comportamiento.</strong> El ensemble se mantiene cerca de la forma de D: su perfil horario correlaciona 0,938 con el de D, frente al 0,858 del perfil real, y la magnitud media de su movimiento es el 82,6&nbsp;% de la del cambio real. Ese encogimiento es la prudencia esperable ante la incertidumbre, no un sesgo corregible: escalarlo con el factor ajustado en validación empeora el test de 11,72 a 11,97&nbsp;€/MWh. Por cuartiles del cambio real (Figura Y), el ensemble es peor que la persistencia en el más tranquilo (8,30 frente a 6,37&nbsp;€/MWh) y reduce el error un 45,8&nbsp;% en el de mayor cambio (16,31 frente a 30,09). El patrón es descriptivo y en buena parte consecuencia de la definición: los cuartiles se definen con |D+1 − D|, que por construcción es el MAE de la persistencia.</p>
+<p><img src="fig_comportamiento.png" alt=""></p>
+<p class="pie">(a) MAE de test por cuartil del cambio real medio diario |D+1 − D| (53&nbsp;días por cuartil) de persistencia (gris) y ensemble (azul); el de la persistencia es, por construcción, su cambio medio. (b) 23/03/2026, día de cociente de error mediano del cuartil de mayor cambio: precio de D (discontinuo), real (negro) y ensemble (azul); MAE 12,80 (ensemble) frente a 25,24&nbsp;€/MWh (persistencia).</p>
+
+<p><strong>Consecuencias para el operador y limitaciones.</strong> Al operador de batería le importa el orden horario: el ensemble captura el 92,6&nbsp;% del spread diario y sitúa el pico a ±1 h en el 76,4&nbsp;% de los días, frente al 86,1&nbsp;% y el 67,5&nbsp;% de la persistencia. La selección optimiza, sin embargo, el MAE; hay modelos individuales que aciertan más el pico y el arbitraje justificaría un criterio específico. El operador debe asumir un cambio previsto más contenido que el real y un posible error mayor con las previsiones de REE sin revisar. Como limitaciones, los grupos correlacionados se compensan y sus aumentos no son sumables, siete meses de test infravaloran las variables lentas y ninguna medida es causal.</p>
+</main>

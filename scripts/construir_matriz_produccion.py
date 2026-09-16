@@ -96,7 +96,7 @@ def _ultimo_con_precio(verbose=True) -> date:
 
 
 def construir_produccion(hasta: date, verbose=True, usar_cache=False):
-    import construir_dataset_maestro_sergio_v5 as v5
+    import constructor_base as v5
     from construir_matriz import construir
     import apagon
     import depurar_matriz

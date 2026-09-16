@@ -1,0 +1,342 @@
+{
+  "modelo": "lgbm_nucleo__s1",
+  "n_features": 112,
+  "n_arboles": 1900,
+  "val_max_dif_vs_guardada": 2.842170943040401e-14,
+  "val_MAE": 13.008216440821853,
+  "val_dias": 365,
+  "test_max_dif_vs_guardada": 2.842170943040401e-14,
+  "test_MAE": 14.16427763520346,
+  "test_dias": 212,
+  "test_shap_aditividad_max_err": 1.5347723092418164e-12,
+  "valor_esperado_base": 92.89908057315169,
+  "val_shap_aditividad_max_err": 1.3073986337985843e-12,
+  "train_filas_shap": 43675,
+  "spearman_rango_shap_val_vs_test": 0.9789438616872245,
+  "spearman_rango_shap_train_vs_test": 0.8674787303105888,
+  "spearman_rango_ganancia_vs_shap_test": 0.7381607270987803,
+  "spearman_rango_ganancia_vs_shap_train": 0.8425274199610483,
+  "top12_comunes_val_test": 11,
+  "top12_comunes_ganancia_shap_test": 11,
+  "top10_shap_test": [
+    "pt_entsoe_D",
+    "ree_gwind_prev",
+    "es_esios_D",
+    "ree_gsolar_prev",
+    "es_esios_Dm6",
+    "ree_demanda_prev",
+    "gas_mibgas",
+    "pdbc_wind_mw_D",
+    "es_esios_Dm1",
+    "d1_dow"
+  ],
+  "top10_ganancia": [
+    "pt_entsoe_D",
+    "es_esios_D",
+    "es_esios_Dm1",
+    "es_esios_Dm6",
+    "ree_gwind_prev",
+    "gas_mibgas",
+    "ree_demanda_prev",
+    "pdbc_wind_mw_D",
+    "wind100_meteo",
+    "d1_dow"
+  ],
+  "grupos_proporcion_test": {
+    "Previsiones REE (demanda, eólica, solar)": 0.2552,
+    "Precio español (D, D-1, D-6)": 0.1906,
+    "Precios europeos D y diferenciales": 0.1819,
+    "Programas PDBC/PBF de D": 0.1278,
+    "Generación, demanda y flujos reales D-1/D-6": 0.1035,
+    "Calendario y hora": 0.0406,
+    "Gas MIBGAS": 0.0375,
+    "Meteorología prevista": 0.0364,
+    "Capacidades (disponible e instalada)": 0.0265
+  },
+  "portugal_espana": {
+    "total": {
+      "horas": 57521,
+      "pearson": 0.9967876985589721,
+      "spearman": 0.9942204776652545,
+      "pct_identicas_tol_0.01": 93.7866170615949,
+      "dif_abs_media_cuando_difieren": 12.620968102965866,
+      "dif_abs_p95": 0.99
+    },
+    "train": {
+      "horas": 43675,
+      "pearson": 0.9975386493515958,
+      "spearman": 0.9953061032080562,
+      "pct_identicas_tol_0.01": 95.83514596451059,
+      "dif_abs_media_cuando_difieren": 14.205964815832877,
+      "dif_abs_p95": 0.0
+    },
+    "val": {
+      "horas": 8759,
+      "pearson": 0.9933858937647233,
+      "spearman": 0.9894677794046093,
+      "pct_identicas_tol_0.01": 89.61068615138714,
+      "dif_abs_media_cuando_difieren": 11.772868131868133,
+      "dif_abs_p95": 7.9
+    },
+    "test": {
+      "horas": 5087,
+      "pearson": 0.9884963624350511,
+      "spearman": 0.9848060471973868,
+      "pct_identicas_tol_0.01": 83.38903086298409,
+      "dif_abs_media_cuando_difieren": 10.122343195266273,
+      "dif_abs_p95": 8.514999999999974
+    },
+    "pct_identicas_por_anio": {
+      "2020": 95.87,
+      "2021": 97.36,
+      "2022": 97.21,
+      "2023": 94.73,
+      "2024": 94.01,
+      "2025": 89.61,
+      "2026": 83.39
+    },
+    "spread_es_pt_D_igual_es_menos_pt_pct": 99.99826150449401,
+    "corr_pt_entsoe_D_con_target": 0.9108138723796753,
+    "corr_es_esios_D_con_target": 0.9103762942676955,
+    "test_corr_shap_pt_vs_shap_es": 0.8135873849378726,
+    "test_proporcion_shap_pt": 0.15916100764101346,
+    "test_proporcion_shap_es": 0.1010527763317464,
+    "test_proporcion_shap_suma": 0.26021378397275985,
+    "test_shap_abs_pt_horas_identicas": 18.28578577523105,
+    "test_shap_abs_es_horas_identicas": 11.37352313001629,
+    "test_shap_abs_pt_horas_distintas": 23.213037799590268,
+    "test_shap_abs_es_horas_distintas": 15.924648648687153,
+    "test_shap_abs_suma_pt_es_fila": 28.850272283440567,
+    "resolucion_ausentes": {
+      "pt_entsoe_D": {
+        "nulos_antes": 8,
+        "cero_convencion": 0.0,
+        "cero_sin_serie": 0.0,
+        "cero_no_existia": 0.0,
+        "ffill": 0.0,
+        "interpolado": 0.0,
+        "analogo_7d": 8.0,
+        "hora_saltada_lag": 0.0,
+        "sin_reconstruir": 0,
+        "cero_hora_inexistente": 0.0,
+        "via_principal": "analogo_7d",
+        "celdas": 8.0,
+        "bloque": "precio: mercados vecinos"
+      },
+      "es_esios_D": {
+        "nulos_antes": 7,
+        "cero_convencion": 0.0,
+        "cero_sin_serie": 0.0,
+        "cero_no_existia": 0.0,
+        "ffill": 0.0,
+        "interpolado": 0.0,
+        "analogo_7d": 7.0,
+        "hora_saltada_lag": 0.0,
+        "sin_reconstruir": 0,
+        "cero_hora_inexistente": 0.0,
+        "via_principal": "analogo_7d",
+        "celdas": 7.0,
+        "bloque": "precio: referencia de persistencia"
+      }
+    },
+    "huecos_bronce_fuera_ventana": 24,
+    "huecos_bronce": [
+      {
+        "fecha_objetivo": "2020-03-30",
+        "hora": 2,
+        "falta_pt": true,
+        "falta_es": true,
+        "fila_en_matriz": true,
+        "pt_en_matriz": 27.05,
+        "es_en_matriz": 27.05
+      },
+      {
+        "fecha_objetivo": "2021-03-29",
+        "hora": 2,
+        "falta_pt": true,
+        "falta_es": true,
+        "fila_en_matriz": true,
+        "pt_en_matriz": 24.43,
+        "es_en_matriz": 24.43
+      },
+      {
+        "fecha_objetivo": "2021-11-01",
+        "hora": 23,
+        "falta_pt": true,
+        "falta_es": false,
+        "fila_en_matriz": true,
+        "pt_en_matriz": 235.43,
+        "es_en_matriz": 112.9
+      },
+      {
+        "fecha_objetivo": "2022-03-28",
+        "hora": 2,
+        "falta_pt": true,
+        "falta_es": true,
+        "fila_en_matriz": true,
+        "pt_en_matriz": 208.69,
+        "es_en_matriz": 208.69
+      },
+      {
+        "fecha_objetivo": "2023-03-27",
+        "hora": 2,
+        "falta_pt": true,
+        "falta_es": true,
+        "fila_en_matriz": true,
+        "pt_en_matriz": 99.6,
+        "es_en_matriz": 99.6
+      },
+      {
+        "fecha_objetivo": "2024-04-01",
+        "hora": 2,
+        "falta_pt": true,
+        "falta_es": true,
+        "fila_en_matriz": true,
+        "pt_en_matriz": 0.0,
+        "es_en_matriz": 0.0
+      },
+      {
+        "fecha_objetivo": "2025-03-31",
+        "hora": 2,
+        "falta_pt": true,
+        "falta_es": true,
+        "fila_en_matriz": true,
+        "pt_en_matriz": 19.97,
+        "es_en_matriz": 19.97
+      },
+      {
+        "fecha_objetivo": "2026-03-30",
+        "hora": 2,
+        "falta_pt": true,
+        "falta_es": true,
+        "fila_en_matriz": true,
+        "pt_en_matriz": 45.88,
+        "es_en_matriz": 45.88
+      }
+    ],
+    "huecos_bronce_n_pt": 8,
+    "huecos_bronce_n_es": 7,
+    "huecos_bronce_coinciden": 7,
+    "permutacion": [
+      {
+        "variante": "pt_entsoe_D",
+        "columnas": "pt_entsoe_D",
+        "MAE_base": 14.1643,
+        "MAE_perm_media": 19.8125,
+        "MAE_perm_sd": 0.2986,
+        "delta_MAE_media": 5.6482,
+        "delta_MAE_p05": 5.2176,
+        "delta_MAE_p95": 6.0389,
+        "delta_MAE_pct": 39.8765,
+        "repeticiones": 30
+      },
+      {
+        "variante": "es_esios_D",
+        "columnas": "es_esios_D",
+        "MAE_base": 14.1643,
+        "MAE_perm_media": 18.7252,
+        "MAE_perm_sd": 0.2569,
+        "delta_MAE_media": 4.561,
+        "delta_MAE_p05": 4.1683,
+        "delta_MAE_p95": 4.9886,
+        "delta_MAE_pct": 32.2004,
+        "repeticiones": 30
+      },
+      {
+        "variante": "pt_entsoe_D + es_esios_D",
+        "columnas": "pt_entsoe_D | es_esios_D",
+        "MAE_base": 14.1643,
+        "MAE_perm_media": 26.5461,
+        "MAE_perm_sd": 0.4474,
+        "delta_MAE_media": 12.3818,
+        "delta_MAE_p05": 11.6474,
+        "delta_MAE_p95": 13.0549,
+        "delta_MAE_pct": 87.4156,
+        "repeticiones": 30
+      },
+      {
+        "variante": "pt_entsoe_D + es_esios_D + spread_es_pt_D",
+        "columnas": "pt_entsoe_D | es_esios_D | spread_es_pt_D",
+        "MAE_base": 14.1643,
+        "MAE_perm_media": 26.5533,
+        "MAE_perm_sd": 0.4498,
+        "delta_MAE_media": 12.389,
+        "delta_MAE_p05": 11.6434,
+        "delta_MAE_p95": 13.0639,
+        "delta_MAE_pct": 87.4664,
+        "repeticiones": 30
+      },
+      {
+        "variante": "es_esios_Dm1 (referencia)",
+        "columnas": "es_esios_Dm1",
+        "MAE_base": 14.1643,
+        "MAE_perm_media": 14.6787,
+        "MAE_perm_sd": 0.0936,
+        "delta_MAE_media": 0.5145,
+        "delta_MAE_p05": 0.367,
+        "delta_MAE_p95": 0.6486,
+        "delta_MAE_pct": 3.6321,
+        "repeticiones": 30
+      },
+      {
+        "variante": "gas_mibgas (referencia)",
+        "columnas": "gas_mibgas",
+        "MAE_base": 14.1643,
+        "MAE_perm_media": 14.2242,
+        "MAE_perm_sd": 0.1795,
+        "delta_MAE_media": 0.06,
+        "delta_MAE_p05": -0.1731,
+        "delta_MAE_p95": 0.3924,
+        "delta_MAE_pct": 0.4234,
+        "repeticiones": 30
+      }
+    ]
+  },
+  "eda": {
+    "fuente": "eda\\EDA_spearman_output\\ranking_spearman.csv",
+    "features_modelo_en_ranking": 111,
+    "features_modelo_fuera_ranking": [
+      "d1_vispera_festivo"
+    ],
+    "spearman_abs_rho_vs_shap_test": 0.3138557388557388,
+    "top12_comunes": 5,
+    "top10_eda_en_modelo": [
+      "pt_entsoe_D",
+      "es_esios_D",
+      "es_esios_Dm1",
+      "es_esios_Dm6",
+      "fr_entsoe_D",
+      "it_nord_entsoe_D",
+      "gas_mibgas",
+      "de_lu_entsoe_D",
+      "pl_entsoe_D",
+      "pdbc_ccgt_mw_D"
+    ],
+    "top10_eda_global": [
+      "pt_entsoe_D",
+      "es_esios_D",
+      "es_esios_Dm1",
+      "es_esios_Dm6",
+      "fr_entsoe_D",
+      "it_nord_entsoe_D",
+      "gas_mibgas",
+      "gas_ttf_m1",
+      "de_lu_entsoe_D",
+      "pl_entsoe_D"
+    ],
+    "frontera_eda_de_top10_shap": {
+      "pt_entsoe_D": "SIMULTANEA (casa a las 12:00)",
+      "ree_gwind_prev": "OK (pre-11:00)",
+      "es_esios_D": "TARGET disfrazado",
+      "ree_gsolar_prev": "OK (pre-11:00)",
+      "es_esios_Dm6": "OK (pre-11:00)",
+      "ree_demanda_prev": "OK (pre-11:00)",
+      "gas_mibgas": "OK (pre-11:00)",
+      "pdbc_wind_mw_D": "POSTERIOR (no usable)",
+      "es_esios_Dm1": "OK (pre-11:00)",
+      "d1_dow": "OK (pre-11:00)"
+    },
+    "es_esios_D_igual_target_dia_anterior_pct": 99.91824665159157,
+    "es_esios_D_igual_target_mismo_dia_pct": 1.6654786947375742
+  }
+}

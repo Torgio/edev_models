@@ -93,6 +93,12 @@ METEO_RELLENO = "pseudo"        # pseudo | real_D1 | era5_Dm1
 TABLA_ERA5 = "era5_weather_agg"
 TZ = "Europe/Madrid"
 
+# Del bloque de materias primas se emplea el precio del gas del mercado iberico, que es la
+# referencia de coste de la tecnologia que fija el precio marginal en el sistema español.
+# Las demas columnas del bloque se retiran en `construir`, inmediatamente despues del
+# constructor del equipo, para no modificar el modulo compartido.
+COMMODITIES = ("gas_mibgas",)
+
 
 def _desactivar_filtros(v5, verbose=True):
     """Deja el constructor en modo crudo. Ver la nota de arriba para el porque de cada uno."""
@@ -277,7 +283,8 @@ def construir(cache: Path | str | None = CACHE, forzar: bool = False,
             print(f"Leyendo de cache: {cache}  (usa forzar=True para reconstruir)")
         return pd.read_parquet(cache)
 
-    import construir_dataset_maestro_sergio_v5 as v5
+    import constructor_base as v5
+
     from pdbc_horario import bloque_para_matriz as bloque_pdbc, cargar as cargar_pdbc
 
     _desactivar_filtros(v5, verbose)

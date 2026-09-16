@@ -1,0 +1,534 @@
+{
+  "fuente": "data/gold/finales_v2_nucleo: pred_{val,test}_ensemble_seleccion.csv, pred_*_<miembro>.csv, ref_{val,test}_real.csv, ref_{val,test}_naive.csv",
+  "pesos": {
+    "lgbm_nucleo__s1": "11/30",
+    "denso__s2": "10/30",
+    "lstm__s1": "3/30",
+    "seq2seq_absoluto__s2": "3/30",
+    "gru__s2": "2/30",
+    "seq2seq__s1": "1/30"
+  },
+  "nota_D": "D = ref_*_naive (T.naive). En test 1 dia (2026-03-30) y en val 5 dias no coincide con el real del dia anterior (cambio de hora / huecos); se usa tal cual lo usa el pipeline.",
+  "definiciones": {
+    "forma_vs_D": "correlacion media del perfil horario sin nivel (pred - media diaria) con el de D",
+    "movimiento_%": "100 * mean|pred-D| / mean|real-D|",
+    "corr_cambio": "corr((pred-D), (real-D)) sobre las 24 h de todos los dias",
+    "pendiente_cambio": "pendiente OLS (con intercepto) de (pred-D) sobre (real-D)",
+    "captura_%": "(real[argmax pred] - real[argmin pred]) / (max real - min real), media diaria",
+    "pico1h_%": "% dias con |argmax real - argmax pred| <= 1 h",
+    "cuartil_cambio": "cuartiles, dentro de cada corte, de mean_h |real-D| del dia"
+  },
+  "copia": {
+    "val": {
+      "denso__s2": {
+        "MAE": 12.8434,
+        "corr_cambio": 0.7913,
+        "forma_vs_D": 0.9332,
+        "movimiento_%": 75.0961,
+        "pendiente_cambio": 0.5915,
+        "peso": 0.3333
+      },
+      "ensemble_seleccion": {
+        "MAE": 11.7319,
+        "corr_cambio": 0.8375,
+        "forma_vs_D": 0.9265,
+        "movimiento_%": 78.6615,
+        "pendiente_cambio": 0.6163
+      },
+      "gru__s2": {
+        "MAE": 14.0525,
+        "corr_cambio": 0.7435,
+        "forma_vs_D": 0.9172,
+        "movimiento_%": 78.401,
+        "pendiente_cambio": 0.5522,
+        "peso": 0.0667
+      },
+      "lgbm_nucleo__s1": {
+        "MAE": 13.0082,
+        "corr_cambio": 0.8057,
+        "forma_vs_D": 0.8882,
+        "movimiento_%": 90.17,
+        "pendiente_cambio": 0.6634,
+        "peso": 0.3667
+      },
+      "lstm__s1": {
+        "MAE": 13.2963,
+        "corr_cambio": 0.7765,
+        "forma_vs_D": 0.9268,
+        "movimiento_%": 82.6637,
+        "pendiente_cambio": 0.6135,
+        "peso": 0.1
+      },
+      "persistencia": {
+        "MAE": 19.9483,
+        "forma_vs_D": 1.0,
+        "movimiento_%": 0.0,
+        "pendiente_cambio": 0.0
+      },
+      "realidad": {
+        "MAE": 0.0,
+        "corr_cambio": 1.0,
+        "forma_vs_D": 0.8291,
+        "movimiento_%": 100.0,
+        "pendiente_cambio": 1.0
+      },
+      "seq2seq__s1": {
+        "MAE": 13.9655,
+        "corr_cambio": 0.7461,
+        "forma_vs_D": 0.9341,
+        "movimiento_%": 72.1865,
+        "pendiente_cambio": 0.5063,
+        "peso": 0.0333
+      },
+      "seq2seq_absoluto__s2": {
+        "MAE": 15.4014,
+        "corr_cambio": 0.7254,
+        "forma_vs_D": 0.9033,
+        "movimiento_%": 93.9952,
+        "pendiente_cambio": 0.6081,
+        "peso": 0.1
+      }
+    },
+    "test": {
+      "denso__s2": {
+        "MAE": 13.4659,
+        "corr_cambio": 0.7247,
+        "forma_vs_D": 0.9563,
+        "movimiento_%": 75.7926,
+        "pendiente_cambio": 0.4984,
+        "peso": 0.3333
+      },
+      "ensemble_seleccion": {
+        "MAE": 11.7237,
+        "corr_cambio": 0.7889,
+        "forma_vs_D": 0.9381,
+        "movimiento_%": 82.5521,
+        "pendiente_cambio": 0.5853
+      },
+      "gru__s2": {
+        "MAE": 12.8856,
+        "corr_cambio": 0.7108,
+        "forma_vs_D": 0.9428,
+        "movimiento_%": 73.2881,
+        "pendiente_cambio": 0.473,
+        "peso": 0.0667
+      },
+      "lgbm_nucleo__s1": {
+        "MAE": 14.1643,
+        "corr_cambio": 0.723,
+        "forma_vs_D": 0.8858,
+        "movimiento_%": 110.7552,
+        "pendiente_cambio": 0.7083,
+        "peso": 0.3667
+      },
+      "lstm__s1": {
+        "MAE": 15.7777,
+        "corr_cambio": 0.701,
+        "forma_vs_D": 0.9187,
+        "movimiento_%": 99.6322,
+        "pendiente_cambio": 0.5588,
+        "peso": 0.1
+      },
+      "persistencia": {
+        "MAE": 16.7213,
+        "forma_vs_D": 1.0,
+        "movimiento_%": 0.0,
+        "pendiente_cambio": 0.0
+      },
+      "realidad": {
+        "MAE": 0.0,
+        "corr_cambio": 1.0,
+        "forma_vs_D": 0.8578,
+        "movimiento_%": 100.0,
+        "pendiente_cambio": 1.0
+      },
+      "seq2seq__s1": {
+        "MAE": 13.2768,
+        "corr_cambio": 0.684,
+        "forma_vs_D": 0.9488,
+        "movimiento_%": 70.406,
+        "pendiente_cambio": 0.4291,
+        "peso": 0.0333
+      },
+      "seq2seq_absoluto__s2": {
+        "MAE": 15.2755,
+        "corr_cambio": 0.6776,
+        "forma_vs_D": 0.9006,
+        "movimiento_%": 102.4199,
+        "pendiente_cambio": 0.5779,
+        "peso": 0.1
+      }
+    }
+  },
+  "cuartiles_cambio": {
+    "val": [
+      {
+        "cuartil": "Q1",
+        "n_dias": 92,
+        "cambio_min": 2.555,
+        "cambio_max": 10.4742,
+        "cambio_medio": 7.7033,
+        "MAE_ensemble": 7.8547,
+        "MAE_persistencia": 7.7033,
+        "mejora_vs_persistencia_%": 1.9655,
+        "dias_ensemble_peor_%": 42.3913,
+        "captura_ensemble_%": 93.6456,
+        "captura_persistencia_%": 89.075,
+        "pico1h_ensemble_%": 85.8696,
+        "pico1h_persistencia_%": 78.2609
+      },
+      {
+        "cuartil": "Q2",
+        "n_dias": 91,
+        "cambio_min": 10.4742,
+        "cambio_max": 17.1721,
+        "cambio_medio": 13.4732,
+        "MAE_ensemble": 10.1633,
+        "MAE_persistencia": 13.4732,
+        "mejora_vs_persistencia_%": -24.5662,
+        "dias_ensemble_peor_%": 12.0879,
+        "captura_ensemble_%": 91.2209,
+        "captura_persistencia_%": 84.6879,
+        "pico1h_ensemble_%": 78.022,
+        "pico1h_persistencia_%": 67.033
+      },
+      {
+        "cuartil": "Q3",
+        "n_dias": 91,
+        "cambio_min": 17.1721,
+        "cambio_max": 26.9375,
+        "cambio_medio": 21.4384,
+        "MAE_ensemble": 12.7545,
+        "MAE_persistencia": 21.4384,
+        "mejora_vs_persistencia_%": -40.5064,
+        "dias_ensemble_peor_%": 2.1978,
+        "captura_ensemble_%": 90.4488,
+        "captura_persistencia_%": 77.0543,
+        "pico1h_ensemble_%": 76.9231,
+        "pico1h_persistencia_%": 62.6374
+      },
+      {
+        "cuartil": "Q4",
+        "n_dias": 91,
+        "cambio_min": 26.9375,
+        "cambio_max": 68.2342,
+        "cambio_medio": 37.3128,
+        "MAE_ensemble": 16.1976,
+        "MAE_persistencia": 37.3128,
+        "mejora_vs_persistencia_%": -56.5897,
+        "dias_ensemble_peor_%": 0.0,
+        "captura_ensemble_%": 89.2435,
+        "captura_persistencia_%": 75.8137,
+        "pico1h_ensemble_%": 80.2198,
+        "pico1h_persistencia_%": 65.9341
+      }
+    ],
+    "test": [
+      {
+        "cuartil": "Q1",
+        "n_dias": 53,
+        "cambio_min": 1.3908,
+        "cambio_max": 9.6884,
+        "cambio_medio": 6.3748,
+        "MAE_ensemble": 8.3029,
+        "MAE_persistencia": 6.3748,
+        "mejora_vs_persistencia_%": 30.2462,
+        "dias_ensemble_peor_%": 77.3585,
+        "captura_ensemble_%": 94.9797,
+        "captura_persistencia_%": 92.187,
+        "pico1h_ensemble_%": 79.2453,
+        "pico1h_persistencia_%": 75.4717
+      },
+      {
+        "cuartil": "Q2",
+        "n_dias": 53,
+        "cambio_min": 9.6884,
+        "cambio_max": 15.0752,
+        "cambio_medio": 12.095,
+        "MAE_ensemble": 10.0525,
+        "MAE_persistencia": 12.095,
+        "mejora_vs_persistencia_%": -16.887,
+        "dias_ensemble_peor_%": 32.0755,
+        "captura_ensemble_%": 95.4442,
+        "captura_persistencia_%": 89.3448,
+        "pico1h_ensemble_%": 83.0189,
+        "pico1h_persistencia_%": 73.5849
+      },
+      {
+        "cuartil": "Q3",
+        "n_dias": 53,
+        "cambio_min": 15.0752,
+        "cambio_max": 22.2409,
+        "cambio_medio": 18.3269,
+        "MAE_ensemble": 12.2285,
+        "MAE_persistencia": 18.3269,
+        "mejora_vs_persistencia_%": -33.2758,
+        "dias_ensemble_peor_%": 7.5472,
+        "captura_ensemble_%": 90.3987,
+        "captura_persistencia_%": 81.1852,
+        "pico1h_ensemble_%": 67.9245,
+        "pico1h_persistencia_%": 58.4906
+      },
+      {
+        "cuartil": "Q4",
+        "n_dias": 53,
+        "cambio_min": 22.2409,
+        "cambio_max": 52.9537,
+        "cambio_medio": 30.0886,
+        "MAE_ensemble": 16.3107,
+        "MAE_persistencia": 30.0886,
+        "mejora_vs_persistencia_%": -45.7911,
+        "dias_ensemble_peor_%": 5.6604,
+        "captura_ensemble_%": 89.463,
+        "captura_persistencia_%": 81.8592,
+        "pico1h_ensemble_%": 75.4717,
+        "pico1h_persistencia_%": 62.2642
+      }
+    ]
+  },
+  "dia_semana_D+1": {
+    "val": [
+      {
+        "dia": "lunes",
+        "n_dias": 52,
+        "MAE_ensemble": 12.5304,
+        "MAE_persistencia": 27.9171,
+        "mejora_vs_persistencia_%": -55.1156,
+        "cambio_medio": 27.9171
+      },
+      {
+        "dia": "martes",
+        "n_dias": 52,
+        "MAE_ensemble": 12.7581,
+        "MAE_persistencia": 19.599,
+        "mejora_vs_persistencia_%": -34.9043,
+        "cambio_medio": 19.599
+      },
+      {
+        "dia": "miércoles",
+        "n_dias": 53,
+        "MAE_ensemble": 12.3248,
+        "MAE_persistencia": 18.7103,
+        "mejora_vs_persistencia_%": -34.1284,
+        "cambio_medio": 18.7103
+      },
+      {
+        "dia": "jueves",
+        "n_dias": 52,
+        "MAE_ensemble": 11.8863,
+        "MAE_persistencia": 17.3987,
+        "mejora_vs_persistencia_%": -31.6827,
+        "cambio_medio": 17.3987
+      },
+      {
+        "dia": "viernes",
+        "n_dias": 52,
+        "MAE_ensemble": 11.3631,
+        "MAE_persistencia": 18.0714,
+        "mejora_vs_persistencia_%": -37.1211,
+        "cambio_medio": 18.0714
+      },
+      {
+        "dia": "sábado",
+        "n_dias": 52,
+        "MAE_ensemble": 10.6949,
+        "MAE_persistencia": 21.0312,
+        "mejora_vs_persistencia_%": -49.1473,
+        "cambio_medio": 21.0312
+      },
+      {
+        "dia": "domingo",
+        "n_dias": 52,
+        "MAE_ensemble": 10.5541,
+        "MAE_persistencia": 16.9341,
+        "mejora_vs_persistencia_%": -37.6752,
+        "cambio_medio": 16.9341
+      }
+    ],
+    "test": [
+      {
+        "dia": "lunes",
+        "n_dias": 30,
+        "MAE_ensemble": 13.5662,
+        "MAE_persistencia": 22.8648,
+        "mejora_vs_persistencia_%": -40.6679,
+        "cambio_medio": 22.8648
+      },
+      {
+        "dia": "martes",
+        "n_dias": 30,
+        "MAE_ensemble": 12.8387,
+        "MAE_persistencia": 17.4317,
+        "mejora_vs_persistencia_%": -26.3483,
+        "cambio_medio": 17.4317
+      },
+      {
+        "dia": "miércoles",
+        "n_dias": 30,
+        "MAE_ensemble": 13.7023,
+        "MAE_persistencia": 18.1468,
+        "mejora_vs_persistencia_%": -24.4916,
+        "cambio_medio": 18.1468
+      },
+      {
+        "dia": "jueves",
+        "n_dias": 31,
+        "MAE_ensemble": 11.0933,
+        "MAE_persistencia": 14.3162,
+        "mejora_vs_persistencia_%": -22.5122,
+        "cambio_medio": 14.3162
+      },
+      {
+        "dia": "viernes",
+        "n_dias": 31,
+        "MAE_ensemble": 10.7419,
+        "MAE_persistencia": 15.0498,
+        "mejora_vs_persistencia_%": -28.6242,
+        "cambio_medio": 15.0498
+      },
+      {
+        "dia": "sábado",
+        "n_dias": 30,
+        "MAE_ensemble": 10.7677,
+        "MAE_persistencia": 17.3132,
+        "mejora_vs_persistencia_%": -37.8066,
+        "cambio_medio": 17.3132
+      },
+      {
+        "dia": "domingo",
+        "n_dias": 30,
+        "MAE_ensemble": 9.4093,
+        "MAE_persistencia": 12.0628,
+        "mejora_vs_persistencia_%": -21.9977,
+        "cambio_medio": 12.0628
+      }
+    ]
+  },
+  "amplificacion": {
+    "a_ajustado_val": 1.1377,
+    "a_oraculo_test (solo referencia, no aplicable)": 1.0527,
+    "MAE_val_antes": 11.7319,
+    "MAE_val_despues": 11.6371,
+    "MAE_test_antes": 11.7237,
+    "MAE_test_despues": 11.9669,
+    "RMSE_test_antes": 15.8884,
+    "RMSE_test_despues": 15.9392,
+    "barrido_test": {
+      "0.80": 11.8438,
+      "0.85": 11.7617,
+      "0.90": 11.714,
+      "0.95": 11.7025,
+      "1.00": 11.7237,
+      "1.05": 11.7779,
+      "1.10": 11.8722,
+      "1.15": 12.0023,
+      "1.20": 12.1625,
+      "1.25": 12.3472,
+      "1.30": 12.5613,
+      "1.35": 12.8114,
+      "1.40": 13.0927
+    },
+    "barrido_val": {
+      "0.80": 12.481,
+      "0.85": 12.236,
+      "0.90": 12.0239,
+      "0.95": 11.8538,
+      "1.00": 11.7319,
+      "1.05": 11.6544,
+      "1.10": 11.6252,
+      "1.15": 11.6463,
+      "1.20": 11.7144,
+      "1.25": 11.8353,
+      "1.30": 12.0131,
+      "1.35": 12.2417,
+      "1.40": 12.5174
+    }
+  },
+  "spread_pico": {
+    "val": {
+      "todos": {
+        "n_dias": 365,
+        "captura_ensemble_%": 91.1466,
+        "captura_persistencia_%": 81.678,
+        "pico1h_ensemble_%": 80.274,
+        "pico1h_persistencia_%": 68.4932,
+        "MAE_ensemble": 11.7319,
+        "MAE_persistencia": 19.9483,
+        "dias_ensemble_peor_%": 14.2466
+      },
+      "Q4_cambio": {
+        "n_dias": 91,
+        "captura_ensemble_%": 89.2435,
+        "captura_persistencia_%": 75.8137,
+        "pico1h_ensemble_%": 80.2198,
+        "pico1h_persistencia_%": 65.9341,
+        "MAE_ensemble": 16.1976,
+        "MAE_persistencia": 37.3128,
+        "dias_ensemble_peor_%": 0.0
+      },
+      "top10_cambio": {
+        "n_dias": 37,
+        "captura_ensemble_%": 85.988,
+        "captura_persistencia_%": 73.7566,
+        "pico1h_ensemble_%": 72.973,
+        "pico1h_persistencia_%": 59.4595,
+        "MAE_ensemble": 16.9995,
+        "MAE_persistencia": 45.9873,
+        "dias_ensemble_peor_%": 0.0
+      }
+    },
+    "test": {
+      "todos": {
+        "n_dias": 212,
+        "captura_ensemble_%": 92.5714,
+        "captura_persistencia_%": 86.1441,
+        "pico1h_ensemble_%": 76.4151,
+        "pico1h_persistencia_%": 67.4528,
+        "MAE_ensemble": 11.7237,
+        "MAE_persistencia": 16.7213,
+        "dias_ensemble_peor_%": 30.6604
+      },
+      "Q4_cambio": {
+        "n_dias": 53,
+        "captura_ensemble_%": 89.463,
+        "captura_persistencia_%": 81.8592,
+        "pico1h_ensemble_%": 75.4717,
+        "pico1h_persistencia_%": 62.2642,
+        "MAE_ensemble": 16.3107,
+        "MAE_persistencia": 30.0886,
+        "dias_ensemble_peor_%": 5.6604
+      },
+      "top10_cambio": {
+        "n_dias": 22,
+        "captura_ensemble_%": 92.6794,
+        "captura_persistencia_%": 87.836,
+        "pico1h_ensemble_%": 81.8182,
+        "pico1h_persistencia_%": 77.2727,
+        "MAE_ensemble": 18.366,
+        "MAE_persistencia": 36.5874,
+        "dias_ensemble_peor_%": 0.0
+      }
+    }
+  },
+  "dia_ilustrativo": {
+    "criterio": "dia de test del cuartil Q4 de cambio real cuyo cociente MAE_ensemble/MAE_persistencia es el mas cercano a la mediana de ese cociente en Q4",
+    "fecha_D+1": "2026-03-23",
+    "dia_semana_D+1": "lunes",
+    "cambio_medio_dia": 25.2375,
+    "MAE_ensemble_dia": 12.8046,
+    "MAE_persistencia_dia": 25.2375,
+    "cociente_dia": 0.5074,
+    "cociente_mediano_Q4": 0.5074,
+    "MAE_ensemble_mediano_Q4": 15.4788,
+    "percentil_MAE_ensemble_dia_en_Q4": 35.8491,
+    "n_dias_Q4": 53,
+    "alternativa_descartada": {
+      "criterio": "cambio real mediano dentro de Q4",
+      "fecha_D+1": "2026-01-05",
+      "MAE_ensemble_dia": 5.9748,
+      "MAE_persistencia_dia": 28.6554,
+      "percentil_MAE_ensemble_dia_en_Q4": 1.8868,
+      "motivo": "segundo mejor dia del ensemble en Q4: ilustracion sesgada a favor"
+    }
+  }
+}
