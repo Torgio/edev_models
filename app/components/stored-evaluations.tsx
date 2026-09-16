@@ -63,7 +63,6 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
     setStatus('loading');
     const controller = new AbortController();
     fetch('/api/dashboard/leaderboard', { signal: controller.signal, cache: 'no-store' }).then(async response => {
-      if (response.status === 401) onSessionExpired();
       if (!response.ok) throw new Error();
       const result = await response.json() as { origin: string; models: Evaluation[] };
       if (result.origin !== 'model_metrics' || !Array.isArray(result.models)) throw new Error();

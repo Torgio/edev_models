@@ -91,10 +91,20 @@ app.add_middleware(
 login_limiter = LoginLimiter()
 
 
+def _is_public_read(method: str, path: str) -> bool:
+    if method != "GET":
+        return False
+    if path in {"/session", "/days", "/peak-accuracy", "/leaderboard", "/performance-history", "/performance-options"}:
+        return True
+    if path.startswith("/predictions/") or path.startswith("/bess/"):
+        return True
+    return False
+
+
 @app.middleware("http")
 async def protect_data(request: Request, call_next):
     auth = auth_config()
-    public = (request.method, request.url.path) in {("GET", "/session"), ("POST", "/login"), ("POST", "/logout")}
+    public = _is_public_read(request.method, request.url.path) or (request.method, request.url.path) in {("POST", "/login"), ("POST", "/logout")}
     if auth and request.method != "OPTIONS" and not public and not auth.valid(request.cookies.get(COOKIE_NAME)):
         return JSONResponse({"detail": "Inicia sesión para consultar los datos."}, status_code=401, headers={"Cache-Control": "private, no-store"})
     if request.method == "POST" and request.headers.get("origin") and request.headers["origin"] not in origins:

@@ -6,7 +6,7 @@ import { es } from 'date-fns/locale';
 import {
   ArrowDownRight, ArrowUpRight, Bell, CalendarDays,
   ChevronLeft, ChevronRight, Clock3, Database, FileDown,
-  GitCompareArrows, TrendingUp, TriangleAlert, Zap,
+  GitCompareArrows, LockKeyhole, TrendingUp, TriangleAlert, Zap,
 } from 'lucide-react';
 import {
   Area, CartesianGrid, Line, LineChart, ReferenceArea, ReferenceDot, ReferenceLine, ResponsiveContainer, Tooltip,
@@ -115,7 +115,35 @@ export default function Home() {
   return <TeamAccess>{(controls) => <Dashboard {...controls} />}</TeamAccess>;
 }
 
-function Dashboard({ username, onSessionExpired, onLogout }: { username: string | null; onSessionExpired: () => void; onLogout: () => Promise<void> }) {
+function PrivateSection({ title, detail, busy, unavailable, onLogin }: {
+  title: string;
+  detail: string;
+  busy: boolean;
+  unavailable: boolean;
+  onLogin: () => void;
+}) {
+  return (
+    <section className="private-section" aria-labelledby="private-section-title">
+      <div className="private-section-icon"><LockKeyhole aria-hidden="true" /></div>
+      <p className="kicker">Acceso del equipo</p>
+      <h2 id="private-section-title">{title}</h2>
+      <p>{detail}</p>
+      <Button onClick={onLogin} disabled={busy || unavailable}>
+        {busy ? 'Comprobando acceso…' : unavailable ? 'Acceso no disponible' : 'Iniciar sesión'}
+      </Button>
+    </section>
+  );
+}
+
+function Dashboard({ username, authenticated, authReady, authUnavailable, onLoginRequired, onSessionExpired, onLogout }: {
+  username: string | null;
+  authenticated: boolean;
+  authReady: boolean;
+  authUnavailable: boolean;
+  onLoginRequired: (message?: string) => void;
+  onSessionExpired: () => void;
+  onLogout: () => Promise<void>;
+}) {
   const [retry, setRetry] = useState(0);
   const [daysRetry, setDaysRetry] = useState(0);
   const [daysError, setDaysError] = useState(false);
@@ -187,7 +215,6 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
     const controller = new AbortController();
     fetch(`${API_URL}/days?source=production`, { signal: controller.signal })
       .then((response) => {
-        if (response.status === 401) onSessionExpired();
         if (!response.ok) throw new Error(`days ${response.status}`);
         return response.json() as Promise<{ days: AvailableDay[] }>;
       })
@@ -207,7 +234,6 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
     setDayState(null);
     fetch(`${API_URL}/predictions/${day}?source=production`, { signal: controller.signal, cache: 'no-store' })
       .then(async response => {
-        if (response.status === 401) onSessionExpired();
         if (!response.ok) throw new Error();
         return await response.json() as { date: string; hours: PriceHour[]; updated_at: string | null };
       }).then(response => {
@@ -229,7 +255,6 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
     setComparisonState({ day: comparisonDay, hours: [], status: 'loading' });
     fetch(`${API_URL}/predictions/${comparisonDay}?source=production`, { signal: controller.signal, cache: 'no-store' })
       .then(async response => {
-        if (response.status === 401) onSessionExpired();
         if (!response.ok) throw new Error();
         return await response.json() as { date: string; hours: PriceHour[] };
       }).then(response => {
@@ -242,7 +267,6 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
     const controller = new AbortController();
     setBatteryState({ day, data: null, status: 'loading' });
     fetch(`${API_URL}/bess/${day}`, { signal: controller.signal, cache: 'no-store' }).then(async response => {
-      if (response.status === 401) onSessionExpired();
       if (!response.ok) throw new Error();
       const payload = await response.json() as BatteryPayload;
       if (payload.date !== day || !Array.isArray(payload.plan) || !Array.isArray(payload.results)) throw new Error();
@@ -287,7 +311,12 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
       </header>
 
       <section className="content-wrap" id="prevision">
-        <div className="access-toolbar"><span>{username ? `Sesión: ${username}` : 'Acceso del equipo'}</span><Button variant="outline" size="sm" onClick={() => void onLogout()}>Cerrar sesión</Button></div>
+        <div className="access-toolbar">
+          <span>{authenticated && username ? `Sesión: ${username}` : 'Acceso público'}</span>
+          {authenticated
+            ? <Button variant="outline" size="sm" onClick={() => void onLogout()}>Cerrar sesión</Button>
+            : <Button variant="outline" size="sm" onClick={() => onLoginRequired('Inicia sesión para usar Estudio de batería y Asistente.')} disabled={!authReady || authUnavailable}>Entrar</Button>}
+        </div>
         {daysError && <div className="study-notice" role="alert">No se pudieron consultar las fechas disponibles. <Button variant="outline" onClick={() => setDaysRetry(value => value + 1)}>Reintentar calendario</Button></div>}
         {view === 'prediction' ? <>
         <header className="print-report-header" aria-hidden="true">
@@ -491,7 +520,15 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
                 </div>
                 {currentBattery.status === 'error' && <Button variant="outline" onClick={() => setRetry(value => value + 1)}>Reintentar consulta de batería</Button>}
                 <StoredBattery day={day} data={currentBattery.data} status={currentBattery.status} />
-              </> : <BatteryStudy />}
+              </> : authenticated ? <BatteryStudy /> : (
+                <PrivateSection
+                  title="Estudio de instalación"
+                  detail="Para crear estudios, subir curvas o ejecutar cálculos de batería necesitas una cuenta del equipo."
+                  busy={!authReady}
+                  unavailable={authUnavailable}
+                  onLogin={() => onLoginRequired('Inicia sesión para crear y consultar estudios de batería.')}
+                />
+              )}
             </div>
           </div> :
           <div className="assistant-view">
@@ -500,7 +537,15 @@ function Dashboard({ username, onSessionExpired, onLogout }: { username: string 
               <h2>Pregunta a los datos de Pulso.</h2>
               <p>Consulta precios, predicciones, batería y metodología. La respuesta identifica la fuente utilizada y diferencia las funciones verificadas de las consultas dinámicas.</p>
             </div>
-            <AsistenteWidget onSessionExpired={onSessionExpired} />
+            {authenticated ? <AsistenteWidget onSessionExpired={onSessionExpired} /> : (
+              <PrivateSection
+                title="Asistente privado"
+                detail="El asistente puede consultar herramientas internas del proyecto; por eso queda reservado a usuarios con sesión."
+                busy={!authReady}
+                unavailable={authUnavailable}
+                onLogin={() => onLoginRequired('Inicia sesión para usar el asistente.')}
+              />
+            )}
           </div>}
       </section>
 

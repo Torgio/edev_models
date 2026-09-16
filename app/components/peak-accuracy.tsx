@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type PeakResult = {
   model: string; hits: number; evaluated_days: number; excluded_days: number;
@@ -8,9 +8,7 @@ type PeakResult = {
 };
 const displayDate = (date: string) => date.split('-').reverse().join('/');
 
-export function PeakAccuracy({ day, model, onSessionExpired }: { day: string; model: string; onSessionExpired: () => void }) {
-  const expired = useRef(onSessionExpired);
-  expired.current = onSessionExpired;
+export function PeakAccuracy({ day, model }: { day: string; model: string; onSessionExpired: () => void }) {
   const [state, setState] = useState<{ day: string; model: string; data?: PeakResult; error?: string } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -19,7 +17,6 @@ export function PeakAccuracy({ day, model, onSessionExpired }: { day: string; mo
     fetch(`/api/dashboard/peak-accuracy?model=${encodeURIComponent(model)}&source=production&days=30&end_date=${encodeURIComponent(day)}`, {
       signal: controller.signal, cache: 'no-store',
     }).then(async response => {
-      if (response.status === 401) expired.current();
       if (!response.ok) throw new Error('No se pudo consultar el acierto de pico.');
       return await response.json() as PeakResult;
     }).then(data => {

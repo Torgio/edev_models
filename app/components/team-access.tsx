@@ -5,29 +5,41 @@ import { LockKeyhole, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
-type AccessControls = { username: string | null; onSessionExpired: () => void; onLogout: () => Promise<void> };
+type AccessControls = {
+  username: string | null;
+  authenticated: boolean;
+  authReady: boolean;
+  authUnavailable: boolean;
+  onLoginRequired: (message?: string) => void;
+  onSessionExpired: () => void;
+  onLogout: () => Promise<void>;
+};
 
 export function TeamAccess({ children }: { children: (controls: AccessControls) => ReactNode }) {
-  const [state, setState] = useState<'checking' | 'locked' | 'open' | 'unavailable'>('checking');
+  const [state, setState] = useState<'checking' | 'guest' | 'open' | 'unavailable'>('checking');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
+  const [loginOpen, setLoginOpen] = useState(false);
 
   async function checkSession(signal?: AbortSignal) {
     setState('checking');
-    setMessage('');
     try {
       const response = await fetch('/api/dashboard/session', { cache: 'no-store', signal });
       if (!response.ok) throw new Error('Servicio de acceso no disponible.');
       const rawSession: unknown = await response.json();
-    if (!rawSession || typeof rawSession !== 'object' || Array.isArray(rawSession)) throw new Error('Respuesta de sesión no válida.');
-    const session = rawSession as Record<string, unknown>;
+      if (!rawSession || typeof rawSession !== 'object' || Array.isArray(rawSession)) throw new Error('Respuesta de sesión no válida.');
+      const session = rawSession as Record<string, unknown>;
       setUsername(typeof session.username === 'string' ? session.username : null);
-      setState(session.authenticated === true ? 'open' : 'locked');
+      setState(session.authenticated === true ? 'open' : 'guest');
+      if (session.authenticated === true) {
+        setLoginOpen(false);
+        setMessage('');
+      }
     } catch (error) {
       if (signal?.aborted) return;
       setState('unavailable');
-      setMessage('No podemos comprobar el acceso en este momento. Los datos permanecen protegidos.');
+      setMessage('No podemos comprobar el acceso privado en este momento.');
     }
   }
 
@@ -65,7 +77,7 @@ export function TeamAccess({ children }: { children: (controls: AccessControls) 
       const response = await fetch('/api/dashboard/logout', { method: 'POST', cache: 'no-store' });
       if (!response.ok) throw new Error('No disponible');
       setUsername(null);
-      setState('locked');
+      setState('guest');
       setMessage('Sesión cerrada.');
     } catch {
       setState('unavailable');
@@ -75,16 +87,38 @@ export function TeamAccess({ children }: { children: (controls: AccessControls) 
     }
   }
 
-  if (state === 'open') return children({ username, onSessionExpired: () => { setUsername(null); setState('locked'); setMessage('La sesión ha caducado. Introduce de nuevo tus credenciales.'); }, onLogout: logout });
+  const authenticated = state === 'open';
+  const authUnavailable = state === 'unavailable';
+  const controls: AccessControls = {
+    username,
+    authenticated,
+    authReady: state !== 'checking',
+    authUnavailable,
+    onLoginRequired: (nextMessage = 'Inicia sesión para usar esta sección.') => {
+      setMessage(nextMessage);
+      setLoginOpen(true);
+    },
+    onSessionExpired: () => {
+      setUsername(null);
+      setState('guest');
+      setMessage('La sesión ha caducado. Introduce de nuevo tus credenciales.');
+      setLoginOpen(true);
+    },
+    onLogout: logout,
+  };
 
   return (
-    <main className="access-shell">
-      <section className="access-card" aria-labelledby="access-title" aria-busy={busy || state === 'checking'}>
+    <>
+      {children(controls)}
+      {loginOpen && (
+        <div className="access-overlay" role="presentation">
+          <section className="access-card" role="dialog" aria-modal="true" aria-labelledby="access-title" aria-busy={busy || state === 'checking'}>
         <div className="brand-lockup"><div className="brand-mark"><Zap aria-hidden="true" /></div><div><p>TFM · Mercado eléctrico</p><h1>Pulso Energía</h1></div></div>
+        <Button className="access-close" variant="ghost" size="sm" onClick={() => setLoginOpen(false)} disabled={busy}>Cerrar</Button>
         <div className="access-icon"><LockKeyhole aria-hidden="true" /></div>
         <p className="section-label">Espacio del equipo</p>
-        <h2 id="access-title">La señal empieza aquí.</h2>
-        <p className="access-intro">Accede a las previsiones, compara los modelos y consulta el plan BESS.</p>
+        <h2 id="access-title">Acceso privado.</h2>
+        <p className="access-intro">El estudio de batería y el asistente requieren usuario y contraseña. El resto de la app puede consultarse sin iniciar sesión.</p>
         {state === 'checking' ? <p role="status">Comprobando acceso…</p> : state === 'unavailable' ? (
           <><p role="alert" className="access-message">{message}</p><Button size="lg" onClick={() => void checkSession()}>Volver a comprobar</Button></>
         ) : (
@@ -94,11 +128,13 @@ export function TeamAccess({ children }: { children: (controls: AccessControls) 
             <label htmlFor="team-password">Contraseña</label>
             <Input id="team-password" name="password" type="password" autoComplete="current-password" maxLength={128} required disabled={busy} aria-describedby="access-message" />
             <p id="access-message" role="status" className="access-message">{message}</p>
-            <Button type="submit" size="lg" disabled={busy}>{busy ? 'Entrando…' : 'Entrar al dashboard'}</Button>
+            <Button type="submit" size="lg" disabled={busy}>{busy ? 'Entrando…' : 'Entrar'}</Button>
           </form>
         )}
         <p className="access-note">Acceso restringido · La sesión caduca a las 8 horas.<br />Solicita tu cuenta a la persona que administra el equipo.</p>
       </section>
-    </main>
+        </div>
+      )}
+    </>
   );
 }

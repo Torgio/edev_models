@@ -50,7 +50,6 @@ export function PerformanceHistory({ onSessionExpired }: { onSessionExpired: () 
     const controller = new AbortController();
     fetch('/api/dashboard/performance-options?source=production', { signal: controller.signal, cache: 'no-store' })
       .then(async response => {
-        if (response.status === 401) onSessionExpired();
         if (!response.ok) throw new Error();
         return await response.json() as PerformanceOptionsPayload;
       })
@@ -71,7 +70,6 @@ export function PerformanceHistory({ onSessionExpired }: { onSessionExpired: () 
     const controller = new AbortController();
     fetch('/api/dashboard/days?source=production', { signal: controller.signal, cache: 'no-store' })
       .then(async response => {
-        if (response.status === 401) onSessionExpired();
         if (!response.ok) throw new Error();
         return await response.json() as { days: AvailableDay[] };
       })
@@ -93,7 +91,6 @@ export function PerformanceHistory({ onSessionExpired }: { onSessionExpired: () 
     const query = new URLSearchParams({ model: selected.model, seed: String(selected.seed), days: '30', source: 'production' });
     fetch(`/api/dashboard/performance-history?${query}`, { signal: controller.signal, cache: 'no-store' })
       .then(async response => {
-        if (response.status === 401) onSessionExpired();
         if (!response.ok) throw new Error();
         return await response.json() as PerformancePayload;
       })
