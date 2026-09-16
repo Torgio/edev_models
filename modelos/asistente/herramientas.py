@@ -15,10 +15,18 @@ Distincion importante, para que el asistente nunca la confunda:
                                 mes/dia de la semana), nunca como si fuera una prediccion del
                                 modelo. Es una REFERENCIA HISTORICA, y hay que decirlo asi.
 
+Otra distincion, para "a que hora cargo/descargo la bateria" (16-sep-2026):
+  - `plan_bateria_d_mas_1()`   -> PLAN hacia adelante, sobre la PREDICCION de D+1, con los
+                                  parametros de bateria que de quien pregunta.
+  - `plan_bateria_produccion()` -> PLAN REAL ya decidido por el pipeline de produccion (tabla
+                                  `bess_plan`), con las restricciones fisicas reales aplicadas.
+  - `simular_bateria()`        -> BACKTEST sobre precio REAL ya ocurrido, no una recomendacion
+                                  para el futuro -- no confundir con las dos anteriores.
+
 Uso:
     from modelos.asistente.herramientas import (
         precio_historico_percentiles, precio_historico_serie,
-        prediccion_d_mas_1, simular_bateria,
+        prediccion_d_mas_1, plan_bateria_d_mas_1, simular_bateria,
     )
 """
 
@@ -348,6 +356,69 @@ def prediccion_d_mas_1() -> dict:
             f"Falta la pieza de produccion real (features de D+1 desde Postgres, ya identificada "
             f"como pendiente por el equipo) para que esto sea la prediccion de mañana de verdad."
         )
+    return resultado
+
+
+def plan_bateria_d_mas_1(potencia_mw: float, capacidad_mwh: float, eficiencia: float) -> dict:
+    """Plan de carga y descarga para el dia siguiente (D+1) a partir de la PREDICCION del
+    modelo -- para preguntas como "a que hora cargo y descargo mañana para minimizar el coste
+    y maximizar el ahorro". Distinta de `simular_bateria` (que hace backtest sobre precio REAL
+    ya ocurrido): esta reutiliza `prediccion_d_mas_1()` para las 24 horas de precio previsto, y
+    aplica la misma logica de eleccion de horas (las N mas baratas para cargar, las N mas caras
+    para descargar, N = capacidad/potencia redondeado) pero sobre la PREDICCION, no sobre el
+    pasado.
+
+    Hereda la misma limitacion conocida de `prediccion_d_mas_1` -- si el resultado trae el campo
+    `advertencia`, TRASLADALA: significa que esta prediccion no es literalmente la de "mañana".
+
+    Args:
+        potencia_mw: Potencia de la bateria en MW.
+        capacidad_mwh: Capacidad de energia de la bateria en MWh.
+        eficiencia: Eficiencia de ida y vuelta, entre 0 y 1 (ej. 0.9 para 90%).
+    """
+    duracion_h = capacidad_mwh / potencia_mw
+    if duracion_h < 0.5 or duracion_h > 12:
+        return {"error": f"Duracion implicita ({duracion_h:.1f}h) fuera de un rango razonable "
+                          f"para este planificador (0.5-12h). Revisa potencia/capacidad."}
+    duracion_h_entera = max(1, round(duracion_h))
+
+    prediccion = prediccion_d_mas_1()
+    if "error" in prediccion:
+        return prediccion
+
+    horas = prediccion["horas"]
+    if len(horas) < 2 * duracion_h_entera:
+        return {"error": f"La prediccion de D+1 solo tiene {len(horas)} horas -- insuficientes "
+                          f"para {duracion_h_entera}h de carga mas {duracion_h_entera}h de "
+                          f"descarga sin solaparse."}
+
+    precios = np.array([h["precio_pred"] for h in horas])
+    orden = np.argsort(precios)
+    idx_carga = sorted(orden[:duracion_h_entera].tolist())
+    idx_descarga = sorted(orden[-duracion_h_entera:].tolist())
+
+    coste_carga = float(precios[idx_carga].sum()) * potencia_mw
+    ingreso_descarga = float(precios[idx_descarga].sum()) * potencia_mw * eficiencia
+
+    resultado = {
+        "etiqueta": "PLAN SOBRE LA PREDICCION DE D+1 -- no es un backtest sobre precio ya "
+                    "ocurrido, es una recomendacion hacia adelante",
+        "fecha_objetivo": prediccion["fecha_objetivo"],
+        "parametros": {"potencia_mw": potencia_mw, "capacidad_mwh": capacidad_mwh,
+                       "eficiencia": eficiencia, "duracion_h_usada": duracion_h_entera},
+        "horas": [
+            {**h, "accion": ("cargar" if i in idx_carga else
+                              "descargar" if i in idx_descarga else "esperar")}
+            for i, h in enumerate(horas)
+        ],
+        "horas_carga": [horas[i]["hora_utc"] for i in idx_carga],
+        "horas_descarga": [horas[i]["hora_utc"] for i in idx_descarga],
+        "coste_estimado_carga_eur": round(coste_carga, 2),
+        "ingreso_estimado_descarga_eur": round(ingreso_descarga, 2),
+        "ahorro_estimado_eur": round(ingreso_descarga - coste_carga, 2),
+    }
+    if "advertencia" in prediccion:
+        resultado["advertencia"] = prediccion["advertencia"]
     return resultado
 
 
@@ -855,6 +926,76 @@ def resultado_estudio_bateria(modelo: str | None = None) -> dict:
         "por_modelo": resumen.reset_index().to_dict("records"),
         "rango_fechas": {"desde": str(df["fecha_objetivo"].min()),
                           "hasta": str(df["fecha_objetivo"].max())},
+    }
+
+
+def plan_bateria_produccion(modelo: str | None = None, fecha: str | None = None) -> dict:
+    """Plan REAL de carga y descarga hora a hora, ya calculado por el pipeline de produccion
+    (tabla `bess_plan`) -- distinto de `plan_bateria_d_mas_1` (que simula con los parametros de
+    bateria que da quien pregunta, sin restricciones fisicas) y de `resultado_estudio_bateria`
+    (que da el resumen agregado por modelo, no el detalle hora a hora de un dia). Esta
+    herramienta es la mas fiel a "que va a hacer realmente el sistema": respeta el estado de
+    carga, la eficiencia y el limite de un ciclo diario que ya aplico el planificador.
+
+    Args:
+        modelo: nombre del modelo a consultar (p.ej. "ensemble"). Si se omite, usa el primer
+            modelo con plan guardado para la fecha pedida (o la mas reciente).
+        fecha: fecha objetivo del plan, YYYY-MM-DD. Si se omite, usa la fecha mas reciente con
+            plan guardado.
+    """
+    conn = _conectar()
+    try:
+        condiciones, params = [], {}
+        if modelo:
+            condiciones.append("model = %(modelo)s")
+            params["modelo"] = modelo
+        if fecha:
+            condiciones.append("(datetime AT TIME ZONE 'Europe/Madrid')::date = %(fecha)s")
+            params["fecha"] = fecha
+        if not fecha:
+            # sin fecha explicita: usar el dia mas reciente con plan guardado (para ese modelo,
+            # si se dio uno; para cualquiera, si no)
+            sql_ultima = "SELECT MAX((datetime AT TIME ZONE 'Europe/Madrid')::date) AS f FROM bess_plan"
+            if modelo:
+                sql_ultima += " WHERE model = %(modelo)s"
+            ultima = pd.read_sql(sql_ultima, conn, params={"modelo": modelo} if modelo else None)
+            if not ultima.empty and ultima["f"].iloc[0] is not None:
+                condiciones.append("(datetime AT TIME ZONE 'Europe/Madrid')::date = %(fecha)s")
+                params["fecha"] = str(ultima["f"].iloc[0])
+
+        where = ("WHERE " + " AND ".join(condiciones)) if condiciones else ""
+        sql = f"SELECT * FROM bess_plan {where} ORDER BY datetime, model"
+        df = pd.read_sql(sql, conn, params=params or None)
+    finally:
+        conn.close()
+
+    if df.empty:
+        return {"error": f"Sin plan de bateria guardado para modelo={modelo!r} fecha={fecha!r}."}
+
+    if not modelo:
+        # varios modelos pueden compartir dia: si no se pidio uno, usar el primero que aparezca
+        modelo_usado = df["model"].iloc[0]
+        df = df[df["model"] == modelo_usado]
+    else:
+        modelo_usado = modelo
+
+    df = df.sort_values("datetime")
+    fecha_madrid = df["datetime"].dt.tz_convert("Europe/Madrid").dt.date.iloc[0]
+    return {
+        "etiqueta": "PLAN REAL de produccion (bess_plan) -- decision ya tomada por el sistema, "
+                    "respeta las restricciones fisicas reales de la bateria",
+        "modelo": modelo_usado,
+        "fecha": str(fecha_madrid),
+        "horas": [
+            {"hora": str(row.datetime), "carga_mw": round(float(row.carga_mw or 0), 3),
+             "descarga_mw": round(float(row.descarga_mw or 0), 3),
+             "soc_mwh": round(float(row.soc_mwh), 3) if pd.notna(row.soc_mwh) else None,
+             "accion": ("cargar" if (row.carga_mw or 0) > 0 else
+                        "descargar" if (row.descarga_mw or 0) > 0 else "esperar")}
+            for row in df.itertuples()
+        ],
+        "ingreso_total_eur": (round(float(df["ingreso_eur"].sum()), 2)
+                               if "ingreso_eur" in df.columns else None),
     }
 
 

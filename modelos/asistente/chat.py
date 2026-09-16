@@ -111,6 +111,24 @@ Si `prediccion_d_mas_1` devuelve el campo `advertencia`, TRASLADA esa advertenci
 cual, no la omitas -- significa que el sistema de produccion todavia no esta conectado a datos en
 vivo.
 
+Para preguntas de PLANIFICACION de bateria hacia adelante -- "a que hora cargo y a que hora
+descargo mañana", "cuando compro y cuando vendo para minimizar el coste y maximizar el ahorro",
+"dame el plan de mañana" -- usa `plan_bateria_d_mas_1` (con los parametros de bateria que de el
+usuario, o unos razonables por defecto si no los da) o, si preguntan por el plan REAL/OFICIAL del
+sistema (no una simulacion con parametros propios), `plan_bateria_produccion`. Ninguna de las dos
+es `simular_bateria`, que es un backtest sobre el pasado, no una recomendacion para mañana.
+Hereda el mismo aviso de `advertencia` que `prediccion_d_mas_1` cuando `plan_bateria_d_mas_1` la
+traiga. SIEMPRE dibuja la grafica para este tipo de pregunta (ver regla de graficas mas abajo):
+la curva de precio de las 24 horas, con las horas de carga y las de descarga marcadas con un
+punto o color distinto -- es la forma natural de responder "a que hora cargo y descargo". La
+grafica NUNCA sustituye la explicacion en texto: antes o despues de ella, di explicitamente a
+que hora(s) conviene cargar y a que hora(s) descargar (los campos `horas_carga`/`horas_descarga`,
+o las horas con `accion` "cargar"/"descargar"), y cuanto se ahorraria o ganaria en euros (el
+campo `ahorro_estimado_eur` de `plan_bateria_d_mas_1`, o `ingreso_total_eur` de
+`plan_bateria_produccion`) -- una frase tipo "conviene cargar a las X y descargar a las Y, lo
+que ahorraria/generaria Z EUR" es la respuesta minima esperada, la grafica es un apoyo visual,
+no el sustituto de esa frase.
+
 Para VER los precios en crudo de un rango corto ("los precios de hoy por hora", "la tabla/
 evolucion de esta semana", "el precio de ayer"), usa `precio_tabla_horaria` -- no
 `precio_historico_percentiles`, esa resume/filtra, no da el detalle hora a hora. No digas que no
@@ -149,7 +167,10 @@ comparativas, series por mes/hora...).
 Ademas de la tabla, dibuja una GRAFICA con `code_execution` (matplotlib: una figura, ejes con
 nombre, nada de colores decorativos) siempre que la pregunta sea sobre una TENDENCIA o EVOLUCION
 en el tiempo (precio a lo largo de un año, consumo mes a mes...), una COMPARACION entre periodos
-o escenarios, o una ESTIMACION/extrapolacion a futuro -- no hace falta que el usuario lo pida
+o escenarios, una ESTIMACION/extrapolacion a futuro, o un PLAN de carga/descarga de bateria (la
+curva de precio de las 24 horas con las horas de carga y descarga resaltadas con un punto o color
+distinto sobre la curva, una por cada hora de `plan_bateria_d_mas_1` o `plan_bateria_produccion`
+cuyo campo `accion` sea "cargar" o "descargar") -- no hace falta que el usuario lo pida
 explicitamente con la palabra "grafica", esas preguntas se entienden mejor con una imagen que
 solo con numeros. Para una respuesta de un solo numero (ej. "cuanta capacidad solar hay
 instalada") no hace falta grafica. Llama PRIMERO a la herramienta de datos correspondiente y
@@ -330,6 +351,28 @@ def prediccion_d_mas_1() -> str:
 
 
 @beta_tool
+def plan_bateria_d_mas_1(potencia_mw: float, capacidad_mwh: float, eficiencia: float) -> str:
+    """Plan de carga y descarga para MAÑANA (D+1) con una bateria de los parametros indicados,
+    a partir de la PREDICCION del modelo -- usa esta herramienta, no `simular_bateria`, cuando
+    pregunten "a que hora cargo/descargo mañana", "cuando compro y cuando vendo para minimizar
+    el coste y maximizar el ahorro", o cualquier pregunta de PLANIFICACION hacia adelante (no
+    backtest). Devuelve las 24 horas con su precio previsto y la accion (cargar/descargar/
+    esperar) en cada una, listas para dibujar la curva del dia con los puntos de carga y
+    descarga marcados.
+
+    Hereda la misma limitacion que `prediccion_d_mas_1`: si el resultado trae `advertencia`,
+    TRASLADALA al usuario tal cual.
+
+    Args:
+        potencia_mw: Potencia de la bateria en MW.
+        capacidad_mwh: Capacidad de energia de la bateria en MWh.
+        eficiencia: Eficiencia de ida y vuelta, entre 0 y 1 (ej. 0.9 para 90%).
+    """
+    return json.dumps(_tool_seguro(_h.plan_bateria_d_mas_1, potencia_mw, capacidad_mwh, eficiencia),
+                       ensure_ascii=False)
+
+
+@beta_tool
 def capacidad_instalada(fecha: str | None = None) -> str:
     """Capacidad instalada por tecnologia en España (MW): solar, eolica, hidraulica, nuclear,
     ciclo combinado, carbon, baterias hibridas... Usa esta herramienta para "cuanta solar/eolica
@@ -373,6 +416,24 @@ def resultado_estudio_bateria(modelo: str | None = None) -> str:
         modelo: nombre del modelo (p.ej. "ensemble", "gru"). Si se omite, todos los modelos.
     """
     return json.dumps(_tool_seguro(_h.resultado_estudio_bateria, modelo), ensure_ascii=False)
+
+
+@beta_tool
+def plan_bateria_produccion(modelo: str | None = None, fecha: str | None = None) -> str:
+    """Plan REAL de carga y descarga hora a hora, ya decidido por el pipeline de produccion --
+    la respuesta mas fiel a "que va a hacer realmente el sistema", porque respeta las
+    restricciones fisicas reales de la bateria (estado de carga, eficiencia, un ciclo diario).
+    Distinta de `plan_bateria_d_mas_1` (simula con los parametros de bateria que da quien
+    pregunta, sin esas restricciones fisicas) y de `resultado_estudio_bateria` (resumen agregado
+    por modelo, no el detalle hora a hora de un dia). Usa esta primero si preguntan por el plan
+    "real" u "oficial" del sistema para hoy/mañana; usa `plan_bateria_d_mas_1` si dan sus
+    propios parametros de bateria.
+
+    Args:
+        modelo: nombre del modelo (p.ej. "ensemble"). Si se omite, usa el primero disponible.
+        fecha: YYYY-MM-DD. Si se omite, usa la fecha mas reciente con plan guardado.
+    """
+    return json.dumps(_tool_seguro(_h.plan_bateria_produccion, modelo, fecha), ensure_ascii=False)
 
 
 @beta_tool
@@ -438,8 +499,9 @@ def buscar_documentacion(pregunta: str) -> str:
 CODE_EXECUTION = {"type": "code_execution_20260521", "name": "code_execution"}
 TOOLS = [precio_historico_percentiles, precio_tabla_horaria, precio_tendencia_mensual, precio_negativos,
          precio_horas_negativas, simular_bateria, simular_autoconsumo_solar, precio_futuro_curva,
-         extrapolar_consumo_cliente, capacidad_instalada, prediccion_d_mas_1, buscar_documentacion,
-         precio_ponderado_por_generacion, resultado_estudio_bateria, consulta_sql_lectura]
+         extrapolar_consumo_cliente, capacidad_instalada, prediccion_d_mas_1, plan_bateria_d_mas_1,
+         buscar_documentacion, precio_ponderado_por_generacion, resultado_estudio_bateria,
+         plan_bateria_produccion, consulta_sql_lectura]
 
 
 # Cuantos turnos previos (pregunta+respuesta) se reenvian como contexto. Cada uno que se
