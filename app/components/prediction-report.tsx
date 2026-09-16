@@ -58,9 +58,14 @@ export function PredictionReport(props: Props) {
     .map((value, index) => (finite(value) ? `${x(index).toFixed(1)},${y(value).toFixed(1)}` : null))
     .filter(Boolean).join(' ');
 
-  const valleyIndex = forecast.reduce((best, value, index) => (finite(value) && (best < 0 || value < forecast[best]!) ? index : best), -1);
-  const peakIndex = forecast.reduce((best, value, index) => (finite(value) && (best < 0 || value > forecast[best]!) ? index : best), -1);
-  const actualPeakIndex = actual.reduce((best, value, index) => (finite(value) && (best < 0 || value > actual[best]!) ? index : best), -1);
+  const extremeIndex = (series: (number | null)[], mode: 'min' | 'max') => {
+    let best = -1;
+    series.forEach((value, index) => { if (typeof value !== 'number' || !Number.isFinite(value)) return; if (best < 0 || (mode === 'min' ? value < series[best]! : value > series[best]!)) best = index; });
+    return best;
+  };
+  const valleyIndex = extremeIndex(forecast, 'min');
+  const peakIndex = extremeIndex(forecast, 'max');
+  const actualPeakIndex = extremeIndex(actual, 'max');
   const gap = hours.reduce<{ index: number; value: number } | null>((best, hour, index) => {
     if (!finite(hour.forecast) || !finite(hour.comparison)) return best;
     const difference = hour.forecast - hour.comparison;
