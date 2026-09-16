@@ -181,3 +181,9 @@
 .study-context.study-details > summary { margin-bottom: 0; }
 .study-context.study-details[open] > summary { margin-bottom: 24px; }
 @media (max-width: 600px) { .study-conclusion { padding: 18px; } }
+.study-name-field { display: grid; gap: 8px; margin-bottom: 24px; max-width: 640px; font-weight: 600; }
+.study-name-field small { font-weight: 400; }
+.study-catalog-scroll { overflow-x: auto; }
+.study-catalog-scroll table { min-width: 720px; }
+.study-catalog-scroll caption { text-align: left; margin: 16px 0; }
+.study-catalog-id { display: block; margin-top: 4px; }

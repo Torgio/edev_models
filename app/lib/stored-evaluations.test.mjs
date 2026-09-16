@@ -1,8 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bestMae, evaluationGroup, maxCoverageEvaluations, rankedEvaluations, metric } from './stored-evaluations.ts';
+import { bestMae, evaluationGroup, maxCoverageEvaluations, rankedEvaluations, metric, sortEvaluationTable } from './stored-evaluations.ts';
 
 const row = (overrides = {}) => ({ model: 'a', seed: 42, periodo: 'test', corte: 'global', simulador: { eficiencia: .9 }, n_obs: 40, mae: 12, captura_pct: 90, skill_vs_naive: 4, ...overrides });
+
+test('table sorts numbers, not formatted percentages, and keeps missing values last', () => {
+  const rows = [row({ model: 'missing', captura_pct: null }), row({ model: 'hundred', captura_pct: 100 }), row({ model: 'nine', captura_pct: 9 }), row({ model: 'zero', captura_pct: 0 }), row({ model: 'negative', captura_pct: -2 })];
+  assert.deepEqual(sortEvaluationTable(rows, 'captura_pct', 'asc').map(r => r.model), ['negative', 'zero', 'nine', 'hundred', 'missing']);
+  assert.deepEqual(sortEvaluationTable(rows, 'captura_pct', 'desc').map(r => r.model), ['hundred', 'nine', 'zero', 'negative', 'missing']);
+  assert.equal(rows[0].model, 'missing');
+});
+
+test('table compares timestamps with timezone offsets and treats absent seeds as missing', () => {
+  const rows = [row({ model: 'later', seed: -1, calculado_en: '2026-09-16T10:00:00Z' }), row({ model: 'earlier', seed: 44, calculado_en: '2026-09-16T11:00:00+02:00' }), row({ model: 'unknown', seed: 42, calculado_en: '' })];
+  assert.deepEqual(sortEvaluationTable(rows, 'calculado_en', 'asc').map(r => r.model), ['earlier', 'later', 'unknown']);
+  assert.deepEqual(sortEvaluationTable(rows, 'seed', 'desc').map(r => r.seed), [44, 42, -1]);
+});
 
 test('empty and null metrics have no reserve winner, zero is real', () => {
   assert.equal(bestMae([]), undefined);

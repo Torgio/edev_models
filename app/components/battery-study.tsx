@@ -13,6 +13,7 @@ import { metric } from '@/lib/stored-evaluations';
 import { nominalDayOffset, studyCoverage, studyInputs, studyPoints, toKilo, type StudyDispatch, type StudyResult } from '@/lib/battery-study';
 
 const API = '/api/battery-study';
+type SavedStudy = { run_id: number; name?: string; code: string; power_kw?: number | null; duration_h?: number | null; date_from?: string | null; date_to?: string | null; run_at: string | null };
 const dateText = (value: string | null) => value ? new Date(value).toLocaleString('es-ES', { timeZone: 'Europe/Madrid' }) : 'Sin fecha guardada';
 const chartNumber = (value: number) => value.toLocaleString('es-ES', { maximumFractionDigits: 0 });
 const dayCount = (value: number | null | undefined) => typeof value === 'number' && Number.isInteger(value) && value >= 0 ? chartNumber(value) : '—';
@@ -40,6 +41,7 @@ export function BatteryStudy() {
 
 function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; preferredRunId: number | null }) {
   const [ids, setIds] = useState<number[]>([]);
+  const [studies, setStudies] = useState<SavedStudy[]>([]);
   const [runId, setRunId] = useState<number | null>(null);
   const [result, setResult] = useState<StudyResult | null>(null);
   const [error, setError] = useState('');
@@ -57,9 +59,10 @@ function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; prefe
   useEffect(() => {
     const controller = new AbortController();
     setError(''); setLoading(true);
-    read<{ runs: number[] }>('opciones', controller.signal).then(data => {
+    read<{ runs: number[]; studies?: SavedStudy[] }>('opciones', controller.signal).then(data => {
       if (controller.signal.aborted) return;
       setIds(data.runs);
+      setStudies(data.studies ?? []);
       setRunId(previous => preferredRunId && data.runs.includes(preferredRunId)
         ? preferredRunId : previous && data.runs.includes(previous) ? previous : data.runs[0] ?? null);
       if (!data.runs.length) { setLoading(false); setError('No hay estudios habilitados para esta prueba local.'); }
@@ -109,11 +112,22 @@ function SavedBatteryStudy({ onNew, preferredRunId }: { onNew: () => void; prefe
       <div className="study-controls">
         <Button onClick={onNew}>Nuevo estudio</Button>
         {ids.length > 0 && <label>Estudio guardado<NativeSelect value={runId ?? ''} onChange={e => setRunId(Number(e.target.value))}>
-          {ids.map(id => <NativeSelectOption key={id} value={id}>Estudio {id}</NativeSelectOption>)}
+          {ids.map(id => <NativeSelectOption key={id} value={id}>{studies.find(study => study.run_id === id)?.name || 'Estudio'} · ejecución {id}</NativeSelectOption>)}
         </NativeSelect></label>}
         <Button variant="outline" onClick={() => setReload(n => n + 1)}>Actualizar</Button>
       </div>
     </div>
+    {studies.length > 0 && <details className="study-card study-details" open>
+      <summary>Estudios guardados · {studies.length} ejecuciones</summary>
+      <div className="study-catalog-scroll"><table><caption>Parámetros conservados al ejecutar. Los datos antiguos no disponibles se indican con —.</caption><thead><tr><th>Nombre</th><th>Batería</th><th>Período</th><th>Ejecutado</th><th>Resultado</th></tr></thead><tbody>
+        {studies.map(study => <tr key={study.run_id} aria-selected={runId === study.run_id}>
+          <td>{study.name || study.code}<small className="study-catalog-id">Ejecución {study.run_id}</small></td>
+          <td>{study.power_kw != null && study.duration_h != null ? `${metric(study.power_kw)} kW / ${metric(study.duration_h)} h` : '—'}</td>
+          <td>{study.date_from && study.date_to ? `${nominalDateText(study.date_from)} → ${nominalDateText(study.date_to)}` : '—'}</td>
+          <td>{dateText(study.run_at)}</td><td><Button variant="outline" aria-pressed={runId === study.run_id} onClick={() => setRunId(study.run_id)}>{runId === study.run_id ? 'Seleccionado' : 'Ver resultado'}</Button></td>
+        </tr>)}
+      </tbody></table></div>
+    </details>}
     {error ? <div className="study-notice" role="alert">{error}</div> : loading ? <div className="study-empty" role="status">Consultando el estudio guardado…</div> : run && <>
       <article className="study-card study-context" aria-labelledby="study-context-heading">
         <header className="study-context-header">

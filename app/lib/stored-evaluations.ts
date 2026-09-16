@@ -5,6 +5,28 @@ export type Evaluation = {
   simulador: Record<string, unknown> | null; estado: string | null; calculado_en: string;
 };
 export type Order = 'mae' | 'captura_pct' | 'skill_vs_naive';
+export type EvaluationSortKey = 'model' | 'seed' | 'estado' | 'n_obs' | Order | 'pico_1h_pct' | 'cobertura_ic80' | 'calculado_en';
+export function sortEvaluationTable(rows: Evaluation[], key: EvaluationSortKey, direction: 'asc' | 'desc') {
+  const value = (row: Evaluation): string | number | null => {
+    const raw = row[key];
+    if (key === 'calculado_en') {
+      const timestamp = typeof raw === 'string' ? Date.parse(raw) : NaN;
+      return Number.isFinite(timestamp) ? timestamp : null;
+    }
+    if (key === 'seed' && raw === -1) return null;
+    return typeof raw === 'number' ? (Number.isFinite(raw) ? raw : null) : raw || null;
+  };
+  return [...rows].sort((a, b) => {
+    const left = value(a), right = value(b);
+    const tie = a.model.localeCompare(b.model, 'es', { numeric: true }) || a.seed - b.seed;
+    // Missing values stay last in both directions; zero is a real observation.
+    if (left === null) return right === null ? tie : 1;
+    if (right === null) return -1;
+    const compared = typeof left === 'number' && typeof right === 'number'
+      ? left - right : String(left).localeCompare(String(right), 'es', { numeric: true });
+    return compared * (direction === 'asc' ? 1 : -1) || tie;
+  });
+}
 export const numeric = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 export const metric = (value: unknown, suffix = '') => numeric(value)
   ? `${value.toLocaleString('es-ES', { maximumFractionDigits: 2, minimumFractionDigits: 2 })}${suffix}` : '—';

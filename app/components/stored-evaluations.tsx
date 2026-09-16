@@ -1,12 +1,15 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Cell, CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from 'recharts';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { bestMae, evaluationGroup, maxCoverageEvaluations, metric, numeric, rankedEvaluations, type Evaluation, type Order } from '@/lib/stored-evaluations';
+import { bestMae, evaluationGroup, maxCoverageEvaluations, metric, numeric, rankedEvaluations, sortEvaluationTable, type EvaluationSortKey, type Evaluation, type Order } from '@/lib/stored-evaluations';
 import { PerformanceHistory } from '@/components/performance-history';
+import { EvaluationMethod } from '@/components/evaluation-method';
 import { modelColor } from '@/lib/model-color';
 import { formatEnergyPrice } from '@/lib/price-format';
 
@@ -15,6 +18,18 @@ const orderLabels: Record<Order, string> = {
   mae: 'Error (€/MWh)',
   skill_vs_naive: 'Mejora (%)',
 };
+const tableColumns: { key: EvaluationSortKey; label: string; first: 'asc' | 'desc' }[] = [
+  { key: 'model', label: 'Modelo', first: 'asc' },
+  { key: 'seed', label: 'Semilla', first: 'asc' },
+  { key: 'estado', label: 'Estado', first: 'asc' },
+  { key: 'n_obs', label: 'Horas', first: 'desc' },
+  { key: 'mae', label: 'MAE (€/MWh)', first: 'asc' },
+  { key: 'captura_pct', label: 'Captura (%)', first: 'desc' },
+  { key: 'skill_vs_naive', label: 'Mejora (%)', first: 'desc' },
+  { key: 'pico_1h_pct', label: 'Pico ±1 h', first: 'desc' },
+  { key: 'cobertura_ic80', label: 'Cobertura IC80', first: 'desc' },
+  { key: 'calculado_en', label: 'Calculado', first: 'desc' },
+];
 const seed = (value: number) => value === -1 ? 'No aplica' : String(value);
 const bestBy = (rows: Evaluation[], key: 'captura_pct' | 'skill_vs_naive') =>
   rows.filter(row => numeric(row[key])).sort((a, b) => b[key]! - a[key]!)[0];
@@ -41,6 +56,8 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
   const [selection, setSelection] = useState<string[]>([]);
   const [maximumOnly, setMaximumOnly] = useState(true);
   const [order, setOrder] = useState<Order>('captura_pct');
+  const [tableSort, setTableSort] = useState<{ key: EvaluationSortKey; direction: 'asc' | 'desc' }>({ key: 'captura_pct', direction: 'desc' });
+  const [modelSearch, setModelSearch] = useState('');
 
   useEffect(() => {
     setStatus('loading');
@@ -58,6 +75,8 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
   const groups = [...new Map(rows.map(row => [evaluationGroup(row), row])).entries()];
   const selected = groups.some(([key]) => key === group) ? group : groups[0]?.[0] ?? '';
   const ranked = rankedEvaluations(rows, selected, order);
+  const query = modelSearch.trim().toLocaleLowerCase('es');
+  const tableRows = sortEvaluationTable(ranked.filter(row => row.model.toLocaleLowerCase('es').includes(query)), tableSort.key, tableSort.direction);
   const comparable = maxCoverageEvaluations(ranked);
   const rankingRows = maximumOnly ? comparable : ranked;
   const identity = (row: Evaluation) => `${row.model}:${row.seed}`;
@@ -138,11 +157,28 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
         <div className="method-copy">
           <p><strong>{context?.periodo} · {context?.corte}</strong>. Cada semilla se conserva como una observación distinta. El skill corresponde a este período, no al último mes.</p>
           <p><strong>Captura sobre el oráculo del evaluador:</strong> comparación bajo los supuestos registrados; no es necesariamente el techo operable de un ciclo.</p>
-          <pre>{context?.simulador ? JSON.stringify(context.simulador, null, 2) : 'Sin supuestos registrados; comparabilidad económica no verificada.'}</pre>
+          <EvaluationMethod simulator={context?.simulador} />
         </div>
-        <div className="table-scroll"><Table>
-          <TableHeader><TableRow>{['Modelo', 'Semilla', 'Estado', 'Horas', 'MAE (€/MWh)', 'Captura (%)', 'Mejora (%)', 'Pico ±1 h', 'Cobertura IC80', 'Calculado'].map(title => <TableHead key={title}>{title}</TableHead>)}</TableRow></TableHeader>
-          <TableBody>{ranked.map(row => <TableRow key={`${row.model}:${row.seed}`}>
+        <div className="evaluation-table-search">
+          <label htmlFor="evaluation-model-search">Buscar modelo
+            <Input id="evaluation-model-search" type="search" placeholder="Por ejemplo: boosting, GRU…" value={modelSearch} onChange={event => setModelSearch(event.target.value)} aria-controls="evaluation-results-table" aria-describedby="evaluation-search-help" />
+          </label>
+          {modelSearch && <Button variant="outline" onClick={() => setModelSearch('')}>Limpiar búsqueda</Button>}
+          <p id="evaluation-search-help">Filtra solo la tabla; los gráficos y destacados mantienen el período seleccionado.</p>
+        </div>
+        <p className="evaluation-coverage-note" aria-live="polite">{tableRows.length} de {ranked.length} evaluaciones · Orden: {tableColumns.find(column => column.key === tableSort.key)?.label}, {tableSort.direction === 'asc' ? 'ascendente' : 'descendente'}. Pulsa una cabecera para ordenar o invertir el sentido. Los valores ausentes quedan al final.</p>
+        <div className="table-scroll"><Table id="evaluation-results-table">
+          <TableHeader><TableRow>{tableColumns.map(column => {
+            const active = tableSort.key === column.key;
+            const next = active ? (tableSort.direction === 'asc' ? 'desc' : 'asc') : column.first;
+            const Icon = !active ? ArrowUpDown : tableSort.direction === 'asc' ? ArrowUp : ArrowDown;
+            return <TableHead key={column.key} aria-sort={active ? (tableSort.direction === 'asc' ? 'ascending' : 'descending') : undefined}>
+              <button type="button" className="evaluation-sort-button" aria-label={`Ordenar por ${column.label}, ${next === 'asc' ? 'ascendente' : 'descendente'}`} onClick={() => setTableSort({ key: column.key, direction: next })}>
+                {column.label}<Icon size={14} aria-hidden="true" />
+              </button>
+            </TableHead>;
+          })}</TableRow></TableHeader>
+          <TableBody>{tableRows.length === 0 && <TableRow><TableCell colSpan={tableColumns.length}>No hay modelos que coincidan con «{modelSearch.trim()}» en este período.</TableCell></TableRow>}{tableRows.map(row => <TableRow key={`${row.model}:${row.seed}`}>
             <TableCell>{row.model}</TableCell><TableCell>{seed(row.seed)}</TableCell><TableCell>{row.estado ?? '—'}</TableCell><TableCell>{row.n_obs ?? '—'}</TableCell>
             <TableCell>{metric(row.mae)}</TableCell><TableCell>{metric(row.captura_pct, ' %')}</TableCell><TableCell>{metric(row.skill_vs_naive, ' %')}</TableCell>
             <TableCell>{metric(row.pico_1h_pct, ' %')}</TableCell><TableCell>{metric(row.cobertura_ic80, ' %')}</TableCell><TableCell>{row.calculado_en}</TableCell>
