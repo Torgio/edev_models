@@ -153,7 +153,14 @@ async def login(request: Request):
     if authenticated_username is None:
         raise HTTPException(401, "Usuario o contraseña incorrectos.")
     response = JSONResponse({"authenticated": True, "auth_required": True, "username": authenticated_username})
-    response.set_cookie(COOKIE_NAME, auth.issue(authenticated_username), max_age=SESSION_SECONDS, httponly=True, secure=True, samesite="strict", path="/")
+    # Local development serves the API over HTTP; a `Secure` cookie would be
+    # silently ignored by the browser there, making login appear successful
+    # while every subsequent request remained unauthenticated.  Respect the
+    # original scheme when running behind nginx, and only require Secure on
+    # HTTPS deployments.
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip().lower()
+    cookie_secure = request.url.scheme == "https" or forwarded_proto == "https"
+    response.set_cookie(COOKIE_NAME, auth.issue(authenticated_username), max_age=SESSION_SECONDS, httponly=True, secure=cookie_secure, samesite="strict", path="/")
     return response
 
 
