@@ -23,6 +23,7 @@ import { TeamAccess } from '@/components/team-access';
 import { AsistenteWidget } from '@/components/asistente-widget';
 import { PeakAccuracy } from '@/components/peak-accuracy';
 import { forecastMinimum } from '@/lib/forecast-minimum';
+import { groupedModels } from '@/lib/model-color';
 import { dailyPrice } from '@/lib/daily-price';
 import { StoredEvaluations } from '@/components/stored-evaluations';
 import { StoredBattery } from '@/components/stored-battery';
@@ -378,7 +379,7 @@ function Dashboard({ username, authenticated, authReady, authUnavailable, onLogi
               <label className="reference-control">Modelo de referencia
                 <NativeSelect size="sm" value={selectedModel} disabled={!availableModels.length} onChange={event => setReferenceModel(event.target.value)}>
                   {!availableModels.length && <NativeSelectOption value="">Sin modelos</NativeSelectOption>}
-                  {MODELS.map(model => <NativeSelectOption key={model.key} value={model.key}>{model.label}</NativeSelectOption>)}
+                  {groupedModels(MODELS.map(model => model.key)).map(group => <optgroup key={group.group} label={group.label}>{group.models.map(model => <NativeSelectOption key={model.key} value={model.key}>{model.label}</NativeSelectOption>)}</optgroup>)}
                 </NativeSelect>
               </label>
             </div>
@@ -388,13 +389,13 @@ function Dashboard({ username, authenticated, authReady, authUnavailable, onLogi
               {compareModels && <details className="model-picker">
                 <summary>Series visibles <strong>{visibleModels.length}</strong></summary>
                 <div className="model-toggles" aria-label="Modelos visibles">
-                  {MODELS.map(model => (
+                  {groupedModels(MODELS.map(model => model.key)).map(group => <div key={group.group} className="model-family"><strong>{group.label}</strong>{group.models.map(model => (
                     <button key={model.key} type="button" className={`${visibleModels.includes(model.key) ? 'selected' : ''} ${model.key === selectedModel ? 'reference-series' : ''}`}
                       onClick={() => toggleModel(model.key)} aria-pressed={visibleModels.includes(model.key)}
                       disabled={model.key === selectedModel} title={model.key === selectedModel ? 'El modelo de referencia siempre permanece visible' : undefined}>
                       <span style={{ background: model.color }} />{model.label}
                     </button>
-                  ))}
+                  ))}</div>)}
                 </div>
               </details>}
               <div className="chart-legend">
