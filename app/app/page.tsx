@@ -37,6 +37,7 @@ import { formatEnergyPrice } from '@/lib/price-format';
 import { modelsToPlot } from '@/lib/visible-models';
 import type { BatteryPayload } from '@/lib/battery-types';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
+import './evaluation-report.css';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';

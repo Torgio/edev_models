@@ -12,6 +12,7 @@ import { PerformanceHistory } from '@/components/performance-history';
 import { EvaluationMethod } from '@/components/evaluation-method';
 import { modelColor } from '@/lib/model-color';
 import { formatEnergyPrice } from '@/lib/price-format';
+import { EvaluationReport } from '@/components/evaluation-report';
 
 const orderLabels: Record<Order, string> = {
   captura_pct: 'Captura (%)',
@@ -95,6 +96,7 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
           {groups.map(([key, row], index) => <NativeSelectOption key={key} value={key}>{row.periodo} · {row.corte} · configuración {index + 1}</NativeSelectOption>)}
         </NativeSelect>
       </label>}
+      {rows.length > 0 && <Button variant="outline" onClick={() => window.print()}>Exportar informe de evaluación PDF</Button>}
     </div>
 
     <section className="evaluation-guide" aria-labelledby="evaluation-guide-title">
@@ -102,6 +104,7 @@ export function StoredEvaluations({ onSessionExpired }: { onSessionExpired: () =
       <p>Todos los modelos se comparan bajo las mismas condiciones: período, horas observadas y configuración. No hay un ganador único; depende de la pregunta que quieras responder.</p>
       <div className="evaluation-guide-cards"><article><span>Menor error</span><strong>MAE</strong><small>Cuánto se equivoca de media en cada hora. Menor es mejor.</small></article><article><span>Mayor captura</span><strong>Captura (%)</strong><small>Qué parte del valor económico de referencia consigue el modelo. Mayor es mejor.</small></article><article><span>Mayor mejora</span><strong>Skill frente al naive</strong><small>Cuánto mejora frente a copiar el precio del día anterior. Por encima de cero, aporta.</small></article></div>
     </section>
+    {rows.length > 0 && <div className="evaluation-print-report" aria-hidden="true"><EvaluationReport rows={rows} /></div>}
     {status !== 'ready' ? <div className="evaluation-empty" role="status">{status === 'loading' ? 'Consultando evaluaciones…' : 'No se pudieron consultar las evaluaciones.'}{status === 'error' && <Button variant="outline" onClick={() => setRetry(value => value + 1)}>Reintentar</Button>}</div>
       : !rows.length ? <div className="evaluation-empty" role="status">No hay evaluaciones guardadas.</div> : <>
       <div className="evaluation-kpis">
