@@ -201,7 +201,7 @@ button, a { font: inherit; }
 .date-picker-trigger:hover, .date-picker-trigger:focus-visible { background: #f1f6f4; outline: none; }
 .date-picker-trigger:focus-visible { box-shadow: 0 0 0 3px rgba(67,169,159,.2); }
 .date-picker-trigger svg { grid-row: 1 / 3; width: 18px; color: #e58b45; }
-.date-picker-trigger span { font-size: 13px; font-weight: 650; text-transform: capitalize; }
+.date-picker-trigger span { font-size: 13px; font-weight: 650; }
 .date-picker-trigger strong { font-size: 11px; color: #52685e; letter-spacing: .08em; }
 .date-calendar-popover { width: auto; padding: 10px; border: 1px solid #cdd9d3; background: #fff; color: #17322b; opacity: 1; isolation: isolate; box-shadow: 0 22px 60px rgba(19,50,42,.24); }
 .date-calendar-popover [data-slot="calendar"] { background: #fff; }
