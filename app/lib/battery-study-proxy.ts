@@ -61,7 +61,7 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
   const taskMatch = /^estudio\/([a-f0-9]{12})$/.exec(path);
   const allowedTask = taskMatch && launchedTasks.has(taskMatch[1]);
   const needsProductionDiscovery = !local && Boolean(match);
-  if (!upload && !launch && path !== 'opciones' && path !== 'instalaciones' && path !== 'estado'
+  if (!upload && !launch && path !== 'opciones' && path !== 'estudios' && path !== 'instalaciones' && path !== 'estado'
       && (!match || (!availableIds.includes(Number(match[2])) && !needsProductionDiscovery)) && !allowedTask) {
     return reply('Este estudio no está habilitado para la prueba local.', 404);
   }
@@ -117,8 +117,9 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
       if ([...parsed.keys()].some(key => !['consumo', 'generacion'].includes(key))) return reply('El formulario contiene campos no permitidos.', 400);
       const consumption = parsed.get('consumo'), generation = parsed.get('generacion');
       if (!consumption || typeof consumption === 'string') return reply('La curva de consumo es obligatoria.', 400);
-      for (const file of [consumption, generation].filter(Boolean)) {
-        if (typeof file === 'string' || file.size > 5 * 1024 * 1024 || !/\.(csv|txt)$/i.test(file.name)) return reply('Solo se admiten CSV o TXT de hasta 5 MB.', 400);
+      for (const file of [consumption, generation]) {
+        if (!file || typeof file === 'string') continue;
+        if (file.size > 5 * 1024 * 1024 || !/\.(csv|txt)$/i.test(file.name)) return reply('Solo se admiten CSV o TXT de hasta 5 MB.', 400);
       }
       const uploadForm = new FormData();
       uploadForm.set('consumo', consumption, consumption.name);
@@ -140,8 +141,9 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
       const raw: unknown = JSON.parse(new TextDecoder().decode(bytes));
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return reply('La configuración no es válida.', 400);
       const input = raw as Record<string, unknown>;
-      const allowed = ['powerKw', 'durationH', 'capexEurMwh', 'efficiencyPct', 'cycles', 'socMinPct', 'socMaxPct', 'chargeMaxPct', 'dischargeMaxPct', 'minimumPowerPct', 'consumptionCode', 'generationCode', 'generationIncluded', 'dateFrom', 'dateTo', 'scenarios', 'policy'];
+      const allowed = ['studyName', 'powerKw', 'durationH', 'capexEurMwh', 'efficiencyPct', 'cycles', 'socMinPct', 'socMaxPct', 'chargeMaxPct', 'dischargeMaxPct', 'minimumPowerPct', 'consumptionCode', 'generationCode', 'generationIncluded', 'dateFrom', 'dateTo', 'scenarios', 'policy'];
       if (Object.keys(input).some(key => !allowed.includes(key))) return reply('La configuración contiene campos no permitidos.', 400);
+      if (input.studyName !== undefined && (typeof input.studyName !== 'string' || !input.studyName.trim() || input.studyName.trim().length > 120)) return reply('Escribe un nombre de entre 1 y 120 caracteres.', 400);
       const numberIn = (key: string, min: number, max: number) => typeof input[key] === 'number' && Number.isFinite(input[key]) && input[key] >= min && input[key] <= max;
       const duration = input.durationH;
       const consumptionCode = typeof input.consumptionCode === 'string' && input.consumptionCode
@@ -156,7 +158,7 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
         && numberIn('cycles', 1000, 15000) && Number.isInteger(input.cycles)
         && numberIn('socMinPct', 0, 30) && numberIn('socMaxPct', 70, 100) && Number(input.socMinPct) < Number(input.socMaxPct)
         && numberIn('chargeMaxPct', 10, 100) && numberIn('dischargeMaxPct', 10, 100) && numberIn('minimumPowerPct', 0, 50)
-        && validDate(dateFrom) && validDate(dateTo) && Number.isInteger(days) && days >= 2 && days <= 31
+        && validDate(dateFrom) && validDate(dateTo) && Number.isInteger(days) && days >= 2 && days <= 7305
         && /^[A-Za-z0-9_-]{1,64}$/.test(consumptionCode)
         && (!input.generationIncluded || /^[A-Za-z0-9_-]{1,64}$/.test(generationCode))
         && typeof input.generationIncluded === 'boolean'
@@ -166,6 +168,7 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
       const code = `WEB-${Date.now().toString(36).toUpperCase()}-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
       upstreamBody = JSON.stringify({
         ...(sessionUser ? { email: sessionUser } : {}),
+        ...(typeof input.studyName === 'string' ? { nombre: input.studyName.trim() } : {}),
         code, consumo: consumptionCode, generacion: input.generationIncluded ? generationCode : null,
         potencia_kw: input.powerKw, duracion_h: input.durationH, capex_eur_mwh: input.capexEurMwh,
         eficiencia: Number(input.efficiencyPct) / 100, soc_min: Number(input.socMinPct) / 100,
@@ -180,7 +183,7 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
   }
   if (launch) headers.set('Content-Type', 'application/json');
   const destination = new URL(path === 'opciones' ? 'ejecuciones' : path, studyBase);
-  if (sessionUser && (path === 'opciones' || path === 'instalaciones' || match)) {
+  if (sessionUser && (path === 'opciones' || path === 'estudios' || path === 'instalaciones' || match)) {
     const internalQuery = new URLSearchParams(url.search);
     internalQuery.set('email', sessionUser);
     destination.search = `?${internalQuery.toString()}`;
@@ -197,6 +200,8 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
     }
     if (response.status === 404) return reply('No hay datos guardados para este estudio o tramo.', 404);
     if (response.status === 413) return reply('El servidor rechazó el tamaño de los ficheros. Reduce la carga o revisa el límite de subida del servidor.', 413);
+    if (response.status === 429) return reply('Ya hay un estudio en curso. Espera a que termine y vuelve a intentarlo.', 429);
+    if (response.status === 400 && launch) return reply('El servidor no puede calcular ese período con los escenarios disponibles. Revisa las fechas y la curva publicada.', 400);
     if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
       return reply('No se pudo consultar el estudio guardado.', 502);
     }
@@ -222,7 +227,7 @@ export async function proxyBatteryStudy(request: Request, path: string, options:
         && (item as { run_id: number }).run_id > 0 && typeof (item as { code?: unknown }).code === 'string'
         && (item as { code: string }).code.startsWith('WEB-')).map((item: { run_id: number }) => item.run_id);
       for (const runId of discovered) remember(launchedRuns, runId);
-      return Response.json({ runs: [...new Set([...discovered, ...availableIds])] }, {
+      return Response.json({ runs: [...new Set([...discovered, ...availableIds])], studies: data.runs.filter((item: { run_id: number }) => discovered.includes(item.run_id)) }, {
         headers: { 'Cache-Control': 'private, no-store', Vary: 'Cookie' },
       });
     }

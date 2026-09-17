@@ -26,13 +26,25 @@ class AuthTests(unittest.TestCase):
         self.addCleanup(self.limit_patch.stop)
         self.client = TestClient(app, base_url="https://testserver")
 
-    def test_all_data_routes_require_session(self):
+    def test_only_private_health_requires_session(self):
         with patch("api.dashboard_api._connection") as connect:
-            for path in ("/health", "/days", "/predictions/2026-08-31", "/leaderboard", "/performance-options", "/bess/2026-08-31", "/peak-accuracy"):
-                response = self.client.get(path)
-                self.assertEqual(response.status_code, 401, path)
-                self.assertIn("no-store", response.headers["cache-control"])
+            response = self.client.get("/health")
+            self.assertEqual(response.status_code, 401)
+            self.assertIn("no-store", response.headers["cache-control"])
             connect.assert_not_called()
+
+    def test_public_read_routes_do_not_require_session(self):
+        with patch("api.dashboard_api._connection") as connect, \
+             patch("api.dashboard_api.evaluations", return_value={"origin": "model_metrics", "models": []}), \
+             patch("api.dashboard_api.performance_options", return_value={"origin": "model_metrics_daily", "available": []}), \
+             patch("api.dashboard_api.performance_history", return_value={"origin": "model_metrics_daily", "series": []}), \
+             patch("api.dashboard_api.battery", return_value={"date": "2026-08-31", "plan": [], "results": []}), \
+             patch("api.dashboard_api.peak_accuracy", return_value={"hits": 0, "evaluated_days": 0}):
+            cursor = connect.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value
+            cursor.fetchall.return_value = []
+            for path in ("/days", "/predictions/2026-08-31", "/leaderboard", "/performance-options", "/performance-history", "/bess/2026-08-31", "/peak-accuracy"):
+                response = self.client.get(path)
+                self.assertNotEqual(response.status_code, 401, path)
 
     def test_login_session_and_logout(self):
         self.assertFalse(self.client.get("/session").json()["authenticated"])

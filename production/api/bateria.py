@@ -69,6 +69,7 @@ EMAIL_DEMO = os.environ.get("TFM_EMAIL", "acjg.sgs@outlook.com")
 _pool = None
 _lock = threading.Lock()
 TAREAS: dict[str, dict] = {}
+ESTUDIO_SLOT = threading.BoundedSemaphore(1)
 
 
 def _crear_pool():
@@ -199,12 +200,12 @@ def instalaciones(email: str = EMAIL_DEMO):
 
 
 @router.get("/ejecuciones")
+@router.get("/estudios")
 def ejecuciones_web(email: str = EMAIL_DEMO):
-    """Ejecuciones creadas por la pantalla web para el usuario fijo del servicio.
+    """Últimas 50 ejecuciones web del usuario resuelto por el proxy autenticado.
 
-    No acepta correo ni prefijo desde el cliente: ambos quedan fijados en el servidor.
-    Así la pantalla puede recuperar sus resultados tras reiniciarse sin convertir esta
-    ruta en un catálogo de estudios ajenos.
+    Batería y período proceden del snapshot, nunca del caso mutable actual.
+    Para ejecuciones antiguas sin snapshot solo se conserva el nombre del caso.
     """
     with cursor() as cur:
         cur.execute("SELECT user_id FROM app_user WHERE email = %s", (email,))
@@ -212,7 +213,12 @@ def ejecuciones_web(email: str = EMAIL_DEMO):
         if found is None:
             return {"runs": []}
         cur.execute("""
-            SELECT r.run_id, c.code, r.run_at
+            SELECT r.run_id, c.code, r.run_at,
+                   COALESCE(to_jsonb(r)->'input_snapshot'->'case'->>'name', c.name),
+                   to_jsonb(r)->'input_snapshot'->'battery'->>'power_mw',
+                   to_jsonb(r)->'input_snapshot'->'battery'->>'duration_h',
+                   to_jsonb(r)->'input_snapshot'->'period'->>'date_from',
+                   to_jsonb(r)->'input_snapshot'->'period'->>'date_to'
             FROM app_case_run r
             JOIN app_study_case c ON c.case_id = r.case_id
             WHERE c.user_id = %s AND c.code LIKE 'WEB-%%'
@@ -220,9 +226,12 @@ def ejecuciones_web(email: str = EMAIL_DEMO):
             LIMIT 50
         """, (found[0],))
         rows = cur.fetchall()
-    return {"runs": [{"run_id": run_id, "code": code,
+    return {"runs": [{"run_id": run_id, "code": code, "name": name,
+                       "power_kw": float(power) * 1000 if power is not None else None,
+                       "duration_h": float(duration) if duration is not None else None,
+                       "date_from": date_from, "date_to": date_to,
                        "run_at": run_at.isoformat() if run_at else None}
-                      for run_id, code, run_at in rows]}
+                      for run_id, code, run_at, name, power, duration, date_from, date_to in rows]}
 
 
 # El decorador no vale aqui: FastAPI analiza la firma AL REGISTRAR la ruta, y con
@@ -287,7 +296,8 @@ router.add_api_route("/curvas", subir if HAY_MULTIPART else _sin_multipart,
 
 class Estudio(BaseModel):
     email: str = EMAIL_DEMO
-    code: str = Field("ESTUDIO", description="identificador del caso")
+    code: str = Field(default_factory=lambda: f"WEB-{uuid.uuid4().hex}", description="identificador único del caso")
+    nombre: str | None = Field(default=None, max_length=120)
     consumo: str | None = None
     generacion: str | None = None
     # la bateria llega entera: la ficha es del usuario, no del servidor
@@ -304,7 +314,7 @@ class Estudio(BaseModel):
     # el periodo
     desde: date
     hasta: date
-    escenarios: int = 20
+    escenarios: int = Field(default=5, ge=1, le=5)
     politica: str = "libre"
     tasa: float = 0.07
     opex: float = 0.015
@@ -318,7 +328,8 @@ def _correr(tarea: str, e: Estudio):
     segunda forma de que se rompa.
     """
     t = TAREAS[tarea]
-    env = {**os.environ, "TFM_EMAIL": e.email, "PYTHONIOENCODING": "utf-8"}
+    env = {**os.environ, "TFM_EMAIL": e.email, "PYTHONIOENCODING": "utf-8",
+           "OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"}
     bat = f"{e.code}-BAT"
 
     ordenes = [
@@ -328,7 +339,7 @@ def _correr(tarea: str, e: Estudio):
          "--soc-min", str(e.soc_min), "--soc-max", str(e.soc_max),
          "--ciclos", str(e.ciclos), "--carga-max", str(e.carga_max_pct),
          "--descarga-max", str(e.descarga_max_pct), "--p-min", str(e.p_min_pct)],
-        ["crear", "--code", e.code, "--nombre", f"Estudio {e.code}",
+        ["crear", "--code", e.code, "--nombre", (e.nombre or '').strip() or f"Estudio {e.code}",
          "--modo", "autoconsumo" if (e.consumo or e.generacion) else "standalone",
          "--bateria", bat,
          *(["--consumo", e.consumo] if e.consumo else []),
@@ -376,18 +387,44 @@ def _correr(tarea: str, e: Estudio):
         t.update(estado="error", error=f"{type(ex).__name__}: {ex}")
     finally:
         t.pop("_proc", None)
+        ESTUDIO_SLOT.release()
 
 
 @router.post("/estudio")
 def lanzar(e: Estudio):
     if e.hasta <= e.desde:
         raise HTTPException(400, "'hasta' tiene que ser posterior a 'desde'.")
+    dias = (e.hasta - e.desde).days + 1
+    if dias > 7305:
+        raise HTTPException(400, "El horizonte máximo es de 20 años.")
+    if dias > 31:
+        # El optimizador lee estos escenarios de disco, no los percentiles SQL.
+        # Verificar antes de crear batería/caso evita aceptar un horizonte ficticio.
+        from production.curva.generar_curva import leer
+        try:
+            sims, idx, _ = leer()
+            import pandas as pd
+            disponibles = pd.DatetimeIndex(pd.to_datetime(idx.dia).unique())
+            solicitados = pd.date_range(e.desde, e.hasta, freq="D")
+            if len(solicitados.difference(disponibles)) or len(sims) < e.escenarios:
+                raise HTTPException(400, "La curva de escenarios del servidor no cubre el período o los escenarios solicitados.")
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(503, "No se puede leer la curva de escenarios para el estudio plurianual.") from exc
+    if not ESTUDIO_SLOT.acquire(blocking=False):
+        raise HTTPException(429, "Ya hay un estudio en curso. Espera a que termine y vuelve a intentarlo.")
     tarea = uuid.uuid4().hex[:12]
     TAREAS[tarea] = {"estado": "corriendo", "progreso": 0.0, "paso": "arrancando",
                      "escenario": 0, "escenarios": e.escenarios,
                      "arrancada": datetime.now().isoformat(timespec="seconds"),
                      "code": e.code, "email": e.email}
-    threading.Thread(target=_correr, args=(tarea, e), daemon=True).start()
+    try:
+        threading.Thread(target=_correr, args=(tarea, e), daemon=True).start()
+    except Exception:
+        TAREAS.pop(tarea, None)
+        ESTUDIO_SLOT.release()
+        raise
     return {"tarea": tarea, "estado": "corriendo"}
 
 

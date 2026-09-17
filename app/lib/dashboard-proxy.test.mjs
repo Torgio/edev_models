@@ -7,7 +7,7 @@ const upstream = 'https://api.example';
 const session = (authenticated = true, required = true) => Response.json({ authenticated, auth_required: required });
 function request(path, init) { return new Request(`${origin}/api/dashboard/${path}`, init); }
 
-test('peak accuracy uses protected read route and forwards the chosen window', async () => {
+test('peak accuracy uses public read route and forwards the chosen window', async () => {
   const visited = [];
   const path = 'peak-accuracy';
   const response = await proxyDashboardRequest(request(path + '?model=ensemble&days=30&end_date=2026-08-30&source=production'), path, {
@@ -18,11 +18,6 @@ test('peak accuracy uses protected read route and forwards the chosen window', a
   });
   assert.equal(response.status, 200);
   assert.deepEqual(visited, ['https://api.example/session', 'https://api.example/peak-accuracy?model=ensemble&days=30&end_date=2026-08-30&source=production']);
-  const denied = await proxyDashboardRequest(request(path), path, { upstream, fetcher: async url => {
-    assert.equal(new URL(url).pathname, '/session');
-    return session(false);
-  } });
-  assert.equal(denied.status, 401);
 });
 
 test('performance history forwards only the stored-series filters', async () => {
@@ -51,11 +46,26 @@ test('performance options discovers stored model and seed combinations', async (
   assert.deepEqual(visited, ['https://api.example/session', 'https://api.example/performance-options?source=production']);
 });
 
-test('anonymous data requests never reach a data endpoint', async () => {
+test('anonymous protected health requests never reach the health endpoint', async () => {
   let calls = 0;
   const response = await proxyDashboardRequest(request('health'), 'health', { upstream, fetcher: async (url) => { calls++; assert.equal(new URL(url).pathname, '/session'); return session(false); } });
   assert.equal(response.status, 401);
   assert.equal(calls, 1);
+});
+
+test('anonymous public reads can reach forecast and evaluation endpoints', async () => {
+  for (const path of ['days', 'predictions/2026-08-31', 'leaderboard', 'performance-options', 'performance-history', 'peak-accuracy', 'bess/2026-08-31']) {
+    const visited = [];
+    const response = await proxyDashboardRequest(request(path), path, {
+      upstream,
+      fetcher: async url => {
+        visited.push(new URL(url).pathname);
+        return visited.length === 1 ? session(false) : Response.json({ ok: true });
+      },
+    });
+    assert.equal(response.status, 200, path);
+    assert.deepEqual(visited, ['/session', `/${path}`]);
+  }
 });
 
 test('production refuses a backend with authentication disabled', async () => {

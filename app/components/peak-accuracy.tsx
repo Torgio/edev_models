@@ -1,6 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 type PeakResult = {
   model: string; hits: number; evaluated_days: number; excluded_days: number;
@@ -8,9 +10,7 @@ type PeakResult = {
 };
 const displayDate = (date: string) => date.split('-').reverse().join('/');
 
-export function PeakAccuracy({ day, model, onSessionExpired }: { day: string; model: string; onSessionExpired: () => void }) {
-  const expired = useRef(onSessionExpired);
-  expired.current = onSessionExpired;
+export function PeakAccuracy({ day, model }: { day: string; model: string; onSessionExpired: () => void }) {
   const [state, setState] = useState<{ day: string; model: string; data?: PeakResult; error?: string } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -19,7 +19,6 @@ export function PeakAccuracy({ day, model, onSessionExpired }: { day: string; mo
     fetch(`/api/dashboard/peak-accuracy?model=${encodeURIComponent(model)}&source=production&days=30&end_date=${encodeURIComponent(day)}`, {
       signal: controller.signal, cache: 'no-store',
     }).then(async response => {
-      if (response.status === 401) expired.current();
       if (!response.ok) throw new Error('No se pudo consultar el acierto de pico.');
       return await response.json() as PeakResult;
     }).then(data => {
@@ -37,14 +36,19 @@ export function PeakAccuracy({ day, model, onSessionExpired }: { day: string; mo
       : current.error ? <p role="status">{current.error}</p>
       : result && <>
         <p className="peak-counter">{result.evaluated_days ? `${result.hits} de ${result.evaluated_days} días evaluables` : 'Sin días completos para evaluar'}</p>
-        <p>Hora más cara prevista a ±1 h de la real.</p>
-        <p>{displayDate(result.start_date)}–{displayDate(result.end_date)} · {result.window_days} días.</p>
-        <p>{result.excluded_days} días excluidos por datos incompletos.</p>
-        <details className="peak-definition"><summary>Cómo se cuenta</summary>
-          <p>Solo días cerrados con precios reales y predicciones de producción en todas sus horas (23, 24 o 25). El periodo termina en el día seleccionado o ayer, si seleccionas hoy o una fecha futura.</p>
-          <p>Si hay máximos previstos empatados, se toma el primero. Se acepta cualquiera de los máximos reales a una hora de distancia como máximo, medida por tiempo transcurrido.</p>
-          <p>Calculado sobre las predicciones actualmente guardadas; no audita su historial de revisiones. Acertar el pico no garantiza mayor ingreso de la batería.</p>
-        </details>
+        <p className="peak-method-summary">Cuenta como acierto si la hora más cara prevista queda a una hora o menos de la real.</p>
+        <p>{displayDate(result.start_date)}–{displayDate(result.end_date)} · {result.window_days} días · {result.excluded_days} excluidos.</p>
+        <Dialog>
+          <DialogTrigger render={<Button className="peak-definition-trigger" variant="outline" size="sm" />}>Ver criterios de cálculo</DialogTrigger>
+          <DialogContent className="peak-definition-dialog">
+            <DialogHeader><DialogTitle>Cómo se calcula el acierto del pico</DialogTitle><DialogDescription>Una medida de precisión horaria; no mide el ingreso de una batería.</DialogDescription></DialogHeader>
+            <div className="peak-definition-copy">
+              <p><strong>Días incluidos.</strong> Solo días cerrados con precios reales y predicciones de producción en todas sus horas (23, 24 o 25). El período termina en el día seleccionado o ayer, si eliges hoy o una fecha futura.</p>
+              <p><strong>Qué cuenta como acierto.</strong> Si hay máximos previstos empatados, se toma el primero. Se acepta cualquiera de los máximos reales a una hora de distancia como máximo, medida por tiempo transcurrido.</p>
+              <p><strong>Alcance.</strong> Se calcula sobre las predicciones guardadas actualmente; no audita sus revisiones históricas. Acertar el pico no garantiza un mayor ingreso de batería.</p>
+            </div>
+          </DialogContent>
+        </Dialog>
       </>}
   </div>;
 }

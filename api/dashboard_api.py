@@ -91,10 +91,20 @@ app.add_middleware(
 login_limiter = LoginLimiter()
 
 
+def _is_public_read(method: str, path: str) -> bool:
+    if method != "GET":
+        return False
+    if path in {"/session", "/days", "/peak-accuracy", "/leaderboard", "/performance-history", "/performance-options"}:
+        return True
+    if path.startswith("/predictions/") or path.startswith("/bess/"):
+        return True
+    return False
+
+
 @app.middleware("http")
 async def protect_data(request: Request, call_next):
     auth = auth_config()
-    public = (request.method, request.url.path) in {("GET", "/session"), ("POST", "/login"), ("POST", "/logout")}
+    public = _is_public_read(request.method, request.url.path) or (request.method, request.url.path) in {("POST", "/login"), ("POST", "/logout")}
     if auth and request.method != "OPTIONS" and not public and not auth.valid(request.cookies.get(COOKIE_NAME)):
         return JSONResponse({"detail": "Inicia sesión para consultar los datos."}, status_code=401, headers={"Cache-Control": "private, no-store"})
     if request.method == "POST" and request.headers.get("origin") and request.headers["origin"] not in origins:
@@ -143,7 +153,14 @@ async def login(request: Request):
     if authenticated_username is None:
         raise HTTPException(401, "Usuario o contraseña incorrectos.")
     response = JSONResponse({"authenticated": True, "auth_required": True, "username": authenticated_username})
-    response.set_cookie(COOKIE_NAME, auth.issue(authenticated_username), max_age=SESSION_SECONDS, httponly=True, secure=True, samesite="strict", path="/")
+    # Local development serves the API over HTTP; a `Secure` cookie would be
+    # silently ignored by the browser there, making login appear successful
+    # while every subsequent request remained unauthenticated.  Respect the
+    # original scheme when running behind nginx, and only require Secure on
+    # HTTPS deployments.
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").split(",", 1)[0].strip().lower()
+    cookie_secure = request.url.scheme == "https" or forwarded_proto == "https"
+    response.set_cookie(COOKIE_NAME, auth.issue(authenticated_username), max_age=SESSION_SECONDS, httponly=True, secure=cookie_secure, samesite="strict", path="/")
     return response
 
 

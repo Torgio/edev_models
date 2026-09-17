@@ -5,7 +5,11 @@ import { bestMae, maxCoverageEvaluations, metric, numeric, type Evaluation } fro
 const label = (row?: Evaluation) => row ? `${row.model}${row.seed >= 0 ? ` · semilla ${row.seed}` : ''}` : 'Sin datos';
 
 /** Print and preview share the same report, independent of screen ranking controls. */
-export function EvaluationReport({ rows }: { rows: Evaluation[] }) {
+export function EvaluationReport({ rows, groupLabel, generatedAt }: {
+  rows: Evaluation[];
+  groupLabel: string;
+  generatedAt: string | null;
+}) {
   const sorted = [...rows].sort((a, b) => (numeric(a.mae) ? a.mae : Infinity) - (numeric(b.mae) ? b.mae : Infinity) || a.model.localeCompare(b.model));
   const candidates = maxCoverageEvaluations(rows);
   const winner = (key: 'captura_pct' | 'pico_1h_pct') => [...candidates].filter(row => numeric(row[key])).sort((a, b) => b[key]! - a[key]!)[0];
@@ -23,14 +27,14 @@ export function EvaluationReport({ rows }: { rows: Evaluation[] }) {
   const foot = (page: number) => <footer>Pulso Energía · Informe de evaluación<span>Página {page} de {pages}</span></footer>;
   return <>
     {chunks.map((chunk, i) => <article className="evaluation-print-page" key={i}>
-      <header className="report-heading"><div className="report-logo"><Zap size={20} /></div><div><small>TFM · Mercado eléctrico · UCM 2026</small><h1>Informe de evaluación de modelos</h1></div><aside>{context?.periodo} · {context?.corte}<br />{new Set(rows.map(row => row.model)).size} modelos · {new Set(rows.filter(row => row.seed >= 0).map(row => row.seed)).size} semillas</aside></header>
+      <header className="report-heading"><div className="report-logo"><Zap size={20} /></div><div><small>TFM · Mercado eléctrico · UCM 2026</small><h1>Informe de evaluación de modelos</h1></div><aside>{groupLabel}<br />{new Set(rows.map(row => row.model)).size} modelos · {new Set(rows.filter(row => row.seed >= 0).map(row => row.seed)).size} semillas<br /><small>Generado: {generatedAt ?? 'al exportar'}</small></aside></header>
       {i === 0 && <div className="evaluation-print-kpis">{[
         ['Menor error', metric(low?.mae, ' €/MWh'), label(low)],
         ['Mayor captura', metric(capture?.captura_pct, ' %'), label(capture)],
         ['Mejor acierto de pico', metric(peak?.pico_1h_pct, ' %'), label(peak)],
       ].map(([title, value, detail]) => <article key={title}><small>{title}</small><strong>{value}</strong><span>{detail}</span></article>)}</div>}
       <h2>Clasificación por error absoluto medio{i > 0 ? ' · continuación' : ''}</h2>
-      <table><thead><tr>{['Modelo', 'Semilla', 'Horas', 'MAE', 'Captura', 'Pico ±1 h', 'Mejora'].map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{chunk.map(row => <tr key={`${row.model}:${row.seed}`}><td><i style={{ background: modelColor(row.model) }} />{row.model}</td><td>{row.seed >= 0 ? row.seed : '—'}</td><td>{row.n_obs?.toLocaleString('es-ES') ?? '—'}</td><td><b>{metric(row.mae)}</b></td><td>{metric(row.captura_pct, ' %')}</td><td>{metric(row.pico_1h_pct, ' %')}</td><td>{metric(row.skill_vs_naive, ' %')}</td></tr>)}</tbody></table>
+      <table><thead><tr>{['Modelo', 'Semilla', 'Horas', 'MAE', 'RMSE', 'Captura', 'Pico ±1 h', 'Mejora', '€/día'].map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{chunk.map(row => <tr key={`${row.model}:${row.seed}`}><td><i style={{ background: modelColor(row.model) }} />{row.model}</td><td>{row.seed >= 0 ? row.seed : '—'}</td><td>{row.n_obs?.toLocaleString('es-ES') ?? '—'}</td><td><b>{metric(row.mae)}</b></td><td>{metric(row.rmse)}</td><td>{metric(row.captura_pct, ' %')}</td><td>{metric(row.pico_1h_pct, ' %')}</td><td>{metric(row.skill_vs_naive, ' %')}</td><td>{metric(row.eur_dia, ' €')}</td></tr>)}</tbody></table>
       <p className="report-note">MAE en €/MWh. Destacados sobre {candidates[0]?.n_obs?.toLocaleString('es-ES') ?? '—'} horas, la cobertura máxima registrada. Las demás coberturas se conservan en la tabla. Igual número de horas no confirma fechas coincidentes.</p>
       {i === 0 && <div className="evaluation-print-callout"><strong>Precisión y captura económica</strong><p>{low && capture ? `${label(low)} registra el menor MAE (${metric(low.mae)} €/MWh); ${label(capture)} registra la mayor captura (${metric(capture.captura_pct)} %), entre las evaluaciones con cobertura máxima.` : 'No hay métricas suficientes para comparar los destacados.'}</p></div>}
       {foot(i + 1)}

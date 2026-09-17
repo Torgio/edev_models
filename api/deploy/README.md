@@ -46,6 +46,21 @@ entrega `/etc/pulso-api-auth.json` al servicio mediante `LoadCredential`;
 la cuenta `ubuntu` no necesita permiso para leer el original. En modo de servidor,
 la falta de la credencial impide arrancar; no se permite un arranque desprotegido.
 
+Para añadir una cuenta sin invalidar las sesiones ni regenerar el resto de usuarios,
+crear un archivo nuevo a partir del existente y luego instalarlo con copia de
+seguridad:
+
+```bash
+python3 api/deploy/configure_users.py \
+  --append-existing /etc/pulso-api-auth.json \
+  --output /tmp/pulso-api-auth.demo.json
+```
+
+Por ejemplo, para la demo final se puede crear el usuario `demo_final`; la
+contraseña se introduce solo en la terminal del servidor. Después de revisar el
+archivo nuevo, reemplazar `/etc/pulso-api-auth.json` conservando modo `600` y
+reiniciar `pulso-api`.
+
 `install_auth_update.sh` instala únicamente el código de la API y su unidad,
 guarda copia de ambos en `/var/backups/pulso-api-auth.*`, reinicia solo la API,
 y verifica tanto HTTP 401 sin sesión como PostgreSQL con sesión. Si falla,
@@ -55,6 +70,11 @@ El límite de login es de 10 intentos por cliente por minuto y 30 globales por
 minuto. Está diseñado para un worker; no aumentar workers sin un limitador
 compartido. Las peticiones que pasan por Sites comparten límites según la IP
 de salida del proxy, por lo que un equipo puede tener que esperar un minuto.
+
+La web pública puede consultar predicción, evaluación y operación diaria BESS sin
+sesión. La autenticación sigue siendo obligatoria para `/health`, el Estudio de
+Batería y el Asistente; `/health` permanece protegido porque Nginx lo usa como
+verificación de sesión para rutas privadas.
 
 ## Condiciones de publicación
 

@@ -50,7 +50,8 @@ function CurveInput({ kind, selected, onChange }: { kind: CurveKind; selected: S
 export function BatteryCurveUpload({ onCancel, onComplete }: { onCancel: () => void; onComplete: (runId: number) => void }) {
   const [step, setStep] = useState<'curves' | 'battery' | 'launch'>('curves');
   const [battery, setBattery] = useState<BatteryDraft>(DEFAULT_BATTERY);
-  const [period, setPeriod] = useState({ dateFrom: '', dateTo: '', scenarios: 1, policy: 'libre' });
+  const [studyName, setStudyName] = useState('');
+  const [period, setPeriod] = useState({ dateFrom: '', dateTo: '', scenarios: 5, policy: 'libre' });
   const [busy, setBusy] = useState(false);
   const [reviewed, setReviewed] = useState(false);
   const [consumption, setConsumption] = useState<Selected | null>(null);
@@ -103,11 +104,11 @@ export function BatteryCurveUpload({ onCancel, onComplete }: { onCancel: () => v
     } catch (cause) { setMessage(cause instanceof Error ? cause.message : 'No se pudieron guardar las curvas.'); }
     finally { setUploading(false); }
   };
-  const canReview = stored && reviewed && batteryIssues(battery).length === 0;
+  const canReview = stored && reviewed && Boolean(studyName.trim()) && batteryIssues(battery).length === 0;
   return <>
     <nav className="study-steps" aria-label="Pasos del estudio"><ol>{(['curves', 'battery', 'launch'] as const).map((item, index) => <li key={item}><button type="button" aria-current={step === item ? 'step' : undefined} disabled={busy || uploading || (item === 'battery' && !stored) || (item === 'launch' && !canReview)} onClick={() => setStep(item)}><span>{index + 1}</span>{['Curvas', 'Batería', 'Calcular'][index]}</button></li>)}</ol></nav>
-    {step === 'battery' ? <BatterySetup draft={battery} onChange={setBattery} onBack={() => setStep('curves')} onConfirm={() => { setReviewed(true); setStep('launch'); }} />
-    : step === 'launch' ? <BatteryStudyLaunch battery={battery} period={period} onPeriodChange={setPeriod} onBusyChange={setBusy} availableFrom={consumption?.preview.dateFrom ?? ''} availableTo={consumption?.preview.dateTo ?? ''} consumptionCode={savedConsumptionCode || 'WEB-CONSUMO'} generationCode={savedGenerationCode || 'WEB-GENERACION'} generationIncluded={generation !== null || Boolean(savedGenerationCode)} onBack={() => setStep('battery')} onComplete={onComplete} />
+    {step === 'battery' ? <BatterySetup studyName={studyName} onNameChange={setStudyName} draft={battery} onChange={setBattery} onBack={() => setStep('curves')} onConfirm={() => { setReviewed(true); setStep('launch'); }} />
+    : step === 'launch' ? <BatteryStudyLaunch studyName={studyName} battery={battery} period={period} onPeriodChange={setPeriod} onBusyChange={setBusy} availableFrom={priceCurve?.desde ?? ''} availableTo={priceCurve?.hasta ?? ''} consumptionCode={savedConsumptionCode || 'WEB-CONSUMO'} generationCode={savedGenerationCode || 'WEB-GENERACION'} generationIncluded={generation !== null || Boolean(savedGenerationCode)} onBack={() => setStep('battery')} onComplete={onComplete} />
     : <section className="study-view" aria-labelledby="curve-upload-heading">
     <div className="study-heading"><div><p className="kicker">Estudio de instalación · paso 1 de 3</p><h2 id="curve-upload-heading">Sube tus curvas</h2><p>Comprueba primero la forma de consumo y generación. El servidor volverá a validarlas antes de guardarlas.</p>{priceCurve && <p className="study-series-note">Curva de precios publicada: {priceCurve.desde} → {priceCurve.hasta} · {priceCurve.escenarios} escenarios.</p>}</div><Button variant="outline" onClick={onCancel}>Ver resultados guardados</Button></div>
     {savedInstallations.consumo.length > 0 && <div className="study-saved-curves"><strong>También puedes usar una curva guardada</strong><div className="study-saved-curves-grid"><label>Consumo<NativeSelect value={savedConsumptionCode} onChange={event => { const item = savedInstallations.consumo.find(candidate => candidate.code === event.target.value); setSavedConsumptionCode(event.target.value); setConsumption(null); setSaved([]); setMessage(''); if (item?.desde && item.hasta) setPeriod(current => ({ ...current, dateFrom: item.desde!, dateTo: firstStudyWindow(item.desde!, item.hasta!) })); }}>{<NativeSelectOption value="">Subir un fichero nuevo</NativeSelectOption>}{savedInstallations.consumo.map(item => <NativeSelectOption key={item.code} value={item.code}>{item.nombre || item.code}</NativeSelectOption>)}</NativeSelect></label><label>Generación opcional<NativeSelect value={savedGenerationCode} onChange={event => { setSavedGenerationCode(event.target.value); setGeneration(null); setSaved([]); setMessage(''); }}>{<NativeSelectOption value="">Sin generación guardada</NativeSelectOption>}{savedInstallations.generacion.map(item => <NativeSelectOption key={item.code} value={item.code}>{item.nombre || item.code}</NativeSelectOption>)}</NativeSelect></label></div></div>}

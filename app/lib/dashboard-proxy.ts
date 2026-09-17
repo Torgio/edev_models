@@ -1,6 +1,7 @@
 const COOKIE = 'pulso_session';
 const SESSION_SECONDS = 8 * 60 * 60;
 const READ_PATH = /^(session|health|days|leaderboard|performance-history|performance-options|peak-accuracy|(?:predictions|bess)\/\d{4}-\d{2}-\d{2})$/;
+const PUBLIC_READ_PATH = /^(days|leaderboard|performance-history|performance-options|peak-accuracy|(?:predictions|bess)\/\d{4}-\d{2}-\d{2})$/;
 
 function reply(value: unknown, status = 200) {
   return Response.json(value, { status, headers: { 'Cache-Control': 'private, no-store', Vary: 'Cookie', 'X-Content-Type-Options': 'nosniff' } });
@@ -29,6 +30,7 @@ export async function proxyDashboardRequest(request: Request, path: string, opti
   const fetcher = options.fetcher ?? fetch;
   const requestUrl = new URL(request.url);
   const isRead = request.method === 'GET' && READ_PATH.test(path);
+  const isPublicRead = request.method === 'GET' && PUBLIC_READ_PATH.test(path);
   const isWrite = request.method === 'POST' && ['login', 'logout'].includes(path);
   if (!isRead && !isWrite) return reply({ detail: 'Ruta no disponible.' }, 404);
   if (isWrite && request.headers.get('origin') !== requestUrl.origin) return reply({ detail: 'Origen no permitido.' }, 403);
@@ -65,7 +67,7 @@ export async function proxyDashboardRequest(request: Request, path: string, opti
       auth_required: session.auth_required === true,
       username: typeof session.username === 'string' ? session.username : null,
     });
-    if (isRead && session.authenticated !== true) return reply({ detail: 'Inicia sesión para consultar los datos.' }, 401);
+    if (isRead && !isPublicRead && session.authenticated !== true) return reply({ detail: 'Inicia sesión para consultar los datos.' }, 401);
 
     let body: string | undefined;
     if (path === 'login') {

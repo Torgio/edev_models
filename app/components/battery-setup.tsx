@@ -12,12 +12,13 @@ function NumberField({ label, value, unit, min, max, step, onChange }: { label: 
   return <label className="study-number-field"><span>{label}</span><div><Input type="number" value={Number.isFinite(value) ? value : ''} min={min} max={max} step={step} onChange={event => onChange(event.target.value === '' ? Number.NaN : Number(event.target.value))} /><small>{unit}</small></div></label>;
 }
 
-export function BatterySetup({ draft, onChange, onBack, onConfirm }: { draft: BatteryDraft; onChange: (draft: BatteryDraft) => void; onBack: () => void; onConfirm: (draft: BatteryDraft) => void }) {
+export function BatterySetup({ studyName, onNameChange, draft, onChange, onBack, onConfirm }: { studyName: string; onNameChange: (name: string) => void; draft: BatteryDraft; onChange: (draft: BatteryDraft) => void; onBack: () => void; onConfirm: (draft: BatteryDraft) => void }) {
   const set = <K extends keyof BatteryDraft>(key: K, value: BatteryDraft[K]) => onChange({ ...draft, [key]: value });
   const summary = batterySummary(draft), issues = batteryIssues(draft);
   return <section className="study-view" aria-labelledby="battery-setup-heading">
     <div className="study-heading"><div><p className="kicker">Estudio de instalación · paso 2 de 3</p><h2 id="battery-setup-heading">Define la batería</h2><p>Introduce los datos de la ficha técnica. La potencia se expresa en kW y el precio por MWh instalado.</p></div><Button variant="outline" onClick={onBack}>← Volver a las curvas</Button></div>
     <article className="study-card study-battery-form">
+      <label className="study-name-field">Nombre del estudio<Input value={studyName} onChange={event => onNameChange(event.target.value)} maxLength={120} required placeholder="Ej. Fábrica · batería de 100 kW" /><small>Un nombre para reconocerlo después. Cada estudio nuevo tendrá un identificador propio.</small></label>
       <div className="study-battery-basics">
         <NumberField label="Potencia" value={draft.powerKw} unit="kW" min={5} max={100000} step={5} onChange={value => set('powerKw', value)} />
         <fieldset className="study-duration"><legend>Duración</legend><div>{[1, 2, 3, 4, 6, 8].map(hours => <Button type="button" key={hours} variant={draft.durationH === hours ? 'default' : 'outline'} onClick={() => set('durationH', hours)}>{hours} h</Button>)}</div></fieldset>
@@ -41,6 +42,6 @@ export function BatterySetup({ draft, onChange, onBack, onConfirm }: { draft: Ba
       </div>{draft.minimumPowerPct > 0 && <p className="study-notice">Un mínimo técnico mayor que cero convierte el cálculo en un problema entero mixto y puede multiplicar el tiempo de ejecución.</p>}</details>
     </article>
     {issues.length > 0 && <div className="study-notice" role="alert"><strong>Revisa la ficha:</strong><ul>{issues.map(issue => <li key={issue}>{issue}</li>)}</ul></div>}
-    <div className="study-upload-actions"><Button variant="outline" onClick={onBack}>Atrás</Button><Button disabled={issues.length > 0} onClick={() => onConfirm(draft)}>Continuar al período →</Button></div>
+    <div className="study-upload-actions"><Button variant="outline" onClick={onBack}>Atrás</Button><Button disabled={issues.length > 0 || !studyName.trim()} onClick={() => onConfirm(draft)}>Continuar al período →</Button></div>
   </section>;
 }
